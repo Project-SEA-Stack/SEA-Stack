@@ -19,15 +19,15 @@ SEA-Stack helps engineers and researchers explore design spaces efficiently, red
 <tr>
 <td align="center" valign="top" width="33%">
 <strong>5SA</strong><br/>
-<video src="docs/img/5sa.mp4" autoplay loop controls muted playsinline width="260"></video>
+<img src="docs/img/5sa.gif" width="260" alt="5SA simulation preview"/>
 </td>
 <td align="center" valign="top" width="33%">
 <strong>RM3</strong><br/>
-<video src="docs/img/RM3.mp4" autoplay loop controls muted playsinline width="260"></video>
+<img src="docs/img/RM3.gif" width="260" alt="RM3 simulation preview"/>
 </td>
 <td align="center" valign="top" width="33%">
 <strong>Trimaran FEA</strong><br/>
-<video src="docs/img/trimaran_fea.mp4" autoplay loop controls muted playsinline width="260"></video>
+<img src="docs/img/trimaran_fea.gif" width="260" alt="Trimaran FEA simulation preview"/>
 </td>
 </tr>
 </table>
