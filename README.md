@@ -56,7 +56,6 @@ SEA-Stack helps engineers and researchers explore design spaces efficiently, red
 ### PTO and energy workflows
 - Linear PTO and rectified hydraulic PTO, including check-valve bridge, accumulators, and motor-generator modelling
 - Power matrix generation via **`run_seastack --campaign`**, including sea-state sweeps (for example Hs×Tp), per-cell time-domain runs, HDF5 summaries of mean absorbed power and energy, optional CSV export, and annual energy calculation from a site scatter table
-  ([5SA demo](data/demos/run_seastack/5sa/power_matrix/README.md))
 
 ### Visualisation, configuration, and infrastructure
 - 3D visualization with Vulkan Scene Graph and real-time GUI
