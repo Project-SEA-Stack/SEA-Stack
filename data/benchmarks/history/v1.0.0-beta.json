@@ -1,0 +1,921 @@
+{
+  "schema_version": 2,
+  "run_tag": "v1.0.0-beta",
+  "promoted_at": "2026-03-24T12:05:17Z",
+  "metadata": {
+    "seastack_version": "1.0.0-beta",
+    "git_commit": "unknown",
+    "git_dirty": true,
+    "hostname": "DESKTOP-7G58FV8",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor            ",
+    "physical_cores": 16,
+    "logical_cores": 32,
+    "omp_max_threads": 32,
+    "omp_num_procs": 32,
+    "build_type": "Release",
+    "compiler": "MSVC 19.44.35222.0",
+    "os": "Windows 10.0.26200"
+  },
+  "results": [
+    {
+      "case_id": "5sa_spreading",
+      "settings": {
+        "timestep": 0.02,
+        "sim_duration": 200.0,
+        "num_steps": 10000,
+        "num_bodies": 5,
+        "radiation_method": "rirf_convolution",
+        "excitation_method": "frequency_domain",
+        "wave_type": "irregular_jonswap_cos2s",
+        "moordyn": true,
+        "num_trials": 3,
+        "warmup": true
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 24.2773,
+          "min": 23.876,
+          "max": 24.7161,
+          "stddev": 0.4213
+        },
+        "total_wall_s": {
+          "mean": 24.3084,
+          "min": 23.9075,
+          "max": 24.7476,
+          "stddev": 0.4213
+        },
+        "s_per_step": {
+          "mean": 0.0024,
+          "min": 0.0024,
+          "max": 0.0025,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 8.2398,
+          "min": 8.0919,
+          "max": 8.3766,
+          "stddev": 0.1427
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.0022
+          },
+          "radiation_s": {
+            "mean": 4.5493
+          },
+          "excitation_s": {
+            "mean": 0.1829
+          },
+          "mooring_s": {
+            "mean": 15.5689
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.03142,
+          "sim_wall_s": 24.72,
+          "total_wall_s": 24.75,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002179,
+            "radiation_s": 4.882,
+            "excitation_s": 0.1889,
+            "mooring_s": 15.64
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.03151,
+          "sim_wall_s": 23.88,
+          "total_wall_s": 23.91,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002305,
+            "radiation_s": 4.154,
+            "excitation_s": 0.1828,
+            "mooring_s": 15.55
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.03053,
+          "sim_wall_s": 24.24,
+          "total_wall_s": 24.27,
+          "component_breakdown": {
+            "hydrostatics_s": 0.001988,
+            "radiation_s": 4.612,
+            "excitation_s": 0.1769,
+            "mooring_s": 15.52
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "f3of_decay_c3",
+      "settings": {
+        "timestep": 0.02,
+        "sim_duration": 200.0,
+        "num_steps": 12000,
+        "num_bodies": 3,
+        "radiation_method": "rirf_convolution",
+        "excitation_method": "none",
+        "wave_type": "none",
+        "moordyn": false,
+        "num_trials": 3,
+        "warmup": true
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 11.5053,
+          "min": 11.4606,
+          "max": 11.5945,
+          "stddev": 0.0773
+        },
+        "total_wall_s": {
+          "mean": 11.521,
+          "min": 11.4758,
+          "max": 11.6102,
+          "stddev": 0.0773
+        },
+        "s_per_step": {
+          "mean": 0.001,
+          "min": 0.001,
+          "max": 0.001,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 20.8606,
+          "min": 20.6994,
+          "max": 20.9414,
+          "stddev": 0.1395
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.0017
+          },
+          "radiation_s": {
+            "mean": 10.2853
+          },
+          "excitation_s": {
+            "mean": 0.0025
+          },
+          "mooring_s": {
+            "mean": 0.0
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.01597,
+          "sim_wall_s": 11.46,
+          "total_wall_s": 11.48,
+          "component_breakdown": {
+            "hydrostatics_s": 0.001673,
+            "radiation_s": 10.2,
+            "excitation_s": 0.002627,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.01525,
+          "sim_wall_s": 11.46,
+          "total_wall_s": 11.48,
+          "component_breakdown": {
+            "hydrostatics_s": 0.001454,
+            "radiation_s": 10.28,
+            "excitation_s": 0.002427,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.01572,
+          "sim_wall_s": 11.59,
+          "total_wall_s": 11.61,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002018,
+            "radiation_s": 10.37,
+            "excitation_s": 0.002461,
+            "mooring_s": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "oswec_reg_batch",
+      "settings": {
+        "timestep": 0.03,
+        "sim_duration": 1000.0,
+        "num_steps": 33333,
+        "num_bodies": 2,
+        "radiation_method": "rirf_convolution",
+        "excitation_method": "frequency_domain",
+        "wave_type": "regular_batch_16",
+        "moordyn": false,
+        "num_trials": 16,
+        "warmup": false
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 3.7203,
+          "min": 3.6289,
+          "max": 3.8421,
+          "stddev": 0.0656
+        },
+        "total_wall_s": {
+          "mean": 3.7255,
+          "min": 3.6343,
+          "max": 3.8472,
+          "stddev": 0.0655
+        },
+        "s_per_step": {
+          "mean": 0.0001,
+          "min": 0.0001,
+          "max": 0.0001,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 268.8717,
+          "min": 260.2775,
+          "max": 275.5631,
+          "stddev": 4.7076
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.0026
+          },
+          "radiation_s": {
+            "mean": 2.7274
+          },
+          "excitation_s": {
+            "mean": 0.0241
+          },
+          "mooring_s": {
+            "mean": 0.0
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.004284,
+          "sim_wall_s": 3.81,
+          "total_wall_s": 3.815,
+          "component_breakdown": {
+            "hydrostatics_s": 0.00266,
+            "radiation_s": 2.778,
+            "excitation_s": 0.02775,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.005391,
+          "sim_wall_s": 3.629,
+          "total_wall_s": 3.634,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002971,
+            "radiation_s": 2.644,
+            "excitation_s": 0.02465,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.005533,
+          "sim_wall_s": 3.725,
+          "total_wall_s": 3.73,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002462,
+            "radiation_s": 2.74,
+            "excitation_s": 0.02175,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 4,
+          "setup_wall_s": 0.005298,
+          "sim_wall_s": 3.703,
+          "total_wall_s": 3.708,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002408,
+            "radiation_s": 2.715,
+            "excitation_s": 0.02467,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 5,
+          "setup_wall_s": 0.005168,
+          "sim_wall_s": 3.691,
+          "total_wall_s": 3.696,
+          "component_breakdown": {
+            "hydrostatics_s": 0.003532,
+            "radiation_s": 2.707,
+            "excitation_s": 0.0249,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 6,
+          "setup_wall_s": 0.005405,
+          "sim_wall_s": 3.66,
+          "total_wall_s": 3.665,
+          "component_breakdown": {
+            "hydrostatics_s": 0.00243,
+            "radiation_s": 2.68,
+            "excitation_s": 0.02157,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 7,
+          "setup_wall_s": 0.005352,
+          "sim_wall_s": 3.732,
+          "total_wall_s": 3.738,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002383,
+            "radiation_s": 2.744,
+            "excitation_s": 0.02374,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 8,
+          "setup_wall_s": 0.005317,
+          "sim_wall_s": 3.629,
+          "total_wall_s": 3.635,
+          "component_breakdown": {
+            "hydrostatics_s": 0.003502,
+            "radiation_s": 2.643,
+            "excitation_s": 0.02443,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 9,
+          "setup_wall_s": 0.005213,
+          "sim_wall_s": 3.705,
+          "total_wall_s": 3.711,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002372,
+            "radiation_s": 2.717,
+            "excitation_s": 0.02371,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 10,
+          "setup_wall_s": 0.005182,
+          "sim_wall_s": 3.735,
+          "total_wall_s": 3.74,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002386,
+            "radiation_s": 2.758,
+            "excitation_s": 0.02276,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 11,
+          "setup_wall_s": 0.005168,
+          "sim_wall_s": 3.666,
+          "total_wall_s": 3.671,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002458,
+            "radiation_s": 2.676,
+            "excitation_s": 0.02619,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 12,
+          "setup_wall_s": 0.005172,
+          "sim_wall_s": 3.842,
+          "total_wall_s": 3.847,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002417,
+            "radiation_s": 2.851,
+            "excitation_s": 0.02314,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 13,
+          "setup_wall_s": 0.005147,
+          "sim_wall_s": 3.817,
+          "total_wall_s": 3.822,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002487,
+            "radiation_s": 2.806,
+            "excitation_s": 0.02475,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 14,
+          "setup_wall_s": 0.005028,
+          "sim_wall_s": 3.675,
+          "total_wall_s": 3.68,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002506,
+            "radiation_s": 2.683,
+            "excitation_s": 0.02199,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 15,
+          "setup_wall_s": 0.005159,
+          "sim_wall_s": 3.714,
+          "total_wall_s": 3.719,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002708,
+            "radiation_s": 2.725,
+            "excitation_s": 0.02428,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 16,
+          "setup_wall_s": 0.00499,
+          "sim_wall_s": 3.792,
+          "total_wall_s": 3.797,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002573,
+            "radiation_s": 2.77,
+            "excitation_s": 0.02541,
+            "mooring_s": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "rm3_mooring_irreg",
+      "settings": {
+        "timestep": 0.01,
+        "sim_duration": 300.0,
+        "num_steps": 30000,
+        "num_bodies": 2,
+        "radiation_method": "rirf_convolution",
+        "excitation_method": "irf_convolution_eta_import",
+        "wave_type": "irregular_eta_file",
+        "moordyn": true,
+        "num_trials": 3,
+        "warmup": true
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 20.1027,
+          "min": 19.9496,
+          "max": 20.2784,
+          "stddev": 0.1656
+        },
+        "total_wall_s": {
+          "mean": 20.5392,
+          "min": 20.3803,
+          "max": 20.7124,
+          "stddev": 0.1665
+        },
+        "s_per_step": {
+          "mean": 0.0007,
+          "min": 0.0007,
+          "max": 0.0007,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 14.9241,
+          "min": 14.7941,
+          "max": 15.0379,
+          "stddev": 0.1227
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.003
+          },
+          "radiation_s": {
+            "mean": 4.2877
+          },
+          "excitation_s": {
+            "mean": 1.0921
+          },
+          "mooring_s": {
+            "mean": 12.7671
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.434,
+          "sim_wall_s": 20.28,
+          "total_wall_s": 20.71,
+          "component_breakdown": {
+            "hydrostatics_s": 0.003129,
+            "radiation_s": 4.339,
+            "excitation_s": 1.097,
+            "mooring_s": 12.89
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.4448,
+          "sim_wall_s": 20.08,
+          "total_wall_s": 20.52,
+          "component_breakdown": {
+            "hydrostatics_s": 0.003044,
+            "radiation_s": 4.286,
+            "excitation_s": 1.094,
+            "mooring_s": 12.73
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.4307,
+          "sim_wall_s": 19.95,
+          "total_wall_s": 20.38,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002838,
+            "radiation_s": 4.238,
+            "excitation_s": 1.085,
+            "mooring_s": 12.68
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "sphere_decay_conv",
+      "settings": {
+        "timestep": 0.015,
+        "sim_duration": 100.0,
+        "num_steps": 6666,
+        "num_bodies": 1,
+        "radiation_method": "rirf_convolution",
+        "excitation_method": "none",
+        "wave_type": "none",
+        "moordyn": false,
+        "num_trials": 3,
+        "warmup": true
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 0.1518,
+          "min": 0.1475,
+          "max": 0.1581,
+          "stddev": 0.0056
+        },
+        "total_wall_s": {
+          "mean": 0.166,
+          "min": 0.1613,
+          "max": 0.1726,
+          "stddev": 0.0059
+        },
+        "s_per_step": {
+          "mean": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 659.3978,
+          "min": 632.5951,
+          "max": 677.7501,
+          "stddev": 23.734
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.0003
+          },
+          "radiation_s": {
+            "mean": 0.0846
+          },
+          "excitation_s": {
+            "mean": 0.0011
+          },
+          "mooring_s": {
+            "mean": 0.0
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.01455,
+          "sim_wall_s": 0.1581,
+          "total_wall_s": 0.1726,
+          "component_breakdown": {
+            "hydrostatics_s": 0.0003122,
+            "radiation_s": 0.09179,
+            "excitation_s": 0.0009108,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.01436,
+          "sim_wall_s": 0.1497,
+          "total_wall_s": 0.1641,
+          "component_breakdown": {
+            "hydrostatics_s": 0.0003385,
+            "radiation_s": 0.08128,
+            "excitation_s": 0.001385,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.0137,
+          "sim_wall_s": 0.1475,
+          "total_wall_s": 0.1613,
+          "component_breakdown": {
+            "hydrostatics_s": 0.0003372,
+            "radiation_s": 0.08082,
+            "excitation_s": 0.0009787,
+            "mooring_s": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "sphere_decay_ss",
+      "settings": {
+        "timestep": 0.015,
+        "sim_duration": 100.0,
+        "num_steps": 6666,
+        "num_bodies": 1,
+        "radiation_method": "state_space",
+        "excitation_method": "none",
+        "wave_type": "none",
+        "moordyn": false,
+        "num_trials": 3,
+        "warmup": true
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 0.195,
+          "min": 0.194,
+          "max": 0.1957,
+          "stddev": 0.0009
+        },
+        "total_wall_s": {
+          "mean": 0.2037,
+          "min": 0.2028,
+          "max": 0.2043,
+          "stddev": 0.0008
+        },
+        "s_per_step": {
+          "mean": 0.0,
+          "min": 0.0,
+          "max": 0.0,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 512.7114,
+          "min": 511.0912,
+          "max": 515.4089,
+          "stddev": 2.3519
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.0002
+          },
+          "radiation_s": {
+            "mean": 0.0019
+          },
+          "excitation_s": {
+            "mean": 0.0003
+          },
+          "mooring_s": {
+            "mean": 0.0
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.00861,
+          "sim_wall_s": 0.1955,
+          "total_wall_s": 0.2041,
+          "component_breakdown": {
+            "hydrostatics_s": 0.0002359,
+            "radiation_s": 0.001883,
+            "excitation_s": 0.0002809,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.008686,
+          "sim_wall_s": 0.1957,
+          "total_wall_s": 0.2043,
+          "component_breakdown": {
+            "hydrostatics_s": 0.0002463,
+            "radiation_s": 0.001896,
+            "excitation_s": 0.0003068,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.008742,
+          "sim_wall_s": 0.194,
+          "total_wall_s": 0.2028,
+          "component_breakdown": {
+            "hydrostatics_s": 0.0002546,
+            "radiation_s": 0.001858,
+            "excitation_s": 0.0002795,
+            "mooring_s": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "sphere_irreg_conv",
+      "settings": {
+        "timestep": 0.015,
+        "sim_duration": 600.0,
+        "num_steps": 40000,
+        "num_bodies": 1,
+        "radiation_method": "rirf_convolution",
+        "excitation_method": "irf_convolution",
+        "wave_type": "irregular_jonswap",
+        "moordyn": false,
+        "num_trials": 3,
+        "warmup": true
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 8.1468,
+          "min": 7.9962,
+          "max": 8.3175,
+          "stddev": 0.1616
+        },
+        "total_wall_s": {
+          "mean": 8.1616,
+          "min": 8.0109,
+          "max": 8.3323,
+          "stddev": 0.1616
+        },
+        "s_per_step": {
+          "mean": 0.0002,
+          "min": 0.0002,
+          "max": 0.0002,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 73.6678,
+          "min": 72.1368,
+          "max": 75.0353,
+          "stddev": 1.4561
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.004
+          },
+          "radiation_s": {
+            "mean": 0.6758
+          },
+          "excitation_s": {
+            "mean": 6.5954
+          },
+          "mooring_s": {
+            "mean": 0.0
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.01477,
+          "sim_wall_s": 8.318,
+          "total_wall_s": 8.332,
+          "component_breakdown": {
+            "hydrostatics_s": 0.005786,
+            "radiation_s": 0.6857,
+            "excitation_s": 6.736,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.01464,
+          "sim_wall_s": 7.996,
+          "total_wall_s": 8.011,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002992,
+            "radiation_s": 0.6759,
+            "excitation_s": 6.453,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.01498,
+          "sim_wall_s": 8.127,
+          "total_wall_s": 8.142,
+          "component_breakdown": {
+            "hydrostatics_s": 0.003113,
+            "radiation_s": 0.6657,
+            "excitation_s": 6.597,
+            "mooring_s": 0
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "sphere_irreg_ss",
+      "settings": {
+        "timestep": 0.015,
+        "sim_duration": 600.0,
+        "num_steps": 40000,
+        "num_bodies": 1,
+        "radiation_method": "state_space",
+        "excitation_method": "irf_convolution",
+        "wave_type": "irregular_jonswap",
+        "moordyn": false,
+        "num_trials": 3,
+        "warmup": true
+      },
+      "summary": {
+        "sim_wall_s": {
+          "mean": 6.1723,
+          "min": 6.1375,
+          "max": 6.2237,
+          "stddev": 0.0455
+        },
+        "total_wall_s": {
+          "mean": 6.1814,
+          "min": 6.1465,
+          "max": 6.233,
+          "stddev": 0.0456
+        },
+        "s_per_step": {
+          "mean": 0.0002,
+          "min": 0.0002,
+          "max": 0.0002,
+          "stddev": 0.0
+        },
+        "realtime_factor": {
+          "mean": 97.2126,
+          "min": 96.4053,
+          "max": 97.7592,
+          "stddev": 0.7136
+        },
+        "component_breakdown": {
+          "hydrostatics_s": {
+            "mean": 0.0024
+          },
+          "radiation_s": {
+            "mean": 0.0152
+          },
+          "excitation_s": {
+            "mean": 5.4764
+          },
+          "mooring_s": {
+            "mean": 0.0
+          }
+        }
+      },
+      "trials": [
+        {
+          "trial": 1,
+          "setup_wall_s": 0.009065,
+          "sim_wall_s": 6.156,
+          "total_wall_s": 6.165,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002196,
+            "radiation_s": 0.0146,
+            "excitation_s": 5.474,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 2,
+          "setup_wall_s": 0.009297,
+          "sim_wall_s": 6.224,
+          "total_wall_s": 6.233,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002491,
+            "radiation_s": 0.01695,
+            "excitation_s": 5.514,
+            "mooring_s": 0
+          }
+        },
+        {
+          "trial": 3,
+          "setup_wall_s": 0.009021,
+          "sim_wall_s": 6.138,
+          "total_wall_s": 6.147,
+          "component_breakdown": {
+            "hydrostatics_s": 0.002456,
+            "radiation_s": 0.01414,
+            "excitation_s": 5.442,
+            "mooring_s": 0
+          }
+        }
+      ]
+    }
+  ]
+}

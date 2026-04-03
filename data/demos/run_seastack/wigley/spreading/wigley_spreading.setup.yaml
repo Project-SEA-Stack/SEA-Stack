@@ -1,0 +1,5 @@
+model_file: wigley_spreading.model.yaml
+simulation_file: wigley_spreading.simulation.yaml
+hydro_file: wigley_spreading.hydro.yaml
+
+output_directory: outputs

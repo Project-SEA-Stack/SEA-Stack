@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.0",
+  "model": "rm3_mooring",
+  "description": "RM3 with 3-line catenary mooring, WEC-Sim/MoorDyn co-simulation reference",
+
+  "sources": [
+    {
+      "tool": "WEC-Sim",
+      "version": "v6.1 (WEC-Sim Applications Mooring)",
+      "url": "https://github.com/WEC-Sim/WEC-Sim_Applications/tree/2d7569271c00e8736c2755192ee45941ffd49403/Mooring",
+      "raw_files": [
+        "NOTE: Original MATLAB .mat files not committed; extracted via extract_wecsim_ref.py"
+      ],
+      "notes": "Reference data extracted from WEC-Sim/MoorDyn MATLAB outputs by extract_wecsim_ref.py on 2026-02-24."
+    }
+  ],
+
+  "normalized_datasets": [
+    {
+      "file": "normalized/wecsim_moordyn_body_motions.txt",
+      "original_source": "WEC-Sim MATLAB workspace (etaData.mat, RM3MoorDyn_matlabWorkspace.mat)",
+      "extraction_script": "extract_wecsim_ref.py",
+      "extraction_date": "2026-02-24T14:22:00",
+      "format": "timeseries",
+      "quantity": "body_motions",
+      "units": {"time": "s", "FloatHeaveZ": "m", "PlateHeaveZ": "m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive up",
+      "transformations": [
+        "Extracted time, body1.heave, body2.heave from MATLAB workspace",
+        "Written as space-delimited text with 1-line header"
+      ]
+    },
+    {
+      "file": "normalized/wecsim_moordyn_fairlead_tensions.txt",
+      "original_source": "WEC-Sim MATLAB workspace (RM3MoorDyn_matlabWorkspace.mat)",
+      "extraction_script": "extract_wecsim_ref.py",
+      "extraction_date": "2026-02-24T14:22:00",
+      "format": "timeseries",
+      "quantity": "fairlead_tensions",
+      "units": {"time": "s", "FairTen4": "N", "FairTen5": "N", "FairTen6": "N"},
+      "coordinate_frame": "global",
+      "sign_convention": "tension positive",
+      "transformations": [
+        "Extracted time and MoorDyn fairlead tension channels 4-6",
+        "Written as space-delimited text with 1-line header"
+      ]
+    },
+    {
+      "file": "normalized/wecsim_moordyn_wave_elevation.txt",
+      "original_source": "WEC-Sim MATLAB workspace (etaData.mat)",
+      "extraction_script": "extract_wecsim_ref.py",
+      "extraction_date": "2026-02-24T14:22:00",
+      "format": "timeseries",
+      "quantity": "wave_elevation",
+      "units": {"time": "s", "Elevation": "m"},
+      "coordinate_frame": "global, Z-up at origin",
+      "sign_convention": "positive up",
+      "transformations": [
+        "Extracted time and eta from etaData.mat"
+      ]
+    }
+  ],
+
+  "simulation_parameters": {
+    "dt": 0.01,
+    "end_time": 400.0,
+    "ramp_time": 40.0,
+    "water_depth": 70.0,
+    "wave_type": "elevation_import",
+    "float_mass_kg": 725834,
+    "plate_mass_kg": 886691,
+    "pto_damping_Nsm": 1200000,
+    "moordyn": "3 lines, 6 segments (anchor-clump + clump-fairlead each)"
+  }
+}

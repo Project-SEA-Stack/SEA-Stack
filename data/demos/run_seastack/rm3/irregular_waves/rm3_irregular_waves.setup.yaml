@@ -1,0 +1,5 @@
+model_file: rm3_irregular_waves.model.yaml
+simulation_file: rm3_irregular_waves.simulation.yaml
+hydro_file: rm3_irregular_waves.hydro.yaml
+
+output_directory: outputs

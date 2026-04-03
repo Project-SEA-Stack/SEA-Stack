@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0",
+  "model": "f3of_decay_multicode",
+  "description": "F3OF decay tests (DT1 surge, DT3 flap), multi-code comparison",
+
+  "sources": [
+    {
+      "tool": "InWave (INW)",
+      "version": "unknown",
+      "raw_files": ["raw/inw/*.dat"],
+      "notes": "5-line header format: tool/model/test/dof/columns"
+    },
+    {
+      "tool": "WEC-Sim (WSM)",
+      "version": "unknown",
+      "raw_files": ["raw/wsm/*.dat"]
+    },
+    {
+      "tool": "WaveDyn (WDN)",
+      "version": "unknown",
+      "raw_files": ["raw/wdn/*.dat"]
+    },
+    {
+      "tool": "ProteusDS (PDS)",
+      "version": "unknown",
+      "raw_files": ["raw/pds/*.dat"]
+    },
+    {
+      "tool": "HydroChrono",
+      "version": "legacy",
+      "raw_files": ["raw/hydrochrono/CHRONO_F3OF_DT*.txt"],
+      "notes": "Tab-delimited, 5 columns: Time, Surge, Pitch, FlapFore, FlapAft"
+    }
+  ],
+
+  "normalized_datasets": [
+    {
+      "file": "normalized/<tool>/dt1_surge.txt",
+      "format": "timeseries",
+      "quantity": "dt1_surge",
+      "units": {"time": "s", "SURGE": "m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive forward (+X)"
+    },
+    {
+      "file": "normalized/<tool>/dt3_flap_fore.txt",
+      "format": "timeseries",
+      "quantity": "dt3_flap_fore",
+      "units": {"time": "s", "FLAP1": "rad"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive bow-up (right-hand about +Y)"
+    },
+    {
+      "file": "normalized/<tool>/dt3_flap_aft.txt",
+      "format": "timeseries",
+      "quantity": "dt3_flap_aft",
+      "units": {"time": "s", "FLAP2": "rad"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive bow-up (right-hand about +Y)"
+    }
+  ]
+}

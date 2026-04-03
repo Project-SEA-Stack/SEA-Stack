@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "model": "sphere_rao_sweep",
+  "description": "Sphere heave RAO from IEA OES Task 10 multicode comparison (10 wave periods, PTO S=0.002)",
+
+  "sources": [
+    {
+      "tool": "InWave-HOTINT",
+      "version": "unknown",
+      "raw_files": ["raw/RAO_dat.xlsx"],
+      "notes": "Sheet PTO_S=0.002, column InWave-HOTINT"
+    },
+    {
+      "tool": "InWave (Linear)",
+      "version": "unknown",
+      "raw_files": ["raw/RAO_dat.xlsx"],
+      "notes": "Sheet PTO_S=0.002, column InWave (Lin)"
+    },
+    {
+      "tool": "Marin (Nonlinear)",
+      "version": "unknown",
+      "raw_files": ["raw/RAO_dat.xlsx"],
+      "notes": "Sheet PTO_S=0.002, column Marin (NLin)"
+    },
+    {
+      "tool": "NREL (Nonlinear)",
+      "version": "unknown",
+      "raw_files": ["raw/RAO_dat.xlsx"],
+      "notes": "Sheet PTO_S=0.002, column NREL (NLin)"
+    },
+    {
+      "tool": "ProteusDS (Linear)",
+      "version": "unknown",
+      "raw_files": ["raw/RAO_dat.xlsx"],
+      "notes": "Sheet PTO_S=0.002, column ProteusDS (Lin)"
+    }
+  ],
+
+  "normalized_datasets": [
+    {
+      "file": "normalized/<source>/heave_rao.txt",
+      "format": "rao",
+      "quantity": "heave_rao",
+      "units": {"omega": "rad/s", "heave_rao": "m/m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive up"
+    }
+  ]
+}

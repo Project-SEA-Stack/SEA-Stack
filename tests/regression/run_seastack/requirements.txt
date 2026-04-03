@@ -1,0 +1,7 @@
+# Packaged regression runner (run_tests.py) requires Python 3.10+ (PEP 604 unions, etc.).
+# pip does not read this line as a constraint; RUN-TESTS.sh / RUN-TESTS.ps1 check the version.
+numpy>=1.22
+h5py>=3.6
+PyYAML>=6.0
+matplotlib>=3.5
+

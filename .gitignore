@@ -1,0 +1,37 @@
+# Build directories (root only — avoid ignoring docs/build/)
+/build/
+/build_*/
+out/
+
+# Test/demo output (written under build when run via CTest; can appear under repo if run from repo root)
+results/
+
+# Demo run outputs (written in-place by run_seastack when executed from repo)
+data/demos/**/outputs/
+!data/demos/**/expected/
+
+# MoorDyn runtime output (generated alongside .txt input files)
+data/demos/**/*.log
+data/demos/**/*.out
+
+# IDE / editor
+.vs/
+.vscode/
+*.user
+*.suo
+CMakeSettings.json
+CMakeUserPresets.json
+
+# Python
+__pycache__/
+*.pyc
+
+# User-local config (contains machine-specific paths)
+build-config.json
+
+# MoorDyn workaround: copied at configure time (upstream CMAKE_SOURCE_DIR defect).
+# /LICENSE.txt is MoorDyn's BSD-3, NOT the SEA-Stack project license.
+# The real project license is /LICENSE (MIT).
+# See also: third_party/licenses/MoorDyn-LICENSE.txt
+/cmake/MoorDynConfig.cmake
+/LICENSE.txt

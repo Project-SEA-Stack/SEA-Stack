@@ -1,0 +1,36 @@
+chrono-version: 9.0
+
+model:
+  name: wigley_damping_model
+  angle_degrees: false
+
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1
+      location: [0, 0, 0]
+      mass: 956667
+      fixed: false
+      inertia:
+        moments: [16875600.0, 149479167.0, 149479167.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, -1.75]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/wigley.obj
+        color: [0.3, 0.3, 0.5]
+
+    # Ground reference body
+    - name: ground
+      location: [0, 0, -10]
+      mass: 1
+      fixed: true
+      inertia:
+        moments: [1, 1, 1]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]

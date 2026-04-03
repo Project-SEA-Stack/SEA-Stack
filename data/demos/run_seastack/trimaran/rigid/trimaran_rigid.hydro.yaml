@@ -1,0 +1,44 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/trimaran.h5
+      linear_damping:    [0.0, 0.0, 1.0e5, 1.0e6, 1.0e6, 0.0]
+      quadratic_damping: [1.2e4, 1.8e4, 1.0e4, 2.0e5, 2.0e5, 6.0e4]
+
+    - name: body2
+      h5_file: ../assets/hydroData/trimaran.h5
+      linear_damping:    [0.0, 0.0, 5.0e4, 2.0e5, 2.0e5, 0.0]
+      quadratic_damping: [6.0e3, 1.0e4, 6.0e3, 1.2e5, 1.2e5, 4.0e4]
+
+    - name: body3
+      h5_file: ../assets/hydroData/trimaran.h5
+      linear_damping:    [0.0, 0.0, 5.0e4, 2.0e5, 2.0e5, 0.0]
+      quadratic_damping: [6.0e3, 1.0e4, 6.0e3, 1.2e5, 1.2e5, 4.0e4]
+
+  waves:
+    type: irregular
+    height: 3.0
+    period: 10.0
+    direction: 0
+    spectrum: jonswap
+    gamma: 3.3
+    ramp_duration: 60.0
+    spreading:
+      type: cos2s
+      s: 10
+    discretization:
+      n_omega: 128
+      n_theta: 21
+    seed: 42
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.9
+      end_percent: 1.0
+      final_amplitude: 0.0
+    diagnostics:
+      export_csv: true

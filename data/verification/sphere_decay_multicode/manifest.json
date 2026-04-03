@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "model": "sphere_decay_multicode",
+  "description": "OES Task 10 heaving sphere decay test, multi-code comparison (6 tools + HydroChrono)",
+
+  "sources": [
+    {
+      "tool": "ProteusDS",
+      "version": "unknown",
+      "raw_files": ["raw/multicode/sphere_decay_ref_data.txt"],
+      "notes": "Column 2 in multi-code file. Linear simulation."
+    },
+    {
+      "tool": "InWave",
+      "version": "unknown",
+      "raw_files": ["raw/multicode/sphere_decay_ref_data.txt"],
+      "notes": "Column 3. Linear simulation."
+    },
+    {
+      "tool": "Marin",
+      "version": "unknown",
+      "raw_files": ["raw/multicode/sphere_decay_ref_data.txt"],
+      "notes": "Column 4. NONLINEAR simulation."
+    },
+    {
+      "tool": "NREL CFD",
+      "version": "unknown",
+      "raw_files": ["raw/multicode/sphere_decay_ref_data.txt"],
+      "notes": "Column 5."
+    },
+    {
+      "tool": "WavEC",
+      "version": "unknown",
+      "raw_files": ["raw/multicode/sphere_decay_ref_data.txt"],
+      "notes": "Column 6. Linear simulation."
+    },
+    {
+      "tool": "HydroChrono",
+      "version": "legacy",
+      "raw_files": ["raw/hydrochrono/sphere_decay_hc_data.txt"],
+      "notes": "Absolute heave in meters."
+    }
+  ],
+
+  "normalized_datasets": [
+    {
+      "file": "normalized/proteusds/heave_decay.txt (and inwave, marin, nrel_cfd, wavec)",
+      "original_source": "raw/multicode/sphere_decay_ref_data.txt",
+      "extraction_script": "normalize.py",
+      "format": "timeseries",
+      "quantity": "heave_decay",
+      "units": {"time": "s", "Heave": "m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive up, displacement from equilibrium",
+      "transformations": ["Converted from normalised heave * 1.0 m initial displacement"]
+    },
+    {
+      "file": "normalized/hydrochrono/heave_decay.txt",
+      "original_source": "raw/hydrochrono/sphere_decay_hc_data.txt",
+      "extraction_script": "normalize.py",
+      "format": "timeseries",
+      "quantity": "heave_decay",
+      "units": {"time": "s", "Heave": "m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive up, displacement from equilibrium",
+      "transformations": ["Converted from absolute CG position by subtracting equilibrium"]
+    }
+  ],
+
+  "simulation_parameters": {
+    "initial_displacement": "1 m above equilibrium (normalized to 1.0 in multi-code data)",
+    "water_depth": "infinite"
+  }
+}

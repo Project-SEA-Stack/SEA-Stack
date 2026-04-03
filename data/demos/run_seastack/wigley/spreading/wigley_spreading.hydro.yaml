@@ -1,0 +1,32 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/wigley_directional.h5
+
+  waves:
+    type: irregular
+    height: 3.0
+    period: 10.0
+    direction: 0
+    spectrum: jonswap
+    gamma: 3.3
+    ramp_duration: 60.0
+    spreading:
+      type: cos2s
+      s: 12
+    discretization:
+      n_omega: 64
+      n_theta: 21
+    seed: 42
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.9
+      end_percent: 1.0
+      final_amplitude: 0.0
+    diagnostics:
+      export_csv: true

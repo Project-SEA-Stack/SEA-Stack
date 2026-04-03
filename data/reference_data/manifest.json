@@ -1,0 +1,391 @@
+{
+  "schema_version": "1.0",
+  "tag": "v1.0-beta",
+  "git_commit": "unknown",
+  "git_commit_short": "unknown",
+  "git_describe": "unknown",
+  "git_dirty": null,
+  "generated_at": "2026-03-20T19:13:38Z",
+  "platform": "Windows 11 (AMD64)",
+  "compiler": "unknown",
+  "build_type": "Release",
+  "generator": "promote_regression_references.py",
+  "total_files": 41,
+  "files": {
+    "sphere/ss_ref_sphere_decay.txt": {
+      "source_result": "results_sphere_decay.txt",
+      "rows": 2667,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "0217cb134054190d738fd03b1968f0fc"
+    },
+    "sphere/ss_ref_sphere_decay_ss.txt": {
+      "source_result": "results_sphere_decay_ss.txt",
+      "rows": 2667,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "ab169a90b2fd5627f10eb07c428ba335"
+    },
+    "sphere/ss_ref_sphere_irreg_waves.txt": {
+      "source_result": "results_sphere_irreg_waves.txt",
+      "rows": 40001,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "fd2abcdf1dfc0a79749f00577def5a31"
+    },
+    "sphere/ss_ref_sphere_irreg_waves_ss.txt": {
+      "source_result": "results_sphere_irreg_waves_ss.txt",
+      "rows": 40001,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "f295e3f078af8f711d8400525a149929"
+    },
+    "sphere/ss_ref_sphere_irreg_waves_eta.txt": {
+      "source_result": "results_sphere_irreg_waves_eta.txt",
+      "rows": 40001,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "fdd8c5e12d5714108752602f95078b09"
+    },
+    "sphere/ss_ref_sphere_irreg_waves_eta_consistency.txt": {
+      "source_result": "results_sphere_irreg_waves_eta_consistency.txt",
+      "rows": 4000,
+      "columns": [
+        "Time (s)",
+        "Heave_Spectrum (m)",
+        "Heave_Eta (m)",
+        "Difference (m)"
+      ],
+      "md5": "637882ec701be440f9d09959631a7985"
+    },
+    "sphere/ss_ref_sphere_reg_waves_1.txt": {
+      "source_result": "results_sphere_reg_waves_1.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "25cff9c4cc13b55bb45e2735897bc9d8"
+    },
+    "sphere/ss_ref_sphere_reg_waves_2.txt": {
+      "source_result": "results_sphere_reg_waves_2.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "756180350cec62fe30c0cdc0ded3f925"
+    },
+    "sphere/ss_ref_sphere_reg_waves_3.txt": {
+      "source_result": "results_sphere_reg_waves_3.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "1723752ad8e5caa2221562c879710f3a"
+    },
+    "sphere/ss_ref_sphere_reg_waves_4.txt": {
+      "source_result": "results_sphere_reg_waves_4.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "98e228eef41d7b3283f8e57c3fce776a"
+    },
+    "sphere/ss_ref_sphere_reg_waves_5.txt": {
+      "source_result": "results_sphere_reg_waves_5.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "f52a49b075e7e2ad5f4d3745d138b098"
+    },
+    "sphere/ss_ref_sphere_reg_waves_6.txt": {
+      "source_result": "results_sphere_reg_waves_6.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "03e0872f19e21ccfb353418a336cf3fa"
+    },
+    "sphere/ss_ref_sphere_reg_waves_7.txt": {
+      "source_result": "results_sphere_reg_waves_7.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "fde5c1a90469a46bdcf042279a81ea4a"
+    },
+    "sphere/ss_ref_sphere_reg_waves_8.txt": {
+      "source_result": "results_sphere_reg_waves_8.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "2b34a863d6b36d3dab0cb6ea68b0fdb5"
+    },
+    "sphere/ss_ref_sphere_reg_waves_9.txt": {
+      "source_result": "results_sphere_reg_waves_9.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "3985bf7afbae0d25c50c88a6ef1841f5"
+    },
+    "sphere/ss_ref_sphere_reg_waves_10.txt": {
+      "source_result": "results_sphere_reg_waves_10.txt",
+      "rows": 16000,
+      "columns": [
+        "Time (s)",
+        "Heave (m)"
+      ],
+      "md5": "553de5ff5bcd41b7cc1172d5f9e34213"
+    },
+    "oswec/ss_ref_oswec_decay.txt": {
+      "source_result": "results_oswec_decay.txt",
+      "rows": 13334,
+      "columns": [
+        "Time (s)",
+        "Flap Rotation y (radians)Flap Rotation y (degrees)"
+      ],
+      "md5": "bdfaaa49a72af96261222d50ef950f10"
+    },
+    "oswec/ss_ref_oswec_decay_ss.txt": {
+      "source_result": "results_oswec_decay_ss.txt",
+      "rows": 13334,
+      "columns": [
+        "Time (s)",
+        "Flap Rotation y (radians)Flap Rotation y (degrees)"
+      ],
+      "md5": "93ad17d9b9252128c7f7b1f7ed05836f"
+    },
+    "oswec/ss_ref_oswec_irreg_waves.txt": {
+      "source_result": "results_oswec_irreg_waves.txt",
+      "rows": 13334,
+      "columns": [
+        "Time (s)",
+        "Flap Rotation y (radians)Flap Rotation y (degrees)"
+      ],
+      "md5": "13bc618d4825ae6724535285734f8199"
+    },
+    "oswec/ss_ref_oswec_irreg_waves_ss.txt": {
+      "source_result": "results_oswec_irreg_waves_ss.txt",
+      "rows": 13334,
+      "columns": [
+        "Time (s)",
+        "Flap Rotation y (radians)Flap Rotation y (degrees)"
+      ],
+      "md5": "849ce2594f7633baea7fa8f134da30e3"
+    },
+    "oswec/ss_ref_oswec_reg_waves_1.txt": {
+      "source_result": "results_oswec_reg_waves_1.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "a05da45a95b8759e7e78a85585c92172"
+    },
+    "oswec/ss_ref_oswec_reg_waves_2.txt": {
+      "source_result": "results_oswec_reg_waves_2.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "d36c876f3b53f92ee71e8f71013fd18f"
+    },
+    "oswec/ss_ref_oswec_reg_waves_3.txt": {
+      "source_result": "results_oswec_reg_waves_3.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "d0a848058b984177e7e1e865f1776e20"
+    },
+    "oswec/ss_ref_oswec_reg_waves_4.txt": {
+      "source_result": "results_oswec_reg_waves_4.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "736f3668f0671bc4103e092bad83777b"
+    },
+    "oswec/ss_ref_oswec_reg_waves_5.txt": {
+      "source_result": "results_oswec_reg_waves_5.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "5196fe90bf9cb9a274b69df30b5a0dc0"
+    },
+    "oswec/ss_ref_oswec_reg_waves_6.txt": {
+      "source_result": "results_oswec_reg_waves_6.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "db18f2102957212466a87dfa9de0d2ed"
+    },
+    "oswec/ss_ref_oswec_reg_waves_7.txt": {
+      "source_result": "results_oswec_reg_waves_7.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "e2ef94fa8a9cbb1a3ec3bad6da8ca382"
+    },
+    "oswec/ss_ref_oswec_reg_waves_8.txt": {
+      "source_result": "results_oswec_reg_waves_8.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "8c2daa478f8506ef254a15e5fe9a46cd"
+    },
+    "oswec/ss_ref_oswec_reg_waves_9.txt": {
+      "source_result": "results_oswec_reg_waves_9.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "ee936c4d8fb6b258fc8bb76ef9495fbf"
+    },
+    "oswec/ss_ref_oswec_reg_waves_10.txt": {
+      "source_result": "results_oswec_reg_waves_10.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "78dc186056bcae83eab82a0a4b5a2573"
+    },
+    "oswec/ss_ref_oswec_reg_waves_11.txt": {
+      "source_result": "results_oswec_reg_waves_11.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "ce69ead5fb21a30c537e86888686a3d4"
+    },
+    "oswec/ss_ref_oswec_reg_waves_12.txt": {
+      "source_result": "results_oswec_reg_waves_12.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "b5673fda0c98deba71b3ed4d53ac3f35"
+    },
+    "oswec/ss_ref_oswec_reg_waves_13.txt": {
+      "source_result": "results_oswec_reg_waves_13.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "ab969fa498b1c9535e9ad7cfd4ce2a61"
+    },
+    "oswec/ss_ref_oswec_reg_waves_14.txt": {
+      "source_result": "results_oswec_reg_waves_14.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "653b17025e7e63f8b2ea29a92c77ef5c"
+    },
+    "oswec/ss_ref_oswec_reg_waves_15.txt": {
+      "source_result": "results_oswec_reg_waves_15.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "1194ff56487259b9ed0f82ac3bd9c053"
+    },
+    "oswec/ss_ref_oswec_reg_waves_16.txt": {
+      "source_result": "results_oswec_reg_waves_16.txt",
+      "rows": 33333,
+      "columns": [
+        "Time (s)",
+        "Pitch (rads)"
+      ],
+      "md5": "4894036ac15e431d079ad8224b10d815"
+    },
+    "f3of/ss_ref_f3of_decay_c1.txt": {
+      "source_result": "results_f3of_decay_c1.txt",
+      "rows": 5001,
+      "columns": [
+        "Time (s)",
+        "Base Surge (m)Base Pitch (radians)Flap Fore Pitch (radians)Flap Aft Pitch (radians)"
+      ],
+      "md5": "f3ddf4065948821e56308f2e90a8b14c"
+    },
+    "f3of/ss_ref_f3of_decay_c2.txt": {
+      "source_result": "results_f3of_decay_c2.txt",
+      "rows": 5001,
+      "columns": [
+        "Time (s)",
+        "Base Surge (m)Base Pitch (radians)Flap Fore Pitch (radians)Flap Aft Pitch (radians)"
+      ],
+      "md5": "50997b1bd0ef4100d43b813396846b0b"
+    },
+    "f3of/ss_ref_f3of_decay_c3.txt": {
+      "source_result": "results_f3of_decay_c3.txt",
+      "rows": 5001,
+      "columns": [
+        "Time (s)",
+        "Base Surge (m)Base Pitch (radians)Flap Fore Pitch (radians)Flap Aft Pitch (radians)"
+      ],
+      "md5": "c4d1c51419abf53346b1ea4c4024f01f"
+    },
+    "rm3/ss_ref_rm3_decay.txt": {
+      "source_result": "results_rm3_decay.txt",
+      "rows": 4000,
+      "columns": [
+        "Time (s)",
+        "Float Heave (m) Plate Heave (m)"
+      ],
+      "md5": "ceac7144bad38c1ce38b7422c8650c40"
+    },
+    "rm3/ss_ref_rm3_reg_waves.txt": {
+      "source_result": "results_rm3_reg_waves.txt",
+      "rows": 4000,
+      "columns": [
+        "Time (s)",
+        "Float Heave (m) Plate Heave (m)Float Drift (x) (m)"
+      ],
+      "md5": "b806c45dfaada4c3751df95768e51389"
+    }
+  },
+  "known_failures": [
+    "test_regr_sphere_sphere_irreg_waves_eta_consistency",
+    "test_regr_sphere_sphere_irreg_waves_eta_consistency_ref"
+  ]
+}

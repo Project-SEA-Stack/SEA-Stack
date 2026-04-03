@@ -1,0 +1,33 @@
+chrono-version: 9.0
+
+simulation:
+  contact_method: SMC
+
+  time_step: 0.02
+  end_time: 600.0
+  enforce_realtime: false
+  gravity: [0, 0, -9.81]
+
+  integrator:
+    type: HHT
+    rel_tolerance: 1e-4
+    abs_tolerance_states: 1e-4
+    abs_tolerance_multipliers: 1e2
+    max_iterations: 50
+    # Adaptive step helps long multibody + MoorDyn runs (see 5SA spreading stability notes).
+    use_stepsize_control: true
+    use_modified_newton: false
+
+  # SPARSE_LU: direct solver, gives exact solutions at each Newton iteration.
+  # Recommended for constrained multi-body systems (e.g., 5-body articulated 5SA)
+  # where GMRES may silently return poor solutions if it fails to converge.
+  # For larger systems (>10 bodies), consider GMRES with diagonal preconditioner.
+  solver:
+    type: SPARSE_LU
+
+  visualization:
+    type: MODEL_FILE
+    render_fps: 120
+    enable_shadows: true
+    camera:
+      vertical: Z

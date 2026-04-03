@@ -1,0 +1,5 @@
+model_file: 5sa_spreading.model.yaml
+simulation_file: 5sa_spreading.simulation.yaml
+hydro_file: 5sa_spreading.hydro.yaml
+
+output_directory: outputs

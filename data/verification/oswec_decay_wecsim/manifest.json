@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "model": "oswec_decay_wecsim",
+  "description": "OSWEC flap pitch decay, WEC-Sim reference comparison",
+
+  "sources": [
+    {
+      "tool": "WEC-Sim",
+      "version": "unknown",
+      "raw_files": ["raw/wecsim/wecsim_oswec_decay.txt"],
+      "notes": "Tab-delimited, columns: time(s) pitch(rad). From HydroChrono demos/oswec/postprocessing."
+    }
+  ],
+
+  "normalized_datasets": [
+    {
+      "file": "normalized/wecsim/pitch_decay.txt",
+      "original_source": "raw/wecsim/wecsim_oswec_decay.txt",
+      "extraction_script": "normalize.py",
+      "format": "timeseries",
+      "quantity": "pitch_decay",
+      "units": {"time": "s", "Pitch": "rad"},
+      "coordinate_frame": "global",
+      "sign_convention": "pitch positive per Chrono convention",
+      "transformations": ["Converted from tab-delimited to space-delimited standard format"]
+    }
+  ]
+}

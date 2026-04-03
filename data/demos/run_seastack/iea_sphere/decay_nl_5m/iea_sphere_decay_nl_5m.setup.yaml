@@ -1,0 +1,5 @@
+model_file: iea_sphere_decay_nl_5m.model.yaml
+simulation_file: iea_sphere_decay_nl_5m.simulation.yaml
+hydro_file: iea_sphere_decay_nl_5m.hydro.yaml
+
+output_directory: outputs

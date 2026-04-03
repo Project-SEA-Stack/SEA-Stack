@@ -1,0 +1,121 @@
+chrono-version: 9.0
+
+model:
+  name: trimaran_rigid_model
+  angle_degrees: false
+
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    # Center hull (H5 body1); CoG world z = -1.75 m (matches trimaran_hulls.h).
+    - name: body1
+      location: [0.0, 0.0, -1.75]
+      mass: 956667.0
+      fixed: false
+      inertia:
+        moments: [16875600.0, 149479167.0, 149479167.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/center.obj
+        color: [0.25, 0.35, 0.55]
+        # Body ref at CoG (z=-1.75); shift mesh +Z by -kCenterCogZ like trimaran_hulls.h AddVisualShape.
+        shape_location: [0.0, 0.0, 1.75]
+
+    # Starboard outrigger (H5 body2) at y = -15 m.
+    - name: body2
+      location: [0.0, -15.0, -0.75]
+      mass: 68333.0
+      fixed: false
+      inertia:
+        moments: [133933.0, 2669271.0, 2669271.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/outrigger.obj
+        color: [0.3, 0.45, 0.6]
+        shape_location: [0.0, 0.0, 0.75]
+
+    # Port outrigger (H5 body3) at y = +15 m.
+    - name: body3
+      location: [0.0, 15.0, -0.75]
+      mass: 68333.0
+      fixed: false
+      inertia:
+        moments: [133933.0, 2669271.0, 2669271.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/outrigger.obj
+        color: [0.35, 0.5, 0.65]
+        shape_location: [0.0, 0.0, 0.75]
+
+    # Rigid cross-arm starboard (no hydrodynamics); box L x 0.35 x 0.35, rho = 600 kg/m^3.
+    # Orientation: quaternion [e0,e1,e2,e3] = ChMatrix33::SetFromAxisX(arm_vec).GetQuaternion() (Chrono YAML schema).
+    - name: arm_stbd
+      location: [0.0, -9.5, 2.5]
+      orientation: [0.707107, 0.0, 0.194257, -0.679900]
+      mass: 535.09
+      fixed: false
+      inertia:
+        moments: [10.92, 2368.8, 2368.8]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/arm_rigid.obj
+        color: [0.45, 0.38, 0.22]
+
+    # Rigid cross-arm port (same convention as arm_stbd).
+    - name: arm_port
+      location: [0.0, 9.5, 2.5]
+      orientation: [0.707107, 0.0, 0.194257, 0.679900]
+      mass: 535.09
+      fixed: false
+      inertia:
+        moments: [10.92, 2368.8, 2368.8]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/arm_rigid.obj
+        color: [0.45, 0.38, 0.22]
+
+  joints:
+    # World +X revolute at center deck (ChFramed with QuatFromAngleY(pi/2) in C++ demo).
+    - name: center_arm_stbd_revolute
+      type: REVOLUTE
+      body1: body1
+      body2: arm_stbd
+      location: [0.0, -6.0, 3.5]
+      axis: [1, 0, 0]
+
+    - name: center_arm_port_revolute
+      type: REVOLUTE
+      body1: body1
+      body2: arm_port
+      location: [0.0, 6.0, 3.5]
+      axis: [1, 0, 0]
+
+    # Tip weld to outrigger gunwale (ChLinkMateGeneric, all coords locked).
+    - name: arm_stbd_tip_lock
+      type: LOCK
+      body1: arm_stbd
+      body2: body2
+      location: [0.0, -13.0, 1.5]
+
+    - name: arm_port_tip_lock
+      type: LOCK
+      body1: arm_port
+      body2: body3
+      location: [0.0, 13.0, 1.5]

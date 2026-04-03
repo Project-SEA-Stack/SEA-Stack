@@ -1,0 +1,5 @@
+model_file: 5sa_bimodal.model.yaml
+simulation_file: 5sa_bimodal.simulation.yaml
+hydro_file: 5sa_bimodal.hydro.yaml
+
+output_directory: outputs

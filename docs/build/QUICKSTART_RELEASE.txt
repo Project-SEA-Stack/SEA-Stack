@@ -1,0 +1,30 @@
+SEA-Stack — quick start (release package)
+=========================================
+
+Main application:
+  bin\run_seastack.exe
+
+Example (from package root):
+  bin\run_seastack.exe demos\5sa\bimodal
+
+Add --nogui to run without the 3D window.
+
+Optional executables (if shipped in this build):
+  bin\standalone_controller.exe  — small PTO/control example (no Chrono)
+  bin\demo_sphere_decay.exe    — short C++ Chrono demo (when demos were enabled at build time)
+
+Verify install (needs Python 3.10+ and pip packages from tests\requirements.txt):
+  Windows:  tests\RUN-TESTS.ps1
+  macOS/Linux:  ./tests/RUN-TESTS.sh
+
+Layout and outputs:
+  See the SEA-Stack repository under docs/build/ (PACKAGE_LAYOUT.md, RUNTIME_OUTPUT.md).
+
+macOS troubleshooting (packaged build diverges or NaNs while Windows passes):
+  Compare this ZIP against a Release build from source on the same machine:
+  use otool -L on bin/run_seastack and lib/*.dylib, confirm bundled libraries load
+  (not mixed system copies), and check OpenMP/BLAS linkage. Release packaging
+  verification after install: scripts/verify_release_install_prefix.py
+
+Support (source builds):
+  From a repo checkout, run:  scripts\windows\build.ps1 -Doctor

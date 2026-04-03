@@ -1,0 +1,22 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/rm3.h5
+
+    - name: body2
+      h5_file: ../assets/hydroData/rm3.h5
+
+  waves:
+    type: irregular
+    eta_file: eta_rm3_mooring.txt
+    depth: 50.0
+    ramp_duration: 40.0
+    ramp_type: cosine
+
+  excitation:
+    truncation_time: 20.0
+
+  moordyn:
+    enabled: true
+    input_file: ../assets/mooring/lines_rm3.txt
+    bodies: [body2]

@@ -1,0 +1,34 @@
+@PACKAGE_INIT@
+
+# SEAStackConfig.cmake — find_package(SEAStack) support
+#
+# Imported targets:
+#   SEAStack::Core            (header-only, Eigen)
+#   SEAStack::Hydro           (static, depends on Core + Infra)
+#   SEAStack::Infra           (static, no external deps)
+#   SEAStack::PTO             (static, depends on Core)
+#   SEAStack::Control         (header-only, depends on Core)
+#   SEAStack::HydroIO         (static, depends on Hydro + HDF5)    [optional]
+#   SEAStack::Mooring         (static, depends on Core + MoorDyn)  [optional]
+#   SEAStack::ChronoAdapter   (static, depends on Hydro + Chrono)  [optional]
+#
+# Usage:
+#   find_package(SEAStack REQUIRED)
+#   target_link_libraries(my_target PRIVATE SEAStack::Hydro)
+
+include(CMakeFindDependencyMacro)
+
+# Core requires Eigen
+find_dependency(Eigen3)
+
+# Hydro optionally uses OpenMP
+find_dependency(OpenMP QUIET)
+
+# HydroIO requires HDF5 (only needed if HydroIO was installed)
+if(@SEASTACK_INSTALL_HYDRO_IO@)
+    find_dependency(HDF5 QUIET)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/SEAStackTargets.cmake")
+
+check_required_components(SEAStack)

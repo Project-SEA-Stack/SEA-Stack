@@ -1,0 +1,23 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/f3of.h5
+    - name: body2
+      h5_file: ../assets/hydroData/f3of.h5
+    - name: body3
+      h5_file: ../assets/hydroData/f3of.h5
+
+  waves:
+    type: still
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg                     # sg | moving_average
+      window_length: 5             # odd >= 3
+    taper:
+      start_percent: 0.8           # start taper at 80% of RIRF length
+      end_percent: 1.0             # end taper at 100% of RIRF length
+      final_amplitude: 0.0         # final amplitude (0.0 = zero, 1.0 = no change)
+    diagnostics:
+      export_csv: true             # per-body CSV for representative channel (step,time,k_before,k_after)

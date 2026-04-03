@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "model": "oswec_rao_sweep",
+  "description": "OSWEC pitch RAO from WEC-Sim (16 wave periods, PTO damping = 0.0)",
+
+  "sources": [
+    {
+      "tool": "WEC-Sim",
+      "version": "unknown",
+      "raw_files": ["raw/RAO_dat.xlsx"],
+      "notes": "Sheet PTO_damping=0.0, RAO column = Pitch / wave_amplitude"
+    }
+  ],
+
+  "normalized_datasets": [
+    {
+      "file": "normalized/wecsim/pitch_rao.txt",
+      "format": "rao",
+      "quantity": "pitch_rao",
+      "units": {"omega": "rad/s", "pitch_rao": "rad/m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive pitch = bow up"
+    }
+  ]
+}

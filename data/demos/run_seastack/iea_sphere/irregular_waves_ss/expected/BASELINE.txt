@@ -1,0 +1,9 @@
+Packaged regression compares this case to expected/baseline.h5 (preferred by tests/regression/run_seastack/run_tests.py find_ref).
+
+If the solver or wave settings change, refresh the baseline from a trusted Release build:
+
+  python tests/regression/run_seastack/run_tests.py --sphere-irregular-ss --exe <path/to/run_seastack> --demos-dir <demos> --update-baseline
+
+Or copy the new outputs/results.*.h5 from irregular_waves_ss/outputs/ to this folder as baseline.h5.
+
+The repository tracks expected/baseline.h5 as the regression reference for RUN-TESTS.sh / run_tests.py.

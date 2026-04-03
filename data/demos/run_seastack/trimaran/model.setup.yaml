@@ -1,0 +1,5 @@
+model_file: rigid/trimaran_rigid.model.yaml
+simulation_file: rigid/trimaran_rigid.simulation.yaml
+hydro_file: rigid/trimaran_rigid.hydro.yaml
+
+output_directory: outputs

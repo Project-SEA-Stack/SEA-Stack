@@ -1,0 +1,5 @@
+model_file: wigley_damping.model.yaml
+simulation_file: wigley_damping.simulation.yaml
+hydro_file: wigley_damping.hydro.yaml
+
+output_directory: outputs

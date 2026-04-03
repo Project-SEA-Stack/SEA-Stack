@@ -1,0 +1,6 @@
+{
+    "ChronoDir": "C:/path/to/chrono-install/cmake",
+    "PythonRoot": "C:/Users/you/miniforge3/envs/chrono-build",
+    "HDF5Dir": "",
+    "Generator": ""
+}

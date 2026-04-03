@@ -1,0 +1,17 @@
+# SEA-Stack Verification Data
+# format: rao
+# source: inwave
+# model: sphere_rao_sweep
+# quantity: heave_rao
+# units: rad/s, m/m
+# columns: Omega(rad/s) HeaveRAO(m/m)
+2.094395e+00 7.754167e-02
+1.570796e+00 5.772468e-01
+1.427997e+00 9.337378e-01
+1.256637e+00 8.328480e-01
+1.047198e+00 7.160097e-01
+8.975979e-01 6.956376e-01
+7.853982e-01 6.918805e-01
+6.981317e-01 6.927512e-01
+6.283185e-01 6.966499e-01
+5.711987e-01 7.006445e-01

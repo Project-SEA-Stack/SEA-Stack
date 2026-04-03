@@ -1,0 +1,5 @@
+model_file: rm3_decay_nl.model.yaml
+simulation_file: rm3_decay_nl.simulation.yaml
+hydro_file: rm3_decay_nl.hydro.yaml
+
+output_directory: outputs

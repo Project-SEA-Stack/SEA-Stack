@@ -1,0 +1,97 @@
+chrono-version: 9.0
+
+# F3OF in irregular waves with surge station-keeping (TSDA to ground).
+# Layout and sea state align with demos/f3of/demo_f3of_irreg_waves.cpp (JONSWAP Hs/Tp/gamma, seed, ramp).
+
+model:
+  name: f3of_irregular_waves_model
+  angle_degrees: false
+
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1
+      location: [0.0, 0.0, -9.0]
+      mass: 1089825.0
+      fixed: false
+      inertia:
+        moments: [100000000.0, 76300000.0, 100000000.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/base.obj
+        color: [0.3, 0.1, 0.1]
+
+    - name: body2
+      location: [-12.5, 0.0, -5.5]
+      mass: 179250.0
+      fixed: false
+      inertia:
+        moments: [100000000.0, 1300000.0, 100000000.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/flap.obj
+        color: [0.3, 0.1, 0.6]
+
+    - name: body3
+      location: [12.5, 0.0, -5.5]
+      mass: 179250.0
+      fixed: false
+      inertia:
+        moments: [100000000.0, 1300000.0, 100000000.0]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+      visualization:
+        model_file: ../assets/geometry/flap.obj
+        color: [0.3, 0.6, 0.1]
+
+    - name: ground
+      location: [0.0, 0.0, -9.0]
+      mass: 999
+      fixed: true
+      inertia:
+        moments: [1, 1, 1]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+
+  joints:
+    - name: hinge_fore
+      type: REVOLUTE
+      body1: body1
+      body2: body2
+      location: [-12.5, 0.0, -9.0]
+      axis: [0, 1, 0]
+
+    - name: hinge_aft
+      type: REVOLUTE
+      body1: body1
+      body2: body3
+      location: [12.5, 0.0, -9.0]
+      axis: [0, 1, 0]
+
+  tsdas:
+    - name: surge_station_keeping
+      type: TSDA
+      body1: ground
+      body2: body1
+      point1: [0.0, 0.0, -9.0]
+      point2: [0.0, 0.0, -9.0]
+      spring_coefficient: 100000.0
+      damping_coefficient: 10000.0
+      free_length: 0.0
+      visualization:
+        type: SPRING
+        radius: 1.0
+        resolution: 36
+        turns: 12

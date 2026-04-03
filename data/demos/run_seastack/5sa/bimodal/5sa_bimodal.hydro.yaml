@@ -1,0 +1,60 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping: [0, 100000, 0, 500000, 0, 0]
+    - name: body2
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping: [0, 100000, 0, 500000, 0, 0]
+    - name: body3
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping: [0, 100000, 0, 500000, 0, 0]
+    - name: body4
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping: [0, 100000, 0, 500000, 0, 0]
+    - name: body5
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping: [0, 100000, 0, 500000, 0, 0]
+
+  # Bimodal sea state: swell along +X, wind sea from beam (90 deg).
+  waves:
+    type: irregular
+    ramp_duration: 60.0
+    discretization:
+      n_omega: 64
+      n_theta: 21
+    seed: 42
+    partitions:
+      - spectrum: jonswap
+        Hs: 2.0
+        Tp: 12.0
+        gamma: 2.5
+        direction: 0
+        spreading:
+          type: cos2s
+          s: 25
+      - spectrum: jonswap
+        Hs: 1.2
+        Tp: 6.0
+        gamma: 3.3
+        direction: 90
+        spreading:
+          type: cos2s
+          s: 8
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.9
+      end_percent: 1.0
+      final_amplitude: 0.0
+    diagnostics:
+      export_csv: true
+
+  moordyn:
+    enabled: true
+    input_file: mooring/lines_5sa.txt
+    bodies: [body1, body3]

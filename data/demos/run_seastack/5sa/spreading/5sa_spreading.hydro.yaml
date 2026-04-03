@@ -1,0 +1,64 @@
+hydrodynamics:
+  bodies:
+    # Surge/sway/heave/roll/pitch/yaw. Extra linear + quadratic damping below helps
+    # long (600s) directional-sea runs: oblique energy excites weakly radiatively-damped
+    # translational/rotational DOFs without replacing radiation from the H5 RIRF.
+    - name: body1
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
+    - name: body2
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
+    - name: body3
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
+    - name: body4
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
+    - name: body5
+      h5_file: ../assets/hydroData/5sa_directional.h5
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
+
+  waves:
+    type: irregular
+    height: 3.0
+    period: 10.0
+    direction: 0
+    spectrum: jonswap
+    gamma: 3.3
+    ramp_duration: 60.0
+    spreading:
+      type: cos2s
+      s: 12
+    discretization:
+      n_omega: 64
+      n_theta: 21
+    seed: 42
+
+  # Belt-and-suspenders: directional irregular must use frequency-domain excitation
+  # (auto also selects this when wave components span multiple headings).
+  excitation:
+    method: frequency_domain
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.9
+      end_percent: 1.0
+      final_amplitude: 0.0
+    diagnostics:
+      export_csv: true
+
+  # To isolate line dynamics vs wave/hydro: set enabled: false and re-run.
+  moordyn:
+    enabled: true
+    input_file: mooring/lines_5sa.txt
+    bodies: [body1, body3]

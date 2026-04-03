@@ -1,0 +1,24 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/oswec.h5
+    - name: body2
+      h5_file: ../assets/hydroData/oswec.h5
+
+  waves:
+    type: regular
+    height: 1.5
+    period: 7.0
+    direction: 0
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.85
+      end_percent: 1.0
+      final_amplitude: 0.0
+    diagnostics:
+      export_csv: true

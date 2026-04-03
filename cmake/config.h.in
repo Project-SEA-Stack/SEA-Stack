@@ -1,0 +1,19 @@
+#ifndef SEASTACK_CONFIG_H
+#define SEASTACK_CONFIG_H
+
+// If SEA-Stack was built with VSG support
+@SEASTACK_HAS_VSG@
+
+// If SEA-Stack was built with MoorDyn mooring support
+@SEASTACK_HAS_MOORDYN@
+
+// Path to SEA-Stack data directory (build-tree path for development).
+// At runtime the code prefers: (1) SEASTACK_DATA_DIR environment variable,
+// (2) exe-relative ../data (for packaged installs).  This hardcoded path is
+// only a last-resort fallback during development builds.
+@SEASTACK_DATA_DIR@
+
+// Path to Chrono data directory (same fallback caveat as above)
+@SEASTACK_CHRONO_DATA_DIR@
+
+#endif

@@ -1,0 +1,18 @@
+﻿# 5SA Power Matrix — minimal example
+#
+# Generates a coarse power matrix by sweeping Hs and Tp over the
+# 5SA spreading case.  All other settings use defaults.
+#
+# Usage:
+#   run_seastack --campaign 5sa_power_matrix.yaml
+
+kind: performance_matrix
+
+case: ../spreading/
+
+output:
+  summary_timeseries: true
+
+axes:
+  hs: [1.0, 2.0, 3.0]
+  tp: [6, 8, 10, 12]

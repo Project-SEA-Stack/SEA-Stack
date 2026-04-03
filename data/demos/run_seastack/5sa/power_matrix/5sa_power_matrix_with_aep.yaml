@@ -1,0 +1,31 @@
+# 5SA Power Matrix with AEP — standard example
+#
+# Sweeps a finer Hs/Tp grid, includes a scatter table for AEP,
+# and writes a CSV summary alongside the HDF5.
+#
+# Usage:
+#   run_seastack --campaign 5sa_power_matrix_with_aep.yaml
+
+kind: performance_matrix
+version: 1
+
+case:
+  directory: ../spreading/
+
+axes:
+  hs: [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5]
+  tp: [5, 6, 7, 8, 9, 10, 11, 12]
+
+filters:
+  steepness_max: 0.07
+
+scatter:
+  file: ./example_scatter.csv
+  hs_column: Hs
+  tp_column: Tp
+  weight_column: probability
+
+output:
+  directory: ./power_matrix_output/
+  csv: true
+  summary_timeseries: true

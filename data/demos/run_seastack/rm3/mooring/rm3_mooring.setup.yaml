@@ -1,0 +1,5 @@
+model_file: rm3_mooring.model.yaml
+simulation_file: rm3_mooring.simulation.yaml
+hydro_file: rm3_mooring.hydro.yaml
+
+output_directory: outputs

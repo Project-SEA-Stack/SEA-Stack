@@ -1,0 +1,3 @@
+model_file: f3of_irregular_waves.model.yaml
+simulation_file: f3of_irregular_waves.simulation.yaml
+hydro_file: f3of_irregular_waves.hydro.yaml
