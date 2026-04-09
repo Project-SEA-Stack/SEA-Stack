@@ -68,3 +68,8 @@ if(APPLE)
 elseif(UNIX)
     set_target_properties(run_seastack PROPERTIES INSTALL_RPATH "\$ORIGIN/../lib")
 endif()
+
+# POST_BUILD must run in this directory (same as add_executable(run_seastack)); macro from SeaStackWindowsPythonRuntime.cmake.
+if(WIN32)
+    seastack_windows_python_runtime_postbuild(run_seastack)
+endif()

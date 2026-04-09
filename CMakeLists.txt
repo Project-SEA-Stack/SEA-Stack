@@ -348,7 +348,6 @@ if(SEASTACK_ENABLE_CHRONO)
 
     if(SEASTACK_ENABLE_APPS)
         add_subdirectory(apps/seastack)
-        seastack_windows_python_runtime_postbuild(run_seastack)
     endif()
 endif()
 
