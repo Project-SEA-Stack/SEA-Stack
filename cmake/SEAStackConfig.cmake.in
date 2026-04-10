@@ -1,4 +1,4 @@
-@PACKAGE_INIT@
+﻿@PACKAGE_INIT@
 
 # SEAStackConfig.cmake — find_package(SEAStack) support
 #
@@ -15,18 +15,47 @@
 # Usage:
 #   find_package(SEAStack REQUIRED)
 #   target_link_libraries(my_target PRIVATE SEAStack::Hydro)
+#
+# The installed SEAStackTargets.cmake lists every library that was built and
+# exported. Optional targets pull in external packages (HDF5, MoorDyn, Chrono).
+# This file runs find_dependency for those externals when the corresponding
+# SEA-Stack library is present in the install, so consumers get clear dependency
+# errors instead of missing imported targets or misleading NOT FOUND messages.
+#
+# Limitation: all exported targets are still defined in one file; if your install
+# includes e.g. ChronoAdapter, find_package(SEAStack) loads Chrono even if you
+# only link SEAStack::Infra. A finer-grained export is a future packaging change.
 
 include(CMakeFindDependencyMacro)
 
-# Core requires Eigen
+# Core stack
 find_dependency(Eigen3)
 
 # Hydro optionally uses OpenMP
 find_dependency(OpenMP QUIET)
 
-# HydroIO requires HDF5 (only needed if HydroIO was installed)
+# Match libs/hydro_io/CMakeLists.txt: CONFIG package first, then FindHDF5 modules.
 if(@SEASTACK_INSTALL_HYDRO_IO@)
-    find_dependency(HDF5 QUIET)
+    find_package(HDF5 CONFIG QUIET)
+    if(NOT HDF5_FOUND)
+        find_dependency(HDF5 REQUIRED COMPONENTS CXX)
+    endif()
+endif()
+
+# MoorDyn is linked into the exported mooring target; CMake export checks MoorDyn::moordyn.
+if(@SEASTACK_INSTALL_MOORING@)
+    find_dependency(MoorDyn REQUIRED)
+endif()
+
+# Chrono adapter exposes Chrono::Chrono_* on its interface.
+if(@SEASTACK_INSTALL_CHRONO_ADAPTER@)
+    # vcpkg HDF5 CONFIG often omits tools; Chrono::Chrono_core may still list hdf5::hdf5_tools-shared.
+    if(TARGET hdf5::hdf5-shared AND NOT TARGET hdf5::hdf5_tools-shared)
+        add_library(hdf5::hdf5_tools-shared INTERFACE IMPORTED)
+        set_target_properties(hdf5::hdf5_tools-shared PROPERTIES
+            INTERFACE_LINK_LIBRARIES "hdf5::hdf5-shared")
+    endif()
+    find_dependency(Chrono REQUIRED CONFIG)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/SEAStackTargets.cmake")

@@ -52,6 +52,45 @@ Then build:
 cmake --build build --config Release
 ```
 
+### Windows: put transitive packages on `CMAKE_PREFIX_PATH`
+
+`SEAStackConfig.cmake` runs `find_dependency` for **Eigen3**, optional **HDF5**,
+**MoorDyn**, **Chrono**, etc., when those components are part of your installed
+SDK. Those dependencies are usually **not** vendored inside the SEA-Stack
+install prefix—they live where you built SEA-Stack (Chrono build tree, vcpkg,
+VSG install, …).
+
+For a **reproducible** configure (CI or a clean machine), set
+`CMAKE_PREFIX_PATH` to a **semicolon-separated** list (PowerShell) that
+includes:
+
+1. Your SEA-Stack **install prefix** (the directory that contains `lib/cmake/SEAStack`).
+2. The same extra roots you used when configuring SEA-Stack (e.g. Chrono’s
+   CMake package directory—parent of `ChronoConfig.cmake`, often
+   `.../build/cmake`—plus vcpkg `installed/<triplet>`, VSG prefix, etc.).
+
+You can copy values from the SEA-Stack **build** tree’s `CMakeCache.txt`
+(`Eigen3_DIR`, `Chrono_DIR`, `CMAKE_PREFIX_PATH`, …) into your downstream
+configure command or a small preset file.
+
+Example (adjust paths; PowerShell):
+
+```powershell
+cmake -B build -S . `
+  -DCMAKE_PREFIX_PATH="C:/path/to/SEA-Stack/build/install;C:/path/to/chrono/build/cmake;C:/path/to/vsg;C:/vcpkg/installed/x64-windows"
+cmake --build build --config Release
+```
+
+Using **only** `<install-prefix>` on `CMAKE_PREFIX_PATH` may still work if CMake
+finds dependencies via environment variables or a global package registry, but
+that is **not** portable—prefer an explicit list for team/CI workflows.
+
+Some Chrono builds print an Eigen “cannot be found” message when their
+`find_package(Eigen3 3.3 …)` disagrees with a newer vcpkg Eigen; generation may
+still succeed if `Eigen3::Eigen` was already provided by `find_dependency(Eigen3)`
+from `SEAStackConfig.cmake`. If configure fails, align `Eigen3_DIR` with the
+SEA-Stack build or use the Chrono/Eigen combination SEA-Stack was built against.
+
 ## Available targets
 
 After `find_package(SEAStack REQUIRED)`, the following imported targets are
