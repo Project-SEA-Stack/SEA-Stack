@@ -19,6 +19,39 @@ cmake --install build --config Release
 This places headers, static libraries, and `SEAStackConfig.cmake` under the
 install prefix (default: system prefix, or set with `-DCMAKE_INSTALL_PREFIX`).
 
+## Finding the package from CMake
+
+After `cmake --install`, `SEAStackConfig.cmake` is installed under
+`<CMAKE_INSTALL_PREFIX>/lib/cmake/SEAStack` (matching the project's CMake
+install rules). Tell CMake where to find the package in either of these ways:
+
+- Set **`SEAStack_DIR`** to the directory that **contains**
+  `SEAStackConfig.cmake` (that is, `<install-prefix>/lib/cmake/SEAStack`).
+- Or add **`<install-prefix>`** to **`CMAKE_PREFIX_PATH`**; CMake discovers the
+  package under `lib/cmake/SEAStack`.
+
+Use the same `<install-prefix>` you passed as `-DCMAKE_INSTALL_PREFIX` when
+installing SEA-Stack (or your platform's default install root if you did not
+set one).
+
+Typical configure:
+
+```bash
+cmake -B build -DSEAStack_DIR=<install-prefix>/lib/cmake/SEAStack
+```
+
+Alternatively:
+
+```bash
+cmake -B build -DCMAKE_PREFIX_PATH=<install-prefix>
+```
+
+Then build:
+
+```bash
+cmake --build build --config Release
+```
+
 ## Available targets
 
 After `find_package(SEAStack REQUIRED)`, the following imported targets are
@@ -37,6 +70,55 @@ available:
 
 HydroIO, Mooring, and ChronoAdapter are only available if they were enabled
 when SEA-Stack was built.
+
+## Pick a starting target
+
+Use the table above for full dependency detail. Quick guide:
+
+- **Empty project / verify SDK and CMake** — link `SEAStack::Infra` (see
+  [Empty skeleton project](#empty-skeleton-project) below).
+- **Hydrodynamics without HDF5** — link `SEAStack::Hydro` and build
+  `HydroData` yourself (see [Linking only Hydro (no HDF5)](#linking-only-hydro-no-hdf5)).
+- **HDF5 / BEMIO coefficients** — link `SEAStack::HydroIO`.
+- **PTO and header-only control** — link `SEAStack::PTO` and
+  `SEAStack::Control`.
+
+## Empty skeleton project
+
+Use this layout to confirm `find_package(SEAStack REQUIRED)` and your install
+prefix before adding hydro, HDF5, or PTO code. The sample `main` only returns
+0—no domain logic or external dependencies.
+
+### Directory layout
+
+```
+my_project/
+  CMakeLists.txt
+  main.cpp
+```
+
+### `CMakeLists.txt`
+
+```cmake
+cmake_minimum_required(VERSION 3.21)
+project(my_app LANGUAGES CXX)
+
+find_package(SEAStack REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE SEAStack::Infra)
+target_compile_features(my_app PRIVATE cxx_std_17)
+```
+
+### `main.cpp`
+
+```cpp
+int main() {
+    return 0;
+}
+```
+
+Configure and build using [Finding the package from CMake](#finding-the-package-from-cmake).
 
 ## Minimal example: standalone hydro evaluation
 
@@ -108,10 +190,9 @@ int main() {
 
 ### Build
 
-```bash
-cmake -B build -DSEAStack_DIR=/path/to/seastack/install/lib/cmake/SEAStack
-cmake --build build --config Release
-```
+Configure with `SEAStack_DIR` or `CMAKE_PREFIX_PATH` as in
+[Finding the package from CMake](#finding-the-package-from-cmake), then run
+`cmake --build` as shown there.
 
 ## Minimal example: PTO and Control only
 
@@ -147,6 +228,8 @@ int main() {
 }
 ```
 
+Configure and build using [Finding the package from CMake](#finding-the-package-from-cmake).
+
 ## Linking only Hydro (no HDF5)
 
 If you load hydrodynamic data through your own mechanism (not BEMIO HDF5),
@@ -157,21 +240,6 @@ target_link_libraries(my_app PRIVATE SEAStack::Hydro)
 ```
 
 This avoids the HDF5 dependency entirely.
-
-## Passing the install prefix
-
-If SEA-Stack is installed to a non-system location, tell CMake where to
-find it:
-
-```bash
-cmake -B build -DSEAStack_DIR=/path/to/seastack/lib/cmake/SEAStack
-```
-
-Or set `CMAKE_PREFIX_PATH`:
-
-```bash
-cmake -B build -DCMAKE_PREFIX_PATH=/path/to/seastack
-```
 
 ## SDK install vs runtime ZIP
 
@@ -185,6 +253,13 @@ See [PACKAGE_LAYOUT.md](../build/PACKAGE_LAYOUT.md) for the runtime ZIP
 structure.
 
 ## Further reading
+
+The [`examples/standalone_hydro/`](../../examples/standalone_hydro/) and
+[`examples/standalone_controller/`](../../examples/standalone_controller/)
+trees are built **inside** the SEA-Stack repository; their `CMakeLists.txt`
+files assume the superproject, not a standalone `find_package` snippet. For a
+**separate** directory or repository, start from the layouts in this guide; use
+those examples as reference for fuller source when needed.
 
 - [`examples/standalone_hydro/`](../../examples/standalone_hydro/) — complete
   runnable standalone hydro example

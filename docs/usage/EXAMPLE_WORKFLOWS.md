@@ -1,7 +1,10 @@
 # Example workflows
 
 Pointers to runnable examples in the SEA-Stack tree: standalone libraries,
-the full simulation app, and packaged demos.
+the full simulation app, and packaged demos. For a **separate** CMake project
+that links against an installed SDK, see
+[DOWNSTREAM_PROJECT.md](DOWNSTREAM_PROJECT.md).
+
 
 ## Standalone hydrodynamics
 
