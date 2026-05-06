@@ -42,6 +42,12 @@ void UI::SetMooringLineProvider(MooringVizProvider /*provider*/) {
     // Default (headless) UI does not render mooring lines.
 }
 
+void UI::SetMooringVisualizationRadii(double /*line_radius_m*/,
+                                      double /*endpoint_radius_m*/,
+                                      double /*node_marker_radius_m*/) {
+    // Default (headless) UI does not render mooring lines.
+}
+
 // -----------------------------------------------------------------------------
 
 GUI::GUI() {
@@ -76,4 +82,10 @@ void GUI::SetWaterGridExtent(double width, double length, double center_x, doubl
 
 void GUI::SetMooringLineProvider(MooringVizProvider provider) {
     pImpl->SetMooringLineProvider(std::move(provider));
+}
+
+void GUI::SetMooringVisualizationRadii(double line_radius_m,
+                                      double endpoint_radius_m,
+                                      double node_marker_radius_m) {
+    pImpl->SetMooringVisualizationRadii(line_radius_m, endpoint_radius_m, node_marker_radius_m);
 }

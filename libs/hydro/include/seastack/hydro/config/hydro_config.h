@@ -171,6 +171,10 @@ struct YAMLHydroData {
     bool moordyn_enabled = false;
     std::string moordyn_input_file;
     std::vector<std::string> moordyn_body_names;  // e.g. ["body1"]
+    /// Optional VSG mooring graphics (meters). Values < 0 mean “use SEA-Stack default”.
+    double moordyn_visualization_line_radius = -1.0;
+    double moordyn_visualization_endpoint_radius = -1.0;
+    double moordyn_visualization_node_marker_radius = -1.0;
 };
 
 }  // namespace seastack::hydro

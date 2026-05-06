@@ -153,6 +153,17 @@ void GUIImplVSG::SetMooringLineProvider(MooringVizProvider provider) {
     mooring_provider_ = std::move(provider);
 }
 
+void GUIImplVSG::SetMooringVisualizationRadii(double line_radius_m,
+                                              double endpoint_radius_m,
+                                              double node_marker_radius_m) {
+    mooring_viz_line_radius_request_ = line_radius_m;
+    mooring_viz_endpoint_radius_request_ = endpoint_radius_m;
+    mooring_viz_node_marker_radius_request_ = node_marker_radius_m;
+    if (mooring_viz_) {
+        mooring_viz_->SetVisualizationRadii(line_radius_m, endpoint_radius_m, node_marker_radius_m);
+    }
+}
+
 void GUIImplVSG::EnsureWaterSurface() {
     // Require both system and visual system to be valid.
     if (!system_ || !pVis) {
@@ -253,8 +264,12 @@ bool GUIImplVSG::IsRunning(double timestep) {
         if (!line_data.empty()) {
             if (!mooring_viz_)
                 mooring_viz_ = std::make_unique<MooringLinesViz>();
-            if (!mooring_viz_->IsInitializedFor(pVis.get()))
+            if (!mooring_viz_->IsInitializedFor(pVis.get())) {
+                mooring_viz_->SetVisualizationRadii(mooring_viz_line_radius_request_,
+                                                   mooring_viz_endpoint_radius_request_,
+                                                   mooring_viz_node_marker_radius_request_);
                 mooring_viz_->Initialize(pVis.get(), line_data, mooring_scene_group_);
+            }
 
             const bool color_on  = viewer_settings_ && viewer_settings_->show_mooring_colors;
             const bool range_lock = viewer_settings_ && viewer_settings_->mooring_range_locked;

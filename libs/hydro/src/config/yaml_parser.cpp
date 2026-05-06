@@ -865,6 +865,12 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                                 data.moordyn_body_names.push_back(token);
                             }
                         }
+                    } else if (key_lower == "visualization_line_radius") {
+                        data.moordyn_visualization_line_radius = ParseDouble(value, -1.0);
+                    } else if (key_lower == "visualization_endpoint_radius") {
+                        data.moordyn_visualization_endpoint_radius = ParseDouble(value, -1.0);
+                    } else if (key_lower == "visualization_node_marker_radius") {
+                        data.moordyn_visualization_node_marker_radius = ParseDouble(value, -1.0);
                     }
                 }
             }

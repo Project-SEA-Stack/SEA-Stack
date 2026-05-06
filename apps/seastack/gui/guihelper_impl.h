@@ -44,6 +44,9 @@ class GUIImpl {
     virtual void SetWaterGridExtent(double /*width*/, double /*length*/,
                                      double /*center_x*/, double /*center_y*/) {}
     virtual void SetMooringLineProvider(MooringVizProvider /*provider*/) {}
+    virtual void SetMooringVisualizationRadii(double /*line_radius_m*/,
+                                              double /*endpoint_radius_m*/,
+                                              double /*node_marker_radius_m*/) {}
 };
 
 #ifdef SEASTACK_HAVE_VSG
@@ -65,6 +68,9 @@ class GUIImplVSG : public GUIImpl {
     virtual void SetWaveModel(std::shared_ptr<seastack::hydro::WaveBase> wave) override;
     virtual void SetWaterGridExtent(double width, double length, double center_x, double center_y) override;
     virtual void SetMooringLineProvider(MooringVizProvider provider) override;
+    virtual void SetMooringVisualizationRadii(double line_radius_m,
+                                            double endpoint_radius_m,
+                                            double node_marker_radius_m) override;
 
   private:
     /// Ensure water surface is created (animated if wave model set, static otherwise).
@@ -83,6 +89,10 @@ class GUIImplVSG : public GUIImpl {
     MooringVizProvider mooring_provider_;
     std::unique_ptr<MooringLinesViz> mooring_viz_;
     vsg::ref_ptr<vsg::Group> mooring_scene_group_;
+
+    double mooring_viz_line_radius_request_ = -1.0;
+    double mooring_viz_endpoint_radius_request_ = -1.0;
+    double mooring_viz_node_marker_radius_request_ = -1.0;
 };
 #endif
 
