@@ -139,31 +139,57 @@ def load_data(path, bodies, fields, joints, tsdas):
             tsda_group = f["results/model/tsdas"]
             all_tsdas = [k for k in tsda_group.keys() if k != "names"]
 
-            selected_tsdas = all_tsdas if tsdas is None else tsdas
+            use_total = tsdas is not None and "all" in tsdas
 
-            for name in selected_tsdas:
+            if use_total:
+                total_energy = None
+                total_power = None
 
-                if name not in tsda_group:
-                    continue
+                for name in all_tsdas:
+                    tsda = tsda_group[name]
 
-                tsda = tsda_group[name]
-                key = f"tsda_{name}"
+                    if "energy" in fields and "absorbed_energy" in tsda:
+                        e = tsda["absorbed_energy"][:]
+                        total_energy = e if total_energy is None else total_energy + e
 
-                data[key] = {}
+                    if "power" in fields and "absorbed_power" in tsda:
+                        p = tsda["absorbed_power"][:]
+                        total_power = p if total_power is None else total_power + p
 
-                for field in fields:
+                data["TSDA_total"] = {}
 
-                    if field == "energy":
-                        data[key][field] = tsda["absorbed_energy"][:]
+                if total_energy is not None:
+                    data["TSDA_total"]["energy"] = total_energy
 
-                    elif field == "power":
-                        data[key][field] = tsda["absorbed_power"][:]
+                if total_power is not None:
+                    data["TSDA_total"]["power"] = total_power
 
-                    elif field in TSDA_MAP:
-                        h5name = TSDA_MAP[field]
+            else:
+                selected_tsdas = all_tsdas if tsdas is None else tsdas
 
-                        if h5name in tsda:
-                            data[key][field] = tsda[h5name][:]
+                for name in selected_tsdas:
+
+                    if name not in tsda_group:
+                        continue
+
+                    tsda = tsda_group[name]
+                    key = f"tsda_{name}"
+
+                    data[key] = {}
+
+                    for field in fields:
+
+                        if field == "energy":
+                            data[key][field] = tsda["absorbed_energy"][:]
+
+                        elif field == "power":
+                            data[key][field] = tsda["absorbed_power"][:]
+
+                        elif field in TSDA_MAP:
+                            h5name = TSDA_MAP[field]
+
+                            if h5name in tsda:
+                                data[key][field] = tsda[h5name][:]
 
     return time, data
 
@@ -276,12 +302,18 @@ def main():
     time, data = load_data(args.path, args.bodies, args.field, args.joints, args.tsdas)
     plot_data(time, data, args.field, args.dof, args.joints)
 
-    if "energy" in args.field and "TSDA_total" in data:
-        total_energy = data["TSDA_total"]["energy"][-1]
-        print(f"Total absorbed energy: {total_energy:.3f} J")
+    if "TSDA_total" in data:
+        if "energy" in data["TSDA_total"]:
+            total_energy = data["TSDA_total"]["energy"][-1]
+            print(f"\nTotal absorbed energy (all TSDAs): {total_energy:.3f} J")
 
+        if "power" in data["TSDA_total"]:
+            power = data["TSDA_total"]["power"]
+            avg_power = power.mean()
+            peak_power = power.max()
 
-
+            print(f"Average power (all TSDAs): {avg_power:.3f} W")
+            print(f"Peak power (all TSDAs): {peak_power:.3f} W")
 if __name__ == "__main__":
     main()
 
