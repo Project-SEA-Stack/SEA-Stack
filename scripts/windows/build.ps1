@@ -227,6 +227,39 @@ function Get-CMakeCacheVariable {
 }
 
 # Infer VSG DLL directory from ChronoConfig.cmake vsg_DIR when CMake did not set VSG_DLL_DIR.
+function Write-SeaStackChronoParsersPythonDllCheck {
+    param(
+        [Parameter(Mandatory)][string]$BinDir,
+        [Parameter(Mandatory)][string]$DiagLogPath
+    )
+    $parsers = Join-Path $BinDir 'Chrono_parsers.dll'
+    if (-not (Test-Path -LiteralPath $parsers)) {
+        return
+    }
+    $dumpbinCmd = Get-Command dumpbin -ErrorAction SilentlyContinue
+    if (-not $dumpbinCmd) {
+        Write-Detail 'dumpbin not on PATH; skipping Chrono_parsers Python import check'
+        Add-SeaStackDiagLog -Path $DiagLogPath -Line 'Chrono_parsers Python check skipped (no dumpbin)'
+        return
+    }
+    $raw = & dumpbin /nologo /dependents $parsers 2>&1
+    $imp = $null
+    foreach ($line in $raw) {
+        if ([string]$line -match '(?i)\b(python\d{2,}\.dll)\b') {
+            $imp = $Matches[1].ToLowerInvariant()
+            break
+        }
+    }
+    if (-not $imp) {
+        return
+    }
+    Add-SeaStackDiagLog -Path $DiagLogPath -Line "Chrono_parsers.dll imports: $imp"
+    $targetPath = Join-Path $BinDir $imp
+    if (-not (Test-Path -LiteralPath $targetPath)) {
+        Write-Warn "Chrono_parsers.dll imports $imp but that file is not in the same folder as the app ($BinDir). Loader may fail (0xC0000135)."
+    }
+}
+
 function Resolve-SeaStackVsgDllDirFromChronoVsgDir {
     param([string]$VsgCmakeDir)
     if ([string]::IsNullOrWhiteSpace($VsgCmakeDir)) {
@@ -639,7 +672,7 @@ if ($useChrono) {
     Write-OK ('Chrono_DIR: ' + $ChronoDir)
 
     if ([string]::IsNullOrWhiteSpace($PythonRoot)) {
-        Write-Warn 'PythonRoot not set in build-config.json: CMake may not find the Python runtime DLL for packaging. Set it to the same conda/env used when Chrono was built with PyChrono, or run_seastack may fail to start (0xC0000135) on machines without that DLL on PATH.'
+        Write-Warn 'PythonRoot not set in build-config.json: CMake may not find the Python runtime DLL for packaging. Set it to the same conda/env Python that Chrono''s Parsers module was linked against (libpython), or run_seastack may fail to start (0xC0000135) on machines without that DLL on PATH.'
     }
 
     Write-SeaStackStep "Chrono pre-configure hints (optional)"
@@ -955,56 +988,7 @@ if ($useChrono -and $chronoContent) {
     }
 }
 
-# Chrono_parsers may import python3xx.dll (not shipped in Chrono's bin/). Copy
-# next to run_seastack for local bin\<Config> runs; CPack also installs via CMake.
-if ($useChrono -and $PythonRoot -and (Test-Path -LiteralPath $binPath)) {
-    $pyExe = Join-Path $PythonRoot "python.exe"
-    if (Test-Path -LiteralPath $pyExe) {
-        $pyVerOut = & $pyExe -c "import sys; print(sys.version_info.major, sys.version_info.minor)" 2>$null
-        if ($pyVerOut -match '^(\d+)\s+(\d+)') {
-            $dllName = "python{0}{1}.dll" -f $Matches[1], $Matches[2]
-            $pyDllSrc = $null
-            foreach ($cand in @(
-                    (Join-Path $PythonRoot $dllName),
-                    (Join-Path $PythonRoot "DLLs\$dllName")
-                )) {
-                if (Test-Path -LiteralPath $cand) {
-                    $pyDllSrc = $cand
-                    break
-                }
-            }
-            if ($pyDllSrc) {
-                Copy-Item -LiteralPath $pyDllSrc -Destination (Join-Path $binPath $dllName) -Force
-                Write-OK "Copied $dllName for Chrono_parsers load-time dependency"
-            } else {
-                Write-Warn "Could not find $dllName under PythonRoot (local run_seastack may need Python on PATH)"
-            }
-            $py3dll = Join-Path $PythonRoot "python3.dll"
-            if (Test-Path -LiteralPath $py3dll) {
-                Copy-Item -LiteralPath $py3dll -Destination (Join-Path $binPath "python3.dll") -Force
-                Write-OK "Copied python3.dll (Python stable ABI shim)"
-            }
-            $condaLibBin = Join-Path $PythonRoot "Library\bin"
-            if (Test-Path -LiteralPath $condaLibBin) {
-                $zlibDll = Join-Path $condaLibBin "zlib.dll"
-                if (Test-Path -LiteralPath $zlibDll) {
-                    Copy-Item -LiteralPath $zlibDll -Destination (Join-Path $binPath "zlib.dll") -Force
-                    Write-OK "Copied zlib.dll (python314.dll import; distinct from zlib1.dll from HDF5)"
-                }
-                $n = 0
-                foreach ($pat in @('libssl-*.dll', 'libcrypto-*.dll')) {
-                    Get-ChildItem -Path $condaLibBin -Filter $pat -ErrorAction SilentlyContinue | ForEach-Object {
-                        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $binPath $_.Name) -Force
-                        $n++
-                    }
-                }
-                if ($n -gt 0) {
-                    Write-OK "Copied $n Conda OpenSSL DLL(s) from Library\bin (python314 may load them)"
-                }
-            }
-        }
-    }
-}
+# Python runtime for Chrono_parsers is staged by CMake (install + POST_BUILD on run_seastack); see CMakeLists.txt.
 
 # =============================================================================
 # Verify outputs
@@ -1026,6 +1010,7 @@ if (Test-Path -LiteralPath $binDir) {
             $size = [math]::Round((Get-Item -LiteralPath $app).Length / 1MB, 1)
             Write-OK ('run_seastack.exe (' + $size + ' MB)')
         }
+        Write-SeaStackChronoParsersPythonDllCheck -BinDir $binDir -DiagLogPath $diagLogPath
     }
 
     # standalone_controller is an SDK-only install target (not shipped in the runtime ZIP).
@@ -1103,24 +1088,16 @@ if ($Package) {
             $binDirForSmoke = Join-Path $prefix "bin"
             $oldSmokePath = $env:PATH
             try {
-                # Loader searches the exe directory first; optional conda Library\bin for DLLs CMake did not copy.
-                $smokePathChunks = @($binDirForSmoke)
-                if ($PythonRoot -and -not [string]::IsNullOrWhiteSpace([string]$PythonRoot)) {
-                    $smokePathChunks += [string]$PythonRoot
-                    $condaLibBinSmoke = Join-Path $PythonRoot 'Library\bin'
-                    if (Test-Path -LiteralPath $condaLibBinSmoke) {
-                        $smokePathChunks += $condaLibBinSmoke
-                    }
-                }
-                $smokePathChunks += $oldSmokePath
-                $env:PATH = $smokePathChunks -join ';'
+                # Loader uses the staged bin\ folder first (must contain pythonNN.dll peers installed by CMake).
+                $env:PATH = ($binDirForSmoke + ';' + $oldSmokePath)
+                Write-SeaStackChronoParsersPythonDllCheck -BinDir $binDirForSmoke -DiagLogPath $diagLogPath
                 $p = Start-Process -FilePath $stagedExe -ArgumentList @('--help') -WorkingDirectory $prefix -Wait -PassThru -NoNewWindow
             } finally {
                 $env:PATH = $oldSmokePath
             }
             if ($null -eq $p.ExitCode -or $p.ExitCode -ne 0) {
                 $ec = $p.ExitCode
-                Write-Fail "Staged run_seastack.exe --help failed (exit $ec). Ensure PythonRoot matches Chrono's PyChrono env; conda builds need python314.dll plus OpenSSL DLLs from Library\bin (now installed by CMake when found). Reconfigure and reinstall."
+                Write-Fail "Staged run_seastack.exe --help failed (exit $ec). Reconfigure with PythonRoot matching the Python used for Chrono Parsers (or -DPython3_ROOT_DIR); CMake stages the pythonNN.dll Chrono_parsers imports. Use -Clean if CMake cached the wrong Python."
                 exit 1
             }
             Write-OK "Staged run_seastack.exe starts (--help)"

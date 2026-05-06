@@ -204,57 +204,7 @@ if(SEASTACK_ENABLE_CHRONO)
     # by chrono-config.cmake and works for both script and IDE builds.
     if(WIN32)
         add_CHRONO_DLLS_copy_command()
-        # Chrono_parsers may link python3xx.dll (PyChrono); it is not in Chrono's bin/.
-        find_package(Python3 COMPONENTS Interpreter QUIET)
-        set(SEASTACK_WINDOWS_PYTHON_DLL "")
-        set(SEASTACK_WINDOWS_PYTHON_EXTRA_DLLS "")
-        if(Python3_Interpreter_FOUND)
-            get_filename_component(_seastack_py_exe_dir "${Python3_EXECUTABLE}" DIRECTORY)
-            set(_seastack_py_dll_name "python${Python3_VERSION_MAJOR}${Python3_VERSION_MINOR}.dll")
-            foreach(_seastack_py_sub IN ITEMS "" "DLLs")
-                if(_seastack_py_sub STREQUAL "")
-                    set(_seastack_py_candidate "${_seastack_py_exe_dir}/${_seastack_py_dll_name}")
-                else()
-                    set(_seastack_py_candidate "${_seastack_py_exe_dir}/${_seastack_py_sub}/${_seastack_py_dll_name}")
-                endif()
-                if(EXISTS "${_seastack_py_candidate}")
-                    set(SEASTACK_WINDOWS_PYTHON_DLL "${_seastack_py_candidate}")
-                    break()
-                endif()
-            endforeach()
-            # Stable ABI shim (some layouts); conda/python314 often still needs OpenSSL below.
-            if(EXISTS "${_seastack_py_exe_dir}/python3.dll")
-                list(APPEND SEASTACK_WINDOWS_PYTHON_EXTRA_DLLS "${_seastack_py_exe_dir}/python3.dll")
-            endif()
-            # Conda/Miniforge: python3xx.dll imports zlib.dll by name (not zlib1.dll from HDF5);
-            # libssl/libcrypto also live under Library/bin.
-            set(_seastack_conda_libbin "${_seastack_py_exe_dir}/Library/bin")
-            if(EXISTS "${_seastack_conda_libbin}")
-                if(EXISTS "${_seastack_conda_libbin}/zlib.dll")
-                    list(APPEND SEASTACK_WINDOWS_PYTHON_EXTRA_DLLS "${_seastack_conda_libbin}/zlib.dll")
-                endif()
-                file(GLOB _seastack_conda_ssl
-                    "${_seastack_conda_libbin}/libssl-*.dll"
-                    "${_seastack_conda_libbin}/libcrypto-*.dll")
-                list(APPEND SEASTACK_WINDOWS_PYTHON_EXTRA_DLLS ${_seastack_conda_ssl})
-            endif()
-            if(SEASTACK_WINDOWS_PYTHON_EXTRA_DLLS)
-                list(REMOVE_DUPLICATES SEASTACK_WINDOWS_PYTHON_EXTRA_DLLS)
-                message(STATUS "Python extra DLLs for packaging (zlib/OpenSSL etc.): ${SEASTACK_WINDOWS_PYTHON_EXTRA_DLLS}")
-            endif()
-            if(SEASTACK_WINDOWS_PYTHON_DLL)
-                message(STATUS "Python runtime DLL for packaging: ${SEASTACK_WINDOWS_PYTHON_DLL}")
-            else()
-                message(WARNING
-                    "Python interpreter found (${Python3_EXECUTABLE}) but ${_seastack_py_dll_name} not beside it or in DLLs/. "
-                    "Packaged/naked run_seastack.exe may fail (0xC0000135) if Chrono_parsers links Python. "
-                    "Use the same PythonRoot in build-config.json as Chrono's PyChrono build, or rebuild Chrono without Python in parsers.")
-            endif()
-        else()
-            message(WARNING
-                "Python3 interpreter not found at configure time. If Chrono_parsers.dll imports python*.dll, "
-                "add Python to PATH or pass -DPython3_ROOT_DIR (see build-config.json PythonRoot) so the matching DLL can be installed.")
-        endif()
+        include("${CMAKE_SOURCE_DIR}/cmake/SeaStackWindowsPythonRuntime.cmake")
     endif()
 endif()
 
@@ -640,7 +590,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         endif()
     endif()
 
-    # Python runtime DLL required when Chrono_parsers is built with PyChrono (not in Chrono bin/).
+    # libpython (pythonNN.dll) when Chrono_parsers imports it — not shipped next to Chrono DLLs.
     if(DEFINED SEASTACK_WINDOWS_PYTHON_DLL AND SEASTACK_WINDOWS_PYTHON_DLL)
         install(FILES "${SEASTACK_WINDOWS_PYTHON_DLL}" DESTINATION bin COMPONENT runtime)
     endif()
