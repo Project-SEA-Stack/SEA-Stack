@@ -2,11 +2,16 @@
 import h5py
 import matplotlib.pyplot as plt
 import argparse
+import numpy as np
+from pathlib import Path
+import re
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("path", help="Define path to HDF5 file")
+    parser.add_argument("path", nargs="?", default=None,
+                        help="Define path to HDF5 file")
 
     parser.add_argument("--bodies", nargs="*", type=int,
                         help="Body number(s) (default: all)")
@@ -29,6 +34,14 @@ def parse_args():
     
     parser.add_argument("--list", action="store_true",
                     help="List available joint and TSDA force outputs")
+    
+    parser.add_argument(
+        "--mooring", nargs="+",
+        help="Mooring mode: <field> [index]")
+    
+    parser.add_argument(
+        "--mooring_path", type=str, default=None,
+        help="Path to mooring folder (default: same location as outputs)")
 
     return parser.parse_args()
 
@@ -291,29 +304,185 @@ def list_outputs(path):
         print()
 
 
+
+
+def load_mooring(folder, field, index=None):
+    """
+    folder: mooring directory
+    lines: list[int] or None or ["all"]
+    bodies: list[int] or None
+    fields: ["tension", "force", "moment"]
+    """
+
+    files = list(Path(folder).glob("*.out"))
+
+    line_files = sorted(Path(folder).glob("*Line*.out"))
+    body_files = sorted(Path(folder).glob("*Body*.out"))
+
+    # ---------------- LINE TENSION ----------------
+    if field == "tension":
+        data= {}
+        for f in line_files:
+
+            match = re.search(r"_Line(\d+)", f.stem)
+
+            if not match:
+                continue
+
+            line_id = int(match.group(1))
+
+            if index is not None and line_id != index:
+                continue
+
+            with open(f) as file:
+                header = file.readline().split()
+
+            raw = np.loadtxt(f, skiprows=1)
+
+            time = raw[:, 0]
+
+            tension_cols = [i for i, h in enumerate(header) if "Te" in h]
+
+            if not tension_cols:
+                continue
+
+            max_tension = raw[:, tension_cols].max(axis=1)
+
+            yield line_id, time, max_tension
+            
+
+    elif field in ["force", "moment"]:
+
+        for f in body_files:
+
+            match = re.search(r"Body(\d+)", f.stem)
+            body_id = int(match.group(1)) if match else f.stem
+
+            if index is not None and body_id != index:
+                continue
+
+            raw = np.loadtxt(f, skiprows=1)
+            time = raw[:, 0]
+
+            if field == "force":
+                data = raw[:, 1:4]
+            else:
+                data = raw[:, 4:7]
+
+            yield body_id, time, data, field
+    return data
+
+
+
+def plot_mooring(results, field):
+
+    if field in ["force", "moment"]:
+        labels_map = {"force": ["Fx", "Fy", "Fz"], "moment": ["Mx", "My", "Mz"]}
+        comp_labels = labels_map[field]
+        ylabel = {"force": "Force [N]", "moment": "Moment [N·m]"}[field]
+        
+        # Plot each body on a separate figure with all components
+        for result in results:
+            id_, t, y, f = result
+            if y.ndim == 2:
+                plt.figure()
+                plt.plot(t, y[:, 0], label=comp_labels[0])
+                plt.plot(t, y[:, 1], label=comp_labels[1])
+                plt.plot(t, y[:, 2], label=comp_labels[2])
+                plt.title(f"Mooring {field} (Body {id_})")
+                plt.xlabel("Time [s]")
+                plt.ylabel(ylabel)
+                plt.legend()
+                plt.grid(True)
+                plt.show()
+    else:
+        # Original tension plotting
+        plt.figure()
+        for result in results:
+            id_, t, y = result
+            plt.plot(t, y, label=f"Line {id_}")
+        plt.title(f"Mooring {field}")
+        plt.xlabel("Time [s]")
+        ylabel = "Tension [N]"
+        plt.ylabel(ylabel)
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+
 def main():
     args = parse_args()
+
     if args.list:
+        if args.path is None:
+            raise ValueError("You must provide a path to an HDF5 file to list outputs.")
         list_outputs(args.path)
         return
 
-    if not args.path:
-        raise ValueError("You must provide a path to an HDF5 file.")
-    time, data = load_data(args.path, args.bodies, args.field, args.joints, args.tsdas)
-    plot_data(time, data, args.field, args.dof, args.joints)
+    run_h5 = any([
+        args.field != ["position"],
+        args.bodies is not None,
+        args.joints is not None,
+        args.tsdas is not None
+    ])
 
-    if "TSDA_total" in data:
-        if "energy" in data["TSDA_total"]:
-            total_energy = data["TSDA_total"]["energy"][-1]
-            print(f"\nTotal absorbed energy (all TSDAs): {total_energy:.3f} J")
+    run_mooring = args.mooring is not None
 
-        if "power" in data["TSDA_total"]:
-            power = data["TSDA_total"]["power"]
-            avg_power = power.mean()
-            peak_power = power.max()
+    # ---------------- HDF5 ----------------
+    if run_h5:
+        time, data = load_data(
+            args.path,
+            args.bodies,
+            args.field,
+            args.joints,
+            args.tsdas
+        )
 
-            print(f"Average power (all TSDAs): {avg_power:.3f} W")
-            print(f"Peak power (all TSDAs): {peak_power:.3f} W")
+        plot_data(time, data, args.field, args.dof, args.joints)
+
+        if "TSDA_total" in data:
+            if "energy" in data["TSDA_total"]:
+                total_energy = data["TSDA_total"]["energy"][-1]
+                print(f"\nTotal absorbed energy (all TSDAs): {total_energy:.3f} J")
+
+            if "power" in data["TSDA_total"]:
+                power = data["TSDA_total"]["power"]
+                print(f"Average power (all TSDAs): {power.mean():.3f} W")
+                print(f"Peak power (all TSDAs): {power.max():.3f} W")
+
+    # ---------------- MOORING ----------------
+    if run_mooring:
+        field = args.mooring[0]
+        index = args.mooring[1] if len(args.mooring) > 1 else None
+
+        if index is not None:
+            index = int(index)
+
+        if args.mooring_path:
+            folder = Path(args.mooring_path).resolve()
+        else:
+            if args.path:
+                run_dir = Path(args.path).resolve().parents[1]
+            else:
+                run_dir = Path.cwd().resolve()
+            folder = run_dir / "mooring"
+
+        mooring_data = list(load_mooring(folder, field=field, index=index))
+        plot_mooring(mooring_data, field)
+
+    # ---------------- DEFAULT ----------------
+    if not run_h5 and not run_mooring:
+        time, data = load_data(
+            args.path,
+            bodies=None,
+            fields=["position"],
+            joints=None,
+            tsdas=None
+        )
+
+        plot_data(time, data, ["position"], ["heave"], None)
+
+
 if __name__ == "__main__":
     main()
 
