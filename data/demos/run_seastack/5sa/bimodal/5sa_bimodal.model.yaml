@@ -1,4 +1,4 @@
-chrono-version: 9.0
+chrono-version: 10.0
 
 model:
   name: "5SA_bimodal_model"
@@ -11,11 +11,11 @@ model:
   bodies:
     # Segment 1 (Nose)
     - name: body1
-      location: [18.0, 0.0, -1.8]
-      mass: 438293
+      location: [18.0, 0.0, -0.259199]
+      mass: 270000
       fixed: false
       inertia:
-        moments: [876585.0, 47773884.0, 47773884.0]
+        moments: [540000.0, 29430000.0, 29430000.0]
         products: [0, 0, 0]
       com:
         location: [0, 0, -0.2]
@@ -26,11 +26,11 @@ model:
 
     # Segment 2
     - name: body2
-      location: [54.0, 0.0, -1.8]
-      mass: 438293
+      location: [54.0, 0.0, -0.259199]
+      mass: 270000
       fixed: false
       inertia:
-        moments: [876585.0, 47773884.0, 47773884.0]
+        moments: [540000.0, 29430000.0, 29430000.0]
         products: [0, 0, 0]
       com:
         location: [0, 0, -0.2]
@@ -41,11 +41,11 @@ model:
 
     # Segment 3 (Middle)
     - name: body3
-      location: [90.0, 0.0, -1.8]
-      mass: 438293
+      location: [90.0, 0.0, -0.259199]
+      mass: 270000
       fixed: false
       inertia:
-        moments: [876585.0, 47773884.0, 47773884.0]
+        moments: [540000.0, 29430000.0, 29430000.0]
         products: [0, 0, 0]
       com:
         location: [0, 0, -0.2]
@@ -56,11 +56,11 @@ model:
 
     # Segment 4
     - name: body4
-      location: [126.0, 0.0, -1.8]
-      mass: 438293
+      location: [126.0, 0.0, -0.259199]
+      mass: 270000
       fixed: false
       inertia:
-        moments: [876585.0, 47773884.0, 47773884.0]
+        moments: [540000.0, 29430000.0, 29430000.0]
         products: [0, 0, 0]
       com:
         location: [0, 0, -0.2]
@@ -71,11 +71,11 @@ model:
 
     # Segment 5 (Tail)
     - name: body5
-      location: [162.0, 0.0, -1.8]
-      mass: 438293
+      location: [162.0, 0.0, -0.259199]
+      mass: 270000
       fixed: false
       inertia:
-        moments: [876585.0, 47773884.0, 47773884.0]
+        moments: [540000.0, 29430000.0, 29430000.0]
         products: [0, 0, 0]
       com:
         location: [0, 0, -0.2]
@@ -101,7 +101,7 @@ model:
       type: UNIVERSAL
       body1: body1
       body2: body2
-      location: [36.0, 0.0, -1.8]
+      location: [36.0, 0.0, -0.259199]
       axis1: [0, 1, 0]
       axis2: [0, 0, 1]
 
@@ -109,7 +109,7 @@ model:
       type: UNIVERSAL
       body1: body2
       body2: body3
-      location: [72.0, 0.0, -1.8]
+      location: [72.0, 0.0, -0.259199]
       axis1: [0, 1, 0]
       axis2: [0, 0, 1]
 
@@ -117,7 +117,7 @@ model:
       type: UNIVERSAL
       body1: body3
       body2: body4
-      location: [108.0, 0.0, -1.8]
+      location: [108.0, 0.0, -0.259199]
       axis1: [0, 1, 0]
       axis2: [0, 0, 1]
 
@@ -125,18 +125,24 @@ model:
       type: UNIVERSAL
       body1: body4
       body2: body5
-      location: [144.0, 0.0, -1.8]
+      location: [144.0, 0.0, -0.259199]
       axis1: [0, 1, 0]
       axis2: [0, 0, 1]
 
   tsdas:
+    # 4 hydraulic rams per joint in a cross pattern (top/bottom/port/starboard),
+    # arranged at 1.5 m offset from the joint axis, 1 m either side of the joint
+    # in x.  free_length = 2 m.  Moment arm = 1.5 m.
+    # Per-joint equivalent rotational damping (2 active rams per axis):
+    #   pitch ~ 2 * damping * 1.5^2,  yaw ~ 2 * damping * 1.5^2.
+
     # ---- Joint 1-2 (x = 36) ----
     - name: ram_12_top
       type: TSDA
       body1: body1
       body2: body2
-      point1: [35.0, 0.0, -0.3]
-      point2: [37.0, 0.0, -0.3]
+      point1: [35.0, 0.0, 1.240801]
+      point2: [37.0, 0.0, 1.240801]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -146,8 +152,8 @@ model:
       type: TSDA
       body1: body1
       body2: body2
-      point1: [35.0, 0.0, -3.3]
-      point2: [37.0, 0.0, -3.3]
+      point1: [35.0, 0.0, -1.759199]
+      point2: [37.0, 0.0, -1.759199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -157,8 +163,8 @@ model:
       type: TSDA
       body1: body1
       body2: body2
-      point1: [35.0, 1.5, -1.8]
-      point2: [37.0, 1.5, -1.8]
+      point1: [35.0, 1.5, -0.259199]
+      point2: [37.0, 1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -168,8 +174,8 @@ model:
       type: TSDA
       body1: body1
       body2: body2
-      point1: [35.0, -1.5, -1.8]
-      point2: [37.0, -1.5, -1.8]
+      point1: [35.0, -1.5, -0.259199]
+      point2: [37.0, -1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -180,8 +186,8 @@ model:
       type: TSDA
       body1: body2
       body2: body3
-      point1: [71.0, 0.0, -0.3]
-      point2: [73.0, 0.0, -0.3]
+      point1: [71.0, 0.0, 1.240801]
+      point2: [73.0, 0.0, 1.240801]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -191,8 +197,8 @@ model:
       type: TSDA
       body1: body2
       body2: body3
-      point1: [71.0, 0.0, -3.3]
-      point2: [73.0, 0.0, -3.3]
+      point1: [71.0, 0.0, -1.759199]
+      point2: [73.0, 0.0, -1.759199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -202,8 +208,8 @@ model:
       type: TSDA
       body1: body2
       body2: body3
-      point1: [71.0, 1.5, -1.8]
-      point2: [73.0, 1.5, -1.8]
+      point1: [71.0, 1.5, -0.259199]
+      point2: [73.0, 1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -213,8 +219,8 @@ model:
       type: TSDA
       body1: body2
       body2: body3
-      point1: [71.0, -1.5, -1.8]
-      point2: [73.0, -1.5, -1.8]
+      point1: [71.0, -1.5, -0.259199]
+      point2: [73.0, -1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -225,8 +231,8 @@ model:
       type: TSDA
       body1: body3
       body2: body4
-      point1: [107.0, 0.0, -0.3]
-      point2: [109.0, 0.0, -0.3]
+      point1: [107.0, 0.0, 1.240801]
+      point2: [109.0, 0.0, 1.240801]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -236,8 +242,8 @@ model:
       type: TSDA
       body1: body3
       body2: body4
-      point1: [107.0, 0.0, -3.3]
-      point2: [109.0, 0.0, -3.3]
+      point1: [107.0, 0.0, -1.759199]
+      point2: [109.0, 0.0, -1.759199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -247,8 +253,8 @@ model:
       type: TSDA
       body1: body3
       body2: body4
-      point1: [107.0, 1.5, -1.8]
-      point2: [109.0, 1.5, -1.8]
+      point1: [107.0, 1.5, -0.259199]
+      point2: [109.0, 1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -258,8 +264,8 @@ model:
       type: TSDA
       body1: body3
       body2: body4
-      point1: [107.0, -1.5, -1.8]
-      point2: [109.0, -1.5, -1.8]
+      point1: [107.0, -1.5, -0.259199]
+      point2: [109.0, -1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -270,8 +276,8 @@ model:
       type: TSDA
       body1: body4
       body2: body5
-      point1: [143.0, 0.0, -0.3]
-      point2: [145.0, 0.0, -0.3]
+      point1: [143.0, 0.0, 1.240801]
+      point2: [145.0, 0.0, 1.240801]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -281,8 +287,8 @@ model:
       type: TSDA
       body1: body4
       body2: body5
-      point1: [143.0, 0.0, -3.3]
-      point2: [145.0, 0.0, -3.3]
+      point1: [143.0, 0.0, -1.759199]
+      point2: [145.0, 0.0, -1.759199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -292,8 +298,8 @@ model:
       type: TSDA
       body1: body4
       body2: body5
-      point1: [143.0, 1.5, -1.8]
-      point2: [145.0, 1.5, -1.8]
+      point1: [143.0, 1.5, -0.259199]
+      point2: [145.0, 1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
@@ -303,8 +309,8 @@ model:
       type: TSDA
       body1: body4
       body2: body5
-      point1: [143.0, -1.5, -1.8]
-      point2: [145.0, -1.5, -1.8]
+      point1: [143.0, -1.5, -0.259199]
+      point2: [145.0, -1.5, -0.259199]
       spring_coefficient: 0
       damping_coefficient: 500000
       free_length: 2.0
