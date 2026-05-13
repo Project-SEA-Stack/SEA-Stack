@@ -144,8 +144,8 @@ model:
       body2: body2
       point1: [35.0, 0.0, 1.2449]
       point2: [37.0, 0.0, 1.2449]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -155,8 +155,8 @@ model:
       body2: body2
       point1: [35.0, 0.0, -1.7551]
       point2: [37.0, 0.0, -1.7551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -166,8 +166,8 @@ model:
       body2: body2
       point1: [35.0, 1.5, -0.2551]
       point2: [37.0, 1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -177,8 +177,8 @@ model:
       body2: body2
       point1: [35.0, -1.5, -0.2551]
       point2: [37.0, -1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -189,8 +189,8 @@ model:
       body2: body3
       point1: [71.0, 0.0, 1.2449]
       point2: [73.0, 0.0, 1.2449]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -200,8 +200,8 @@ model:
       body2: body3
       point1: [71.0, 0.0, -1.7551]
       point2: [73.0, 0.0, -1.7551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -211,8 +211,8 @@ model:
       body2: body3
       point1: [71.0, 1.5, -0.2551]
       point2: [73.0, 1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -222,8 +222,8 @@ model:
       body2: body3
       point1: [71.0, -1.5, -0.2551]
       point2: [73.0, -1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -234,8 +234,8 @@ model:
       body2: body4
       point1: [107.0, 0.0, 1.2449]
       point2: [109.0, 0.0, 1.2449]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -245,8 +245,8 @@ model:
       body2: body4
       point1: [107.0, 0.0, -1.7551]
       point2: [109.0, 0.0, -1.7551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -256,8 +256,8 @@ model:
       body2: body4
       point1: [107.0, 1.5, -0.2551]
       point2: [109.0, 1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -267,8 +267,8 @@ model:
       body2: body4
       point1: [107.0, -1.5, -0.2551]
       point2: [109.0, -1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -279,8 +279,8 @@ model:
       body2: body5
       point1: [143.0, 0.0, 1.2449]
       point2: [145.0, 0.0, 1.2449]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -290,8 +290,8 @@ model:
       body2: body5
       point1: [143.0, 0.0, -1.7551]
       point2: [145.0, 0.0, -1.7551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -301,8 +301,8 @@ model:
       body2: body5
       point1: [143.0, 1.5, -0.2551]
       point2: [145.0, 1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
 
@@ -312,7 +312,7 @@ model:
       body2: body5
       point1: [143.0, -1.5, -0.2551]
       point2: [145.0, -1.5, -0.2551]
-      spring_coefficient: 0
-      damping_coefficient: 500000
+      spring_coefficient: 100000
+      damping_coefficient: 2000000
       free_length: 2.0
       visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }

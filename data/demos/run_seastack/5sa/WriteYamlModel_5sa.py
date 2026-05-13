@@ -22,8 +22,12 @@ TOTAL_MASS = 1.35e6
 
 COG_Z_OFFSET = -0.2
 DRAFT = 0.259199          # center of object location (positive = below waterline)
-OUTPUT_FILE = Path(__file__).resolve().parent / "regular_waves" / "5sa_regular_auto.model.yaml"
+OUTPUT_FILE = Path(__file__).resolve().parent / "spreading" / "5sa_spreading_auto.model.yaml"
 
+#TSDA coefficients
+STIFFNESS = 100000
+DAMPING = 2000000
+FREE_LENGTH = 2.0
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -109,12 +113,7 @@ def build_yaml():
             "axis1": [0, 1, 0],
             "axis2": [0, 0, 1],
         })
-
-        FREE_LENGTH = 2.0
-        STIFFNESS = 100000
-        DAMPING = 2000000
         
-
         for name, y, z in [
             ("top", 0.0, TSDA_radius),
             ("bottom", 0.0, -TSDA_radius),
