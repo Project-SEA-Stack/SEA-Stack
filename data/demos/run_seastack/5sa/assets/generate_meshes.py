@@ -27,7 +27,7 @@ DIAMETER = 4.0          # m
 SEGMENT_LENGTH = 36.0   # m
 GAP = 0.0               # m between segment ends (0 = segments touch)
 N_SEGMENTS = 5
-DRAFT = 1.8             # m  (CoG depth below waterline)
+DRAFT = 0.259199             # m  (CoG depth below waterline)
 
 # Mesh resolution
 N_LONGITUDINAL = 40     # panels along segment length (x)

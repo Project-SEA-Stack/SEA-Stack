@@ -1,4 +1,4 @@
-model_file: 5sa_regular.model.yaml
+model_file: 5sa_regular_auto.model.yaml
 simulation_file: 5sa_regular.simulation.yaml
 hydro_file: 5sa_regular.hydro.yaml
 

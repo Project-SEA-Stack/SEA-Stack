@@ -1,9 +1,9 @@
-chrono-version: 9.0
+chrono-version: 10.0
 
 simulation:
   contact_method: SMC
 
-  time_step: 0.02
+  time_step: 0.01
   end_time: 600.0
   enforce_realtime: false
   gravity: [0, 0, -9.81]
