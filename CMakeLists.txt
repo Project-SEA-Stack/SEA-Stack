@@ -460,6 +460,24 @@ if(TARGET seastack_chrono_adapter)
     list(APPEND _seastack_lib_targets seastack_chrono_adapter)
 endif()
 
+# Imported target names for find_package consumers (NAMESPACE SEAStack:: + EXPORT_NAME).
+# Build tree uses ALIAS targets SEAStack::Infra etc.; without EXPORT_NAME the install
+# export would emit SEAStack::seastack_infra instead.
+set_target_properties(seastack_core PROPERTIES EXPORT_NAME Core)
+set_target_properties(seastack_hydro PROPERTIES EXPORT_NAME Hydro)
+set_target_properties(seastack_infra PROPERTIES EXPORT_NAME Infra)
+set_target_properties(seastack_pto PROPERTIES EXPORT_NAME PTO)
+set_target_properties(seastack_control PROPERTIES EXPORT_NAME Control)
+if(TARGET seastack_hydro_io)
+    set_target_properties(seastack_hydro_io PROPERTIES EXPORT_NAME HydroIO)
+endif()
+if(TARGET seastack_mooring)
+    set_target_properties(seastack_mooring PROPERTIES EXPORT_NAME Mooring)
+endif()
+if(TARGET seastack_chrono_adapter)
+    set_target_properties(seastack_chrono_adapter PROPERTIES EXPORT_NAME ChronoAdapter)
+endif()
+
 install(TARGETS ${_seastack_lib_targets}
     EXPORT SEAStackTargets
     ARCHIVE  DESTINATION lib
@@ -506,8 +524,20 @@ write_basic_package_version_file(
     COMPATIBILITY SameMajorVersion
 )
 
-# Set variable for package config to indicate which optional components were built
-set(SEASTACK_INSTALL_HYDRO_IO ${SEASTACK_ENABLE_HYDRO_IO})
+# Package config: flags must always be ON or OFF (never empty), or if() in SEAStackConfig.cmake
+# becomes `if()` and find_dependency for MoorDyn/Chrono is skipped while exports still reference them.
+set(SEASTACK_INSTALL_HYDRO_IO OFF)
+set(SEASTACK_INSTALL_MOORING OFF)
+set(SEASTACK_INSTALL_CHRONO_ADAPTER OFF)
+if(TARGET seastack_hydro_io)
+    set(SEASTACK_INSTALL_HYDRO_IO ON)
+endif()
+if(TARGET seastack_mooring)
+    set(SEASTACK_INSTALL_MOORING ON)
+endif()
+if(TARGET seastack_chrono_adapter)
+    set(SEASTACK_INSTALL_CHRONO_ADAPTER ON)
+endif()
 configure_package_config_file(
     "${CMAKE_SOURCE_DIR}/cmake/SEAStackConfig.cmake.in"
     "${CMAKE_BINARY_DIR}/SEAStackConfig.cmake"
