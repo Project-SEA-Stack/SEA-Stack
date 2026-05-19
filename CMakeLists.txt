@@ -11,8 +11,9 @@ project(SEAStack
     LANGUAGES CXX
 )
 
-# Version suffix for prerelease tags (e.g., "-beta", "-alpha", or empty for releases)
-set(SEASTACK_VERSION_SUFFIX "-beta")
+# Version suffix for prerelease tags (e.g., "-beta.1", "-rc.1", or empty for releases).
+# Keep this in sync with the current release branch name (release/v<PROJECT_VERSION><SUFFIX>).
+set(SEASTACK_VERSION_SUFFIX "-beta.1")
 set(SEASTACK_VERSION_FULL "${PROJECT_VERSION}${SEASTACK_VERSION_SUFFIX}")
 
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})

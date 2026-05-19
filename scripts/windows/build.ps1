@@ -1104,6 +1104,14 @@ if ($Package) {
         }
     }
 
+    $stalePackages = Get-ChildItem -Path $buildDir -Filter "SEAStack-*.zip" -File -ErrorAction SilentlyContinue
+    foreach ($stalePackage in $stalePackages) {
+        Remove-Item -LiteralPath $stalePackage.FullName -Force
+    }
+    if ($stalePackages.Count -gt 0) {
+        Write-Detail "Removed $($stalePackages.Count) stale package ZIP(s)"
+    }
+
     Push-Location $buildDir
     try {
         if (-not (Invoke-SeaStackTool -StepName "CPack" -Executable "cpack" -Arguments @("-C", $BuildType) -DiagLogPath $diagLogPath -ShowOutputOnHost:$Verbose)) {
@@ -1113,7 +1121,9 @@ if ($Package) {
         Pop-Location
     }
 
-    $pkg = Get-ChildItem (Join-Path $buildDir "SEAStack-*.zip") -ErrorAction SilentlyContinue | Select-Object -First 1
+    $pkg = Get-ChildItem -Path $buildDir -Filter "SEAStack-*.zip" -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
     if ($pkg) {
         Write-OK ($pkg.Name + ' (' + [string][math]::Round($pkg.Length / 1MB, 1) + ' MB)')
         $packageZipFullPath = $pkg.FullName
