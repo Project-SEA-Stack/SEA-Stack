@@ -15,6 +15,12 @@
 #include <iostream>
 #include <limits>
 
+namespace {
+
+bool AcceptRadius(double r) { return std::isfinite(r) && r >= 0.0; }
+
+}  // namespace
+
 namespace seastack::viz {
 
 // ---------------------------------------------------------------------------
@@ -145,6 +151,17 @@ static const vsg::vec4 kDefaultCableColorVec4{0.55f, 0.45f, 0.35f, 1.0f};
 MooringLinesViz::MooringLinesViz() = default;
 MooringLinesViz::~MooringLinesViz() = default;
 
+void MooringLinesViz::SetVisualizationRadii(double line_radius_m,
+                                             double endpoint_radius_m,
+                                             double node_marker_radius_m) {
+    if (AcceptRadius(line_radius_m))
+        tube_radius_ = line_radius_m;
+    if (AcceptRadius(endpoint_radius_m))
+        endpoint_radius_ = endpoint_radius_m;
+    if (AcceptRadius(node_marker_radius_m))
+        node_marker_radius_ = node_marker_radius_m;
+}
+
 void MooringLinesViz::Initialize(
     ::chrono::vsg3d::ChVisualSystemVSG* vis,
     const std::vector<MooringLineVizData>& initial_lines,
@@ -253,9 +270,9 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
             const double cs = cos_table[s];
             const double sn = sin_table[s];
             verts[ni * kSides + s] = ::chrono::ChVector3d(
-                pts[ni][0] + kTubeRadius * (cs * u.x + sn * v.x),
-                pts[ni][1] + kTubeRadius * (cs * u.y + sn * v.y),
-                pts[ni][2] + kTubeRadius * (cs * u.z + sn * v.z));
+                pts[ni][0] + tube_radius_ * (cs * u.x + sn * v.x),
+                pts[ni][1] + tube_radius_ * (cs * u.y + sn * v.y),
+                pts[ni][2] + tube_radius_ * (cs * u.z + sn * v.z));
         }
     }
 
@@ -320,10 +337,10 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
     const auto& p0 = pts.front();
     const auto& pN = pts.back();
     lm.start_marker = CreateSphereMarker(
-        vis, p0[0], p0[1], p0[2], kEndpointRadius,
+        vis, p0[0], p0[1], p0[2], endpoint_radius_,
         static_cast<int>(line_data.start_point_type));
     lm.end_marker = CreateSphereMarker(
-        vis, pN[0], pN[1], pN[2], kEndpointRadius,
+        vis, pN[0], pN[1], pN[2], endpoint_radius_,
         static_cast<int>(line_data.end_point_type));
 
     // Small intermediate-node markers to visualise segment boundaries.
@@ -332,7 +349,7 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
         for (size_t ni = 1; ni + 1 < num_nodes; ++ni) {
             lm.node_markers.push_back(CreateSphereMarker(
                 vis, pts[ni][0], pts[ni][1], pts[ni][2],
-                kNodeMarkerRadius, kIntermediateNode));
+                node_marker_radius_, kIntermediateNode));
         }
     }
 }
@@ -433,9 +450,9 @@ void MooringLinesViz::UpdateTubeMesh(const MooringLineVizData& line_data,
             const size_t idx = ni * kSides + s;
 
             (*lm.vertices)[idx] = vsg::vec3(
-                static_cast<float>(pts[ni][0] + kTubeRadius * (cs * u.x + sn * v.x)),
-                static_cast<float>(pts[ni][1] + kTubeRadius * (cs * u.y + sn * v.y)),
-                static_cast<float>(pts[ni][2] + kTubeRadius * (cs * u.z + sn * v.z)));
+                static_cast<float>(pts[ni][0] + tube_radius_ * (cs * u.x + sn * v.x)),
+                static_cast<float>(pts[ni][1] + tube_radius_ * (cs * u.y + sn * v.y)),
+                static_cast<float>(pts[ni][2] + tube_radius_ * (cs * u.z + sn * v.z)));
 
             float nx = (*lm.vertices)[idx].x - centre_x;
             float ny = (*lm.vertices)[idx].y - centre_y;
@@ -492,16 +509,16 @@ void MooringLinesViz::UpdateTubeMesh(const MooringLineVizData& line_data,
     // Reposition sphere markers.
     UpdateMarkerPosition(lm.start_marker,
                          pts.front()[0], pts.front()[1], pts.front()[2],
-                         kEndpointRadius);
+                         endpoint_radius_);
     UpdateMarkerPosition(lm.end_marker,
                          pts.back()[0], pts.back()[1], pts.back()[2],
-                         kEndpointRadius);
+                         endpoint_radius_);
     for (size_t mi = 0; mi < lm.node_markers.size(); ++mi) {
         const size_t ni = mi + 1;
         if (ni < num_nodes) {
             UpdateMarkerPosition(lm.node_markers[mi],
                                  pts[ni][0], pts[ni][1], pts[ni][2],
-                                 kNodeMarkerRadius);
+                                 node_marker_radius_);
         }
     }
 }

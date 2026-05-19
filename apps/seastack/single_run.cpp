@@ -654,6 +654,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 ui.SetMooringLineProvider([&hydro_forces]() {
                     return hydro_forces->GetMooringLineStates();
                 });
+                ui.SetMooringVisualizationRadii(hydro_data.moordyn_visualization_line_radius,
+                                                 hydro_data.moordyn_visualization_endpoint_radius,
+                                                 hydro_data.moordyn_visualization_node_marker_radius);
             }
 #endif
         }

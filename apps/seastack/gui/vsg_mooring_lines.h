@@ -62,11 +62,23 @@ class MooringLinesViz {
     /// polynomial without duplicating coefficients.
     static vsg::vec4 TurboColormap(float t);
 
+    /// Override cable tube / marker radii [m] before Initialize(). Any argument
+    /// that is negative or non-finite is ignored for that component (library
+    /// default kept). Values may be set from hydrodynamics YAML (see
+    /// `hydrodynamics.moordyn.visualization_{line,endpoint,node_marker}_radius`).
+    void SetVisualizationRadii(double line_radius_m,
+                               double endpoint_radius_m,
+                               double node_marker_radius_m);
+
   private:
     static constexpr int kSides = 8;
-    static constexpr double kTubeRadius = 0.15;
-    static constexpr double kEndpointRadius = 0.5;
-    static constexpr double kNodeMarkerRadius = 0.20;
+    static constexpr double kDefaultTubeRadius = 0.15;
+    static constexpr double kDefaultEndpointRadius = 0.5;
+    static constexpr double kDefaultNodeMarkerRadius = 0.20;
+
+    double tube_radius_ = kDefaultTubeRadius;
+    double endpoint_radius_ = kDefaultEndpointRadius;
+    double node_marker_radius_ = kDefaultNodeMarkerRadius;
     static constexpr float kRangeDecayAlpha = 0.00008f;
     static constexpr float kRangePadding    = 0.10f;
     static constexpr int   kRangeHoldFrames = 180;

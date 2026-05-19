@@ -231,6 +231,36 @@ hydrodynamics:
     return true;
 }
 
+static bool test_moordyn_visualization_radii() {
+    std::string yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: platform.h5
+  waves:
+    type: regular
+    height: 1.0
+    period: 8.0
+  moordyn:
+    enabled: true
+    input_file: lines.txt
+    bodies: [body1]
+    visualization_line_radius: 0.02
+    visualization_endpoint_radius: 0.07
+    visualization_node_marker_radius: 0.03
+)";
+    auto path = WriteTempYaml(yaml, "moordyn_viz");
+    auto data = ReadHydroYAML(path);
+    CleanupFile(path);
+
+    assert(data.moordyn_visualization_line_radius == 0.02);
+    assert(data.moordyn_visualization_endpoint_radius == 0.07);
+    assert(data.moordyn_visualization_node_marker_radius == 0.03);
+
+    std::cout << "  PASSED: test_moordyn_visualization_radii\n";
+    return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 6: Empty file → error
 // ─────────────────────────────────────────────────────────────────────────────
@@ -322,6 +352,7 @@ int main() {
     run(test_body_quadratic_damping, "test_body_quadratic_damping");
     run(test_radiation_state_space,  "test_radiation_state_space");
     run(test_moordyn_section,       "test_moordyn_section");
+    run(test_moordyn_visualization_radii, "test_moordyn_visualization_radii");
     run(test_empty_file_error,      "test_empty_file_error");
     run(test_missing_waves_defaults,"test_missing_waves_defaults");
     run(test_multi_body,            "test_multi_body");

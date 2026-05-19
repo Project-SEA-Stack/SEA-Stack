@@ -69,6 +69,16 @@ class UI {
      */
     virtual void SetMooringLineProvider(MooringVizProvider provider);
 
+    /**@brief Optional radii [m] for MoorDyn line / endpoint / node VSG geometry.
+     *
+     * Pass a negative value for any component to keep the SEA-Stack default for
+     * that component. Intended to be driven from `hydrodynamics.moordyn` YAML
+     * (see `visualization_*_radius` keys). No effect in headless UI.
+     */
+    virtual void SetMooringVisualizationRadii(double line_radius_m,
+                                              double endpoint_radius_m,
+                                              double node_marker_radius_m);
+
     /**@brief return the internal system.
      *
      * Should be called after init.
@@ -99,6 +109,9 @@ class GUI : public UI {
     void SetWaterGridExtent(double width, double length,
                             double center_x = 0.0, double center_y = 0.0) override;
     void SetMooringLineProvider(MooringVizProvider provider) override;
+    void SetMooringVisualizationRadii(double line_radius_m,
+                                      double endpoint_radius_m,
+                                      double node_marker_radius_m) override;
 
   private:
     std::shared_ptr<seastack::viz::GUIImpl> pImpl;

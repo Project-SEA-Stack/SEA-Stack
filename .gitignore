@@ -35,4 +35,6 @@ build-config.json
 # See also: third_party/licenses/MoorDyn-LICENSE.txt
 /cmake/MoorDynConfig.cmake
 /LICENSE.txt
+BACKLOG.md
+WORK.md
 .DS_Store
