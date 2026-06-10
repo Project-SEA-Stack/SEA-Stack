@@ -1082,13 +1082,18 @@ void SimulationExporter::RecordStep(::chrono::ChSystem* system) {
     }
 
     // ── Generic joint reactions (level-gated) ───────────────────────────────
+    // GetReaction1/2 and GetFrame1Abs/2Abs are virtual on ChLinkBase, so they
+    // work for every concrete joint type (ChLinkLock, ChLinkUniversal,
+    // ChLinkRevoluteSpherical, ...). Previously this code dynamic_cast<>'d to
+    // ChLinkLock* only, silently writing zeros for every other joint type --
+    // including the ChLinkUniversal joints used by the 5SA articulated WEC demos.
     for (auto& j : impl_->joints) {
         auto* L = j.link;
-        if (auto* lock = dynamic_cast<::chrono::ChLinkLock*>(L)) {
+        if (L) {
             try {
-                auto w1 = lock->GetReaction1();
-                auto F1 = lock->GetFrame1Abs().TransformDirectionLocalToParent(w1.force);
-                auto T1 = lock->GetFrame1Abs().TransformDirectionLocalToParent(w1.torque);
+                auto w1 = L->GetReaction1();
+                auto F1 = L->GetFrame1Abs().TransformDirectionLocalToParent(w1.force);
+                auto T1 = L->GetFrame1Abs().TransformDirectionLocalToParent(w1.torque);
                 j.react_force_b1.insert(j.react_force_b1.end(), {F1.x(), F1.y(), F1.z()});
                 j.react_torque_b1.insert(j.react_torque_b1.end(), {T1.x(), T1.y(), T1.z()});
             } catch (const std::exception& ex) {
@@ -1098,9 +1103,9 @@ void SimulationExporter::RecordStep(::chrono::ChSystem* system) {
             }
             if (!is_compact) {
                 try {
-                    auto w2 = lock->GetReaction2();
-                    auto F2 = lock->GetFrame2Abs().TransformDirectionLocalToParent(w2.force);
-                    auto T2 = lock->GetFrame2Abs().TransformDirectionLocalToParent(w2.torque);
+                    auto w2 = L->GetReaction2();
+                    auto F2 = L->GetFrame2Abs().TransformDirectionLocalToParent(w2.force);
+                    auto T2 = L->GetFrame2Abs().TransformDirectionLocalToParent(w2.torque);
                     j.react_force_b2.insert(j.react_force_b2.end(), {F2.x(), F2.y(), F2.z()});
                     j.react_torque_b2.insert(j.react_torque_b2.end(), {T2.x(), T2.y(), T2.z()});
                 } catch (const std::exception& ex) {
