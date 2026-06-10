@@ -24,19 +24,25 @@ target_include_directories(seastack_chrono_adapter
 
 # Chrono MBS YAML registers TSDA/RSDA force functors without copying damping onto the link;
 # simulation_export reads damping_coefficient from model YAML when GetDampingCoefficient()==0.
-find_package(yaml-cpp CONFIG QUIET)
-if(NOT yaml-cpp_FOUND)
-    find_package(yaml-cpp QUIET)
-endif()
-if(TARGET yaml-cpp::yaml-cpp)
-    set(_seastack_yaml_cpp_target yaml-cpp::yaml-cpp)
-elseif(TARGET yaml-cpp)
-    set(_seastack_yaml_cpp_target yaml-cpp)
-elseif(TARGET Chrono::yaml-cpp)
-    # Chrono's config often provides yaml-cpp as an imported target without a system package.
+#
+# Prefer Chrono's bundled yaml-cpp when available so that the yaml-cpp headers
+# (which come from Chrono's chrono_thirdparty/yaml-cpp/include via Chrono::Chrono_core)
+# match the linked library. Mixing a system libyaml-cpp.so with Chrono's headers can
+# produce link errors against internal symbols (e.g. YAML::FpToString, YAML::Emitter::Write).
+if(TARGET Chrono::yaml-cpp)
     set(_seastack_yaml_cpp_target Chrono::yaml-cpp)
 else()
-    message(FATAL_ERROR "yaml-cpp not found (required for Chrono adapter).")
+    find_package(yaml-cpp CONFIG QUIET)
+    if(NOT yaml-cpp_FOUND)
+        find_package(yaml-cpp QUIET)
+    endif()
+    if(TARGET yaml-cpp::yaml-cpp)
+        set(_seastack_yaml_cpp_target yaml-cpp::yaml-cpp)
+    elseif(TARGET yaml-cpp)
+        set(_seastack_yaml_cpp_target yaml-cpp)
+    else()
+        message(FATAL_ERROR "yaml-cpp not found (required for Chrono adapter).")
+    endif()
 endif()
 
 target_link_libraries(seastack_chrono_adapter

@@ -123,7 +123,7 @@ namespace {
 class HCParser : public ::chrono::parsers::ChParserMbsYAML {
   public:
     HCParser() : ChParserMbsYAML() {}
-    void SetScriptDir(const std::string& dir) { m_script_directory = dir; }
+    void SetScriptDir(const std::string& dir) { m_file_handler.SetReferenceDirectory(dir); }
 };
 
 static std::shared_ptr<::chrono::ChBody> FindBodyByName(::chrono::ChSystem& system,
