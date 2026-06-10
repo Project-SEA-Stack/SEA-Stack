@@ -501,7 +501,7 @@ void AnimatedWaterSurface::InitializeWireframe() {
     // Faint blue-gray material.
     auto wire_material = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
     wire_material->SetDiffuseColor(::chrono::ChColor(0.1f, 0.2f, 0.3f));
-    wire_material->SetOpacity(0.35f);
+    wire_material->SetOpacity(1.0f);
     wire_material->SetRoughness(0.9f);
     wire_material->SetMetallic(0.0f);
 
