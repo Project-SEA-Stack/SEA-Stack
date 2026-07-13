@@ -155,8 +155,23 @@ SeaStateDefinition BuildSeaStateDefinition(const WaveSettings& ws) {
     }
 
     // Discretization.
-    def.n_omega = (ws.discretization.n_omega > 0) ? ws.discretization.n_omega
-                : (ws.nfrequencies > 0 ? ws.nfrequencies : kDefaultWaveSpectralNOmega);
+    //
+    // An explicit YAML setting always wins. Otherwise the default depends on
+    // the wave source (see hydro_config.h): spectral seas use
+    // kDefaultWaveSpectralNOmega, while eta-file imports must fall through to
+    // ComponentSampler::Build's eta default (1000 Fourier bins). Leaving
+    // def.n_omega = 0 here for eta imports preserves that larger DFT resolution;
+    // forcing the spectral default would coarsen the reconstructed sea and
+    // break eta-import regression baselines.
+    if (ws.discretization.n_omega > 0) {
+        def.n_omega = ws.discretization.n_omega;
+    } else if (ws.nfrequencies > 0) {
+        def.n_omega = ws.nfrequencies;
+    } else if (!ws.eta_file.empty()) {
+        def.n_omega = 0;  // ComponentSampler::Build applies the eta-import default
+    } else {
+        def.n_omega = kDefaultWaveSpectralNOmega;
+    }
     def.n_theta = (ws.discretization.n_theta > 0) ? ws.discretization.n_theta : 1;
 
     // Frequency limits (convert Hz to rad/s if specified).

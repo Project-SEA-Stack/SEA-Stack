@@ -12,6 +12,10 @@ hydrodynamics:
     depth: 50.0
     ramp_duration: 40.0
     ramp_type: cosine
+    # Eta-file DFT resolution. Pinned to match the regression baseline; the
+    # eta-import default (1000 Fourier bins) is otherwise applied by
+    # ComponentSampler. See adapters/chrono/src/setup_from_yaml.cpp.
+    nfrequencies: 1000
 
   excitation:
     truncation_time: 20.0
