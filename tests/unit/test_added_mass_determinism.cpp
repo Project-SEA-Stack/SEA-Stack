@@ -253,16 +253,23 @@ int main() {
     struct SolverEntry {
         ChSolver::Type type;
         const char* name;
+        // Chrono's VI solvers (PSOR/BB/APGD) require a Schur-complement-capable
+        // descriptor and unconditionally throw when the system has stiffness or
+        // damping (KRM) blocks — which ChLoadHydrodynamics always adds. On Apple
+        // arm64 that exception is thrown from libChrono_core (built with
+        // -Wl,-no_compact_unwind) and cannot be unwound/caught across the
+        // library boundary, so it must not be invoked here. See notes below.
+        bool supports_krm_system;
     };
     const SolverEntry solvers[] = {
-        {ChSolver::Type::SPARSE_QR,        "SPARSE_QR"},
-        {ChSolver::Type::SPARSE_LU,        "SPARSE_LU"},
-        {ChSolver::Type::MINRES,            "MINRES"},
-        {ChSolver::Type::GMRES,             "GMRES"},
-        {ChSolver::Type::BICGSTAB,          "BICGSTAB"},
-        {ChSolver::Type::PSOR,              "PSOR"},
-        {ChSolver::Type::BARZILAIBORWEIN,   "BARZILAIBORWEIN"},
-        {ChSolver::Type::APGD,              "APGD"},
+        {ChSolver::Type::SPARSE_QR,        "SPARSE_QR",        true},
+        {ChSolver::Type::SPARSE_LU,        "SPARSE_LU",        true},
+        {ChSolver::Type::MINRES,            "MINRES",          true},
+        {ChSolver::Type::GMRES,             "GMRES",           true},
+        {ChSolver::Type::BICGSTAB,          "BICGSTAB",        true},
+        {ChSolver::Type::PSOR,              "PSOR",            false},
+        {ChSolver::Type::BARZILAIBORWEIN,   "BARZILAIBORWEIN", false},
+        {ChSolver::Type::APGD,              "APGD",            false},
     };
 
     // Reference: SPARSE_QR result from part 1
@@ -277,9 +284,25 @@ int main() {
     std::cout << "  " << std::string(72, '-') << std::endl;
 
     for (const auto& s : solvers) {
-        auto r = RunTrial(A, s.type);
-
         std::string asm_status, nan_status, dyn_status, notes;
+
+        if (!s.supports_krm_system) {
+            // Would throw inside Chrono on a stiffness/damping (KRM) system;
+            // that throw is not catchable across the Chrono dylib on Apple
+            // arm64, so report as SKIP instead of invoking it.
+            asm_status = "SKIP";
+            nan_status = "-";
+            dyn_status = "-";
+            notes = "VI solver: no KRM (stiffness/damping) support";
+            std::cout << "  " << std::left << std::setw(20) << s.name
+                      << std::setw(14) << asm_status
+                      << std::setw(14) << nan_status
+                      << std::setw(14) << dyn_status
+                      << notes << std::endl;
+            continue;
+        }
+
+        auto r = RunTrial(A, s.type);
 
         if (!r.ok) {
             asm_status = "ERROR";
@@ -326,7 +349,8 @@ int main() {
 
     std::cout << "\n  Note: solver sweep is informational only (does not affect PASS/FAIL).\n"
               << "  Assembly = added-mass matrix matches input after subtracting body inertia.\n"
-              << "  Dynamics = post-step velocities match SPARSE_QR reference.\n";
+              << "  Dynamics = post-step velocities match SPARSE_QR reference.\n"
+              << "  SKIP = VI solver (PSOR/BB/APGD) cannot solve stiffness/damping (KRM) systems.\n";
 
     std::cout << "\n=== PASSED ===" << std::endl;
     return 0;

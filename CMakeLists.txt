@@ -174,6 +174,41 @@ if(SEASTACK_ENABLE_CHRONO)
         message(STATUS "Chrono version: ${Chrono_VERSION}")
     endif()
 
+    # Chrono v10's exported targets carry
+    #   INTERFACE_LINK_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:-Wl,-no_compact_unwind>"
+    # which Chrono uses only to silence linker warnings in its own build. On
+    # Apple arm64 this strips compact-unwind info from downstream binaries and
+    # breaks C++ exception unwinding: a thrown exception fails to unwind and is
+    # reported as uncaught (std::terminate/abort) even when a matching handler
+    # exists. This affects every SEA-Stack binary that links Chrono (including
+    # run_seastack), and surfaced as aborts in tests/unit/test_adapter_layer and
+    # test_added_mass_determinism (PSOR sweep). Remove the option from the
+    # imported targets so it does not propagate to SEA-Stack targets.
+    if(APPLE)
+        set(_seastack_chrono_imported_targets
+            Chrono::Chrono_core
+            Chrono::Chrono_fsi
+            Chrono::Chrono_fsitdpf
+            Chrono::Chrono_fsitdpf_vsg
+            Chrono::Chrono_parsers
+            Chrono::Chrono_vsg
+            Chrono::ChronoModels_robot
+            Chrono::yaml-cpp
+        )
+        foreach(_chrono_tgt IN LISTS _seastack_chrono_imported_targets)
+            if(TARGET ${_chrono_tgt})
+                get_target_property(_chrono_link_opts ${_chrono_tgt} INTERFACE_LINK_OPTIONS)
+                if(_chrono_link_opts)
+                    list(FILTER _chrono_link_opts EXCLUDE REGEX "no_compact_unwind")
+                    set_target_properties(${_chrono_tgt} PROPERTIES
+                        INTERFACE_LINK_OPTIONS "${_chrono_link_opts}")
+                endif()
+            endif()
+        endforeach()
+        message(STATUS "SEA-Stack: removed -Wl,-no_compact_unwind from Chrono imported "
+            "targets (restores C++ exception unwinding on Apple arm64)")
+    endif()
+
     if(NOT OpenMP_CXX_FOUND)
         message(FATAL_ERROR
             "OpenMP (C++) not found. SEA-Stack links OpenMP for the Chrono adapter and hydrodynamics.\n"
