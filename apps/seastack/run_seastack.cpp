@@ -336,8 +336,9 @@ int main(int argc, char* argv[]) {
                 const std::string suffix = ".setup.yaml";
                 if (filename.length() >= suffix.length() && 
                     filename.compare(filename.length() - suffix.length(), suffix.length(), suffix) == 0) {
-                    args.input_directory = input_path.parent_path().string();
-                    seastack::infra::cli::LogInfo(std::string("Loaded setup file: ") + input_path.string());
+                    const std::filesystem::path setup_abs = std::filesystem::absolute(input_path);
+                    args.input_directory = setup_abs.parent_path().string();
+                    seastack::infra::cli::LogInfo(std::string("Loaded setup file: ") + setup_abs.string());
                 } else {
                     seastack::infra::cli::LogError("ERROR: File provided is not a valid .setup.yaml file");
                     seastack::infra::cli::LogInfo(std::string("  Path: ") + args.input_directory);

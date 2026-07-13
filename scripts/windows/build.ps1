@@ -219,7 +219,7 @@ function Get-CMakeCacheVariable {
     }
     $escaped = [regex]::Escape($Name)
     foreach ($line in Get-Content -LiteralPath $cacheFile) {
-        if ($line -match "^${escaped}:(?:PATH|STRING|FILEPATH|UNINITIALIZED)=(.*)$") {
+        if ($line -match "^${escaped}:(?:PATH|STRING|FILEPATH|BOOL|UNINITIALIZED)=(.*)$") {
             return $Matches[1].Trim()
         }
     }
@@ -1101,10 +1101,48 @@ if ($Package) {
                 exit 1
             }
             Write-OK "Staged run_seastack.exe starts (--help)"
+
+            if ($useVSG) {
+                Write-SeaStackStep "Package smoke: run_seastack --doctor (VSG required)"
+                try {
+                    $env:PATH = ($binDirForSmoke + ';' + $oldSmokePath)
+                    $doctorProc = Start-Process -FilePath $stagedExe -ArgumentList @('--doctor') `
+                        -WorkingDirectory $prefix -Wait -PassThru -NoNewWindow
+                    if ($null -eq $doctorProc.ExitCode -or $doctorProc.ExitCode -ne 0) {
+                        Write-Fail "Staged run_seastack.exe --doctor failed (exit $($doctorProc.ExitCode))."
+                        exit 1
+                    }
+                    $doctorDiag = Get-ChildItem -Path $prefix -Filter "seastack_doctor_*.txt" -File |
+                        Sort-Object LastWriteTime -Descending |
+                        Select-Object -First 1
+                    if (-not $doctorDiag) {
+                        Write-Fail "run_seastack --doctor did not write a diagnostics file under $prefix"
+                        exit 1
+                    }
+                    $doctorText = Get-Content -LiteralPath $doctorDiag.FullName -Raw
+                    Add-SeaStackDiagLog -Path $diagLogPath -Line "run_seastack --doctor diagnostics ($($doctorDiag.Name)):`n$doctorText"
+                    if ($doctorText -notmatch '\[PASS\]\s+Visualization:.*VSG available') {
+                        Write-Fail "Release build used -VSG but run_seastack --doctor did not report VSG available (compile-time). Reconfigure with -Clean -VSG."
+                        exit 1
+                    }
+                    Write-OK "Staged run_seastack.exe reports VSG available (--doctor)"
+                } finally {
+                    $env:PATH = $oldSmokePath
+                }
+            }
         }
     }
 
-    $stalePackages = Get-ChildItem -Path $buildDir -Filter "SEAStack-*.zip" -File -ErrorAction SilentlyContinue
+    if ($useVSG) {
+        $vsgCache = Get-CMakeCacheVariable -BuildDir $buildDir -Name "SEASTACK_ENABLE_VSG"
+        if ($vsgCache -ne "ON") {
+            Write-Fail "Release packaging with -VSG requires SEASTACK_ENABLE_VSG=ON in CMake cache (found: '$vsgCache'). Reconfigure with -Clean -VSG."
+            exit 1
+        }
+        Write-Detail "CMake cache: SEASTACK_ENABLE_VSG=ON"
+    }
+
+    $stalePackages = @(Get-ChildItem -Path $buildDir -Filter "SEAStack-*.zip" -File -ErrorAction SilentlyContinue)
     foreach ($stalePackage in $stalePackages) {
         Remove-Item -LiteralPath $stalePackage.FullName -Force
     }
