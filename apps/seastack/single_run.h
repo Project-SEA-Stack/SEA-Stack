@@ -13,6 +13,7 @@
 
 #include <seastack/hydro/config/hydro_config.h>
 #include <seastack/adapters/chrono/simulation_export.h>
+#include <seastack/infra/config/yaml_discovery.h>
 
 #include <string>
 #include <variant>
@@ -60,6 +61,10 @@ struct SingleRunConfig {
     bool debug_mode     = false;
     bool trace_mode     = false;
     bool profile_mode   = false;
+
+    /// Optional out-of-process PTO (populated from setup YAML when enabled).
+    bool has_external_pto = false;
+    seastack::infra::SetupConfig::ExternalPtoConfig external_pto;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).

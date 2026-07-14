@@ -8,6 +8,7 @@ This describes what ships in the **runtime** ZIP produced by `cmake --install` a
 |------|---------|
 | `bin/` | Executables (`run_seastack.exe`, optional `standalone_controller.exe`, optional `demo_sphere_decay.exe` when demos were enabled at build time) and third-party/runtime DLLs |
 | `demos/` | YAML-driven `run_seastack` case data (geometry, hydro HDF5 inputs, configs) |
+| `python/` | Thin IPC helper `seastack_external.py` for out-of-process force demos under `demos/` |
 | `data/chrono/` | Chrono runtime assets (optional) |
 | `tests/` | Python/PowerShell regression helpers to validate an install |
 | `LICENSE` | Project license |

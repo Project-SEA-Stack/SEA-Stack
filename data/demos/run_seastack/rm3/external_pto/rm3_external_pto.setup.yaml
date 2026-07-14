@@ -1,0 +1,14 @@
+model_file: rm3_external_pto.model.yaml
+simulation_file: rm3_external_pto.simulation.yaml
+hydro_file: rm3_external_pto.hydro.yaml
+
+output_directory: outputs
+
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+# Overrides the ChLinkTSDA named "PTO" with an out-of-process linear damper.
+external_pto:
+  link: PTO
+  command: ["python", "linear_damper_pto.py"]
+  config:
+    damping: 1200000
+  timeout_ms: 20000

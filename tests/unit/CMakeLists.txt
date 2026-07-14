@@ -89,6 +89,125 @@ build_unit_test(test_rectified_hydraulic_pto)
 target_link_libraries(test_rectified_hydraulic_pto PRIVATE SEAStack::PTO)
 set_tests_properties(test_rectified_hydraulic_pto PROPERTIES LABELS "unit;chrono-free")
 
+# External force modules (optional)
+if(TARGET seastack_external)
+    add_executable(mock_external_module mock_external_module.cpp)
+    target_compile_features(mock_external_module PRIVATE cxx_std_17)
+    seastack_apply_compile_settings(mock_external_module)
+    if(WIN32)
+        target_link_libraries(mock_external_module PRIVATE ws2_32)
+    endif()
+
+    build_unit_test(test_ipc_external_force_model)
+    target_link_libraries(test_ipc_external_force_model PRIVATE SEAStack::External)
+    add_dependencies(test_ipc_external_force_model mock_external_module)
+    set_tests_properties(test_ipc_external_force_model PROPERTIES LABELS "unit;chrono-free")
+
+    build_unit_test(test_external_pto_model)
+    target_link_libraries(test_external_pto_model PRIVATE SEAStack::External)
+    set_tests_properties(test_external_pto_model PROPERTIES LABELS "unit;chrono-free")
+
+    if(TARGET external_pto_example)
+        add_test(
+            NAME test_example_external_pto_mock
+            WORKING_DIRECTORY "$<TARGET_FILE_DIR:external_pto_example>"
+            COMMAND $<TARGET_FILE:external_pto_example>
+                --mock $<TARGET_FILE:mock_external_module>
+        )
+        set_tests_properties(test_example_external_pto_mock PROPERTIES
+            LABELS "unit;chrono-free" COST 1)
+        add_dependencies(external_pto_example mock_external_module)
+    endif()
+
+    # Prescribed-input golden tests for the three Python example modules
+    # (linear / adaptive / hydraulic). Pure Python, no IPC/Chrono/RM3 run:
+    # each case is checked against an independent oracle.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_FOUND)
+        add_test(
+            NAME test_external_pto_examples_golden
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_SOURCE_DIR}/examples/external_pto/verify_examples.py"
+        )
+        set_tests_properties(test_external_pto_examples_golden PROPERTIES
+            LABELS "unit;chrono-free" COST 1)
+
+        # IPC-level equivalence: the same prescribed trace through the full IPC
+        # transport must match a direct in-process run of each module. Verifies
+        # framing / JSON / config passing / C++ time-caching (no Chrono).
+        if(TARGET external_pto_example)
+            set(_ext_pto_cmp
+                "${CMAKE_SOURCE_DIR}/examples/external_pto/compare_ipc_replay.py")
+            set(_ext_pto_rm3 "${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3")
+            foreach(_case
+                    "linear;external_pto;linear_damper_pto.py;LinearDamperPTO"
+                    "adaptive;external_pto_adaptive;adaptive_damping_pto.py;AdaptiveDampingPTO"
+                    "hydraulic;external_pto_hydraulic;hydraulic_accumulator_pto.py;HydraulicAccumulatorPTO")
+                list(GET _case 0 _name)
+                list(GET _case 1 _dir)
+                list(GET _case 2 _script)
+                list(GET _case 3 _class)
+                add_test(
+                    NAME test_external_pto_ipc_${_name}
+                    COMMAND ${Python3_EXECUTABLE} "${_ext_pto_cmp}"
+                        --exe $<TARGET_FILE:external_pto_example>
+                        --module "${_ext_pto_rm3}/${_dir}/${_script}"
+                        --class ${_class}
+                )
+                set_tests_properties(test_external_pto_ipc_${_name} PROPERTIES
+                    LABELS "unit;chrono-free" COST 2
+                    ENVIRONMENT "PYTHON=${Python3_EXECUTABLE}")
+            endforeach()
+        endif()
+
+        # Focused Chrono regression: run the three RM3 external-PTO demos through
+        # run_seastack. Linear is an exact-equivalence check vs a native Chrono
+        # LinearPTO twin (generated on the fly); adaptive/hydraulic use aggregate
+        # and cross-case ordering checks (no committed time-history baselines).
+        # Skips (77) if h5py is unavailable.
+        if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
+            add_test(
+                NAME test_external_pto_rm3_regression
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_SOURCE_DIR}/examples/external_pto/verify_rm3_regression.py"
+                    --exe $<TARGET_FILE:run_seastack>
+            )
+            set_tests_properties(test_external_pto_rm3_regression PROPERTIES
+                LABELS "external;chrono" COST 30 SKIP_RETURN_CODE 77)
+            # On Windows, run_seastack needs Chrono/HDF5/VSG DLLs (VSG is loaded
+            # even with --nogui) plus a `python` interpreter (the demos spawn
+            # `python <module>.py`). We pass these directories to the test script
+            # via a '|'-separated variable rather than on PATH, so the script's
+            # own interpreter (which imports h5py) keeps a clean DLL search path
+            # and only the run_seastack subprocess sees them.
+            if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+                get_filename_component(_ext_pto_pydir "${Python3_EXECUTABLE}" DIRECTORY)
+                set(_ext_pto_run_dirs
+                    "$<TARGET_FILE_DIR:run_seastack>" "${_ext_pto_pydir}")
+                if(TARGET Chrono::Chrono_core)
+                    list(APPEND _ext_pto_run_dirs "$<TARGET_FILE_DIR:Chrono::Chrono_core>")
+                endif()
+                if(TARGET hdf5::hdf5-shared)
+                    list(APPEND _ext_pto_run_dirs "$<TARGET_FILE_DIR:hdf5::hdf5-shared>")
+                elseif(TARGET HDF5::HDF5)
+                    list(APPEND _ext_pto_run_dirs "$<TARGET_FILE_DIR:HDF5::HDF5>")
+                endif()
+                if(VSG_DLL_DIR)
+                    list(APPEND _ext_pto_run_dirs "${VSG_DLL_DIR}")
+                endif()
+                if(SEASTACK_ENABLE_MOORING AND TARGET moordyn)
+                    list(APPEND _ext_pto_run_dirs "$<TARGET_FILE_DIR:moordyn>")
+                endif()
+                list(JOIN _ext_pto_run_dirs "|" _ext_pto_run_path)
+                set_tests_properties(test_external_pto_rm3_regression PROPERTIES
+                    ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_ext_pto_run_path}")
+            endif()
+        endif()
+    else()
+        message(STATUS "Skipping test_external_pto_examples_golden (Python3 not found)")
+    endif()
+endif()
+
 # Doctor diagnostics tests (Chrono-free, uses Infra only).
 # Compiles doctor.cpp directly to avoid pulling the full app lib (and Chrono).
 add_executable(test_doctor

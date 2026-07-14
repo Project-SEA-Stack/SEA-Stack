@@ -34,6 +34,8 @@ const char* HydroComponentTypeName(seastack::hydro::HydroComponentType type) {
             return "Mooring";
         case seastack::hydro::HydroComponentType::kDamping:
             return "Damping";
+        case seastack::hydro::HydroComponentType::kExternal:
+            return "External";
     }
     return "Unknown";
 }
@@ -111,6 +113,7 @@ BodyForces HydroForces::Evaluate(const SystemState& state, double time,
                     profile_stats_.mooring_calls++;
                     break;
                 case HydroComponentType::kDamping:
+                case HydroComponentType::kExternal:
                     break;
             }
         } else {

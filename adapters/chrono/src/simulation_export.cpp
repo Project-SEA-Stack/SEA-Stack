@@ -1397,6 +1397,7 @@ void SimulationExporter::Finalize() {
                 case T::kExcitation:            return "excitation";
                 case T::kDamping:               return "damping";
                 case T::kMooring:               return "mooring";
+                case T::kExternal:              return "external";
                 default:                        return "unknown";
             }
         };

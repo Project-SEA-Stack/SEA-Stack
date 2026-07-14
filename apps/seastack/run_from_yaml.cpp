@@ -13,6 +13,10 @@
 #include <seastack/infra/config/yaml_discovery.h>
 #include <seastack/infra/logging.h>
 
+#ifdef SEASTACK_HAVE_EXTERNAL
+#include "external_pto_yaml.h"
+#endif
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -110,6 +114,15 @@ static bool ResolveInputFiles(const std::filesystem::path& input_dir,
         using_setup_file = true;
         setup_config = ParseSetupFile(setup_file_path);
         seastack::infra::debug::LogDebug("Setup file loaded");
+#ifdef SEASTACK_HAVE_EXTERNAL
+        try {
+            LoadExternalPtoFromSetupYaml(setup_file_path, setup_config);
+        } catch (const std::exception& e) {
+            seastack::infra::cli::LogError(
+                std::string("Failed to parse external_pto: ") + e.what());
+            return false;
+        }
+#endif
         
         if (!model_file_arg.empty()) {
             model_file = model_file_arg;
@@ -404,6 +417,8 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.debug_mode   = debug_mode;
         run_config.trace_mode   = trace_mode;
         run_config.profile_mode = profile_mode;
+        run_config.has_external_pto = setup_config.has_external_pto;
+        run_config.external_pto = setup_config.external_pto;
 
         SingleRunResult result = RunSingleCase(run_config);
 

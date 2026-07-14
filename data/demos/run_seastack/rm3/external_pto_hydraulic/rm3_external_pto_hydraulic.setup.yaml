@@ -1,0 +1,30 @@
+model_file: rm3_external_pto_hydraulic.model.yaml
+simulation_file: rm3_external_pto_hydraulic.simulation.yaml
+hydro_file: rm3_external_pto_hydraulic.hydro.yaml
+
+output_directory: outputs
+
+# Reduced two-pressure-state hydraulic PTO (cylinder -> rectifier ->
+# HP/LP accumulators -> motor, with relief valve). Internal pressure states are
+# integrated inside the Python module each accepted step.
+# Requires -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+external_pto:
+  link: PTO
+  command: ["python", "hydraulic_accumulator_pto.py"]
+  config:
+    piston_area: 0.05
+    gamma: 1.4
+    V_gas_hi: 2.0
+    V_gas_lo: 2.0
+    p_precharge_hi: 1.0e7
+    p_precharge_lo: 2.0e6
+    p_relief: 3.0e7
+    relief_conductance: 1.0e-7
+    # Motor load sets the effective damping. 5e-9 left the accumulators ringing
+    # (~27 s settle); 5e-8 dissipates stored pressure closer to the linear/adaptive
+    # decay timescale (~9 s) while keeping the hydraulic character.
+    motor_conductance: 5.0e-8
+    v_eps: 0.02
+    n_substeps: 10
+    diagnostics_csv: outputs/pto_diagnostics.csv
+  timeout_ms: 20000

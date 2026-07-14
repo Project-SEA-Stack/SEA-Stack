@@ -24,6 +24,10 @@
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 
+#ifdef SEASTACK_HAVE_EXTERNAL
+#include "external_pto_yaml.h"
+#endif
+
 #include <chrono_parsers/yaml/ChParserMbsYAML.h>
 #include <chrono/physics/ChSystem.h>
 #include <chrono/physics/ChBody.h>
@@ -457,6 +461,21 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 loop_dt = yaml_dt;
             }
         }
+
+#ifdef SEASTACK_HAVE_EXTERNAL
+        seastack::app::ExternalPtoAttachment external_pto_attachment;
+        if (config.has_external_pto) {
+            try {
+                external_pto_attachment = seastack::app::ExternalPtoAttachment::Attach(
+                    *system, config.external_pto, loop_dt);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(
+                    std::string("external_pto attach failed: ") + e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+#endif
 
         std::string hydro_file_path;  // non-empty only when source is a file
         bool hydro_data_ready = false;
