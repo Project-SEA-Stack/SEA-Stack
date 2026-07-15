@@ -1,6 +1,6 @@
 /*********************************************************************
  * @file  external_pto_yaml.h
- * @brief Parse optional external_pto block and attach to Chrono TSDAs.
+ * @brief Parse optional external PTO attach YAML and register on Chrono TSDA/RSDA.
  *********************************************************************/
 #ifndef SEASTACK_APP_EXTERNAL_PTO_YAML_H
 #define SEASTACK_APP_EXTERNAL_PTO_YAML_H
@@ -19,7 +19,12 @@
 
 namespace seastack::app {
 
-/// Read `external_pto:` from setup YAML into config (no-op if absent).
+/// Load external PTO attach settings into config (no-op if absent).
+///
+/// Setup may use either:
+///   - `external_pto_file: path/to/*.external_pto.yaml` (preferred), or
+///   - an inline `external_pto:` map (backward compatible).
+/// Both at once is an error. The attach YAML must provide `link` and `command`.
 void LoadExternalPtoFromSetupYaml(const std::filesystem::path& setup_path,
                                   seastack::infra::SetupConfig& config);
 
@@ -34,7 +39,7 @@ class ExternalPtoAttachment {
     ExternalPtoAttachment(ExternalPtoAttachment&&) noexcept;
     ExternalPtoAttachment& operator=(ExternalPtoAttachment&&) noexcept;
 
-    /// Locate named ChLinkTSDA and register ExternalPtoModel force functor.
+    /// Locate named ChLinkTSDA/RSDA and register ExternalPtoModel force/torque functor.
     static ExternalPtoAttachment Attach(
         ::chrono::ChSystem& system,
         const seastack::infra::SetupConfig::ExternalPtoConfig& cfg,

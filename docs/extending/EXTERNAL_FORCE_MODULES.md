@@ -12,8 +12,21 @@ existing PTO and hydro force paths:
 
 | Bridge | Base | Role |
 |--------|------|------|
-| `ExternalPtoModel` | `IPTOModel` | 1-DOF link force via `PTOForceFunctor` + `ChLinkTSDA` |
+| `ExternalPtoModel` | `IPTOModel` | 1-DOF link force/torque via `ChLinkTSDA` **or** `ChLinkRSDA` |
 | `ExternalForceComponent` | `IHydroForceComponent` | 6-DOF body forces in the hydro pipeline |
+
+Chrono functors:
+
+| Functor | Link | Role |
+|---------|------|------|
+| `PTOForceFunctor` | TSDA | Lean `IPTOModel` (disp, vel) |
+| `PTOTorqueFunctor` | RSDA | Lean `IPTOModel` (angle/omega as disp/vel) |
+| `ExternalPtoForceFunctor` | TSDA | Rich kinematics → `ExternalPtoState` |
+| `ExternalPtoTorqueFunctor` | RSDA | Rich kinematics → `ExternalPtoState` |
+
+YAML `external_pto.link` may name either a `ChLinkTSDA` or a `ChLinkRSDA`;
+attach discovers the type and registers the matching functor. Absorbed power
+export uses `-(F·v)` / `-(T·ω)` when an IPTO / external functor is attached.
 
 The first transport is **out-of-process IPC** over TCP loopback with
 length-prefixed JSON (`IpcExternalForceModel`). Python and MATLAB speak the
@@ -52,13 +65,20 @@ that many UTF-8 JSON bytes (no newline required).
 ### Messages (SEA-Stack → module)
 
 ```json
-{"op":"initialize","protocol":1,"kind":"pto","n_inputs":2,"n_outputs":1,"dt":0.01,"config":{"damping":1200000}}
-{"op":"evaluate","t":1.23,"dt":0.01,"in":[0.05,-0.12]}
+{"op":"initialize","protocol":1,"kind":"pto_tsda","n_inputs":17,"n_outputs":1,"dt":0.01,"in_names":["displacement","velocity","length", "..."],"config":{"damping":1200000}}
+{"op":"evaluate","t":1.23,"dt":0.01,"in":[0.05,-0.12, ...]}
 {"op":"reset"}
 {"op":"commit"}
 {"op":"rollback"}
 {"op":"shutdown"}
 ```
+
+The optional additive `in_names` array labels the positional `in` channels
+(protocol v1, no version bump). Older modules may ignore it. Lean replay /
+unit-test paths still use `kind:"pto"` with `n_inputs:2` and
+`in_names:["displacement","velocity"]`. Chrono attach defaults to rich state
+(`kind:"pto_tsda"` or `"pto_rsda"`, 17 channels); set `rich_state: false` in
+YAML to keep the lean 2-channel contract.
 
 ### Replies (module → SEA-Stack)
 
@@ -77,14 +97,25 @@ that many UTF-8 JSON bytes (no newline required).
 
 ### 1-DOF PTO I/O
 
-| Index | Input | Unit | Convention |
-|-------|-------|------|------------|
-| 0 | displacement | m (or rad) | extension positive (`length - rest_length`) |
-| 1 | velocity | m/s (or rad/s) | extending positive (Chrono TSDA) |
+Channels 0/1 are universal for both link types:
 
-| Index | Output | Unit | Convention |
-|-------|--------|------|------------|
-| 0 | force | N (or N·m) | resistive / opposes motion (same as `IPTOModel`) |
+| Index | Input | TSDA unit | RSDA unit | Convention |
+|-------|-------|-----------|-----------|------------|
+| 0 | displacement | m | rad | extension positive (`length − rest_length` or `angle − rest_angle`) |
+| 1 | velocity | m/s | rad/s | extending / opening positive |
+
+| Index | Output | TSDA unit | RSDA unit | Convention |
+|-------|--------|-----------|-----------|------------|
+| 0 | force | N | N·m | resistive / opposes motion (same as `IPTOModel`) |
+
+Rich Chrono attach also publishes (indexes 2–16):
+
+| Names (TSDA) | Names (RSDA) | Notes |
+|--------------|--------------|-------|
+| `length`, `rest_length` | `angle`, `rest_angle` | Link-native absolute measure |
+| `rel_accel` | `rel_accel` | Finite difference of relative velocity across accepted steps (0 on first step) |
+| `body1_pos_{x,y,z}`, `body1_vel_{x,y,z}` | same | World-frame body 1 |
+| `body2_pos_{x,y,z}`, `body2_vel_{x,y,z}` | same | World-frame body 2 |
 
 ### 6-DOF body-force I/O (ExternalForceComponent)
 
@@ -105,8 +136,51 @@ by advancing time); FMI backends should implement them.
 
 ## User workflow (Python)
 
+The same script works on a TSDA or an RSDA. Units follow the link: the value
+you return is force [N] on a TSDA or torque [N·m] on an RSDA.
+
+### Preferred: `PtoModule.force(state)` + `run(...)`
+
+Subclass `PtoModule`, implement `force(state)`, and call `run(...)`. Config
+goes in optional `setup(cfg)`; stateful controllers also override `reset`
+(and `commit` / `rollback` when needed). SEA-Stack's state arrives as a
+`PtoState`; your return value is the actuator force (or torque).
+
 ```python
-from seastack_external import ExternalForceModule
+from seastack_external import PtoModule, PtoState, run
+
+class MyPTO(PtoModule):
+    def setup(self, cfg):
+        self.c = float(cfg.get("damping", 1.2e6))
+        return {"name": "MyPTO", "version": "1.0", "n_states": 0}
+
+    def force(self, state: PtoState) -> float:
+        return -self.c * state.velocity
+
+    # optional lifecycle: reset(self) / commit(self) / rollback(self)
+
+if __name__ == "__main__":
+    run(MyPTO())
+```
+
+The same skeleton scales across the three demos:
+
+1. **Linear** — only `force` (`F = -c v`).
+2. **Adaptive** — same law, plus adapting `c(t)`, force saturation, and `reset`.
+3. **Hydraulic** — internal physics states with `commit` / `rollback`.
+
+`PtoState` always has `time`, `dt`, `displacement`, `velocity`. With rich state
+enabled (default), it also carries link extras (`length`/`rest_length` or
+`angle`/`rest_angle`), `rel_accel`, and body kinematics. Use `state.get(name)`
+or `state.raw` for additional channels.
+
+### Low-level positional API (still supported)
+
+For non-PTO / multi-output modules, subclass `ExternalForceModule` and
+implement `initialize` / `evaluate` with positional arrays:
+
+```python
+from seastack_external import ExternalForceModule, run
 
 class MyPTO(ExternalForceModule):
     def initialize(self, cfg):
@@ -114,33 +188,44 @@ class MyPTO(ExternalForceModule):
         return {"name": "MyPTO", "version": "1.0", "n_states": 0}
 
     def evaluate(self, t, dt, inputs):
-        disp, vel = inputs
-        return [-self.c * vel]
-
-    def shutdown(self):
-        pass
+        return [-self.c * inputs[1]]
 
 if __name__ == "__main__":
-    ExternalForceModule.run(MyPTO())
+    run(MyPTO())
 ```
 
-### Worked examples (by verification property)
+YAML (`*.setup.yaml`), when `SEASTACK_ENABLE_EXTERNAL` is on. Prefer a dedicated
+attach file (peer of `hydro_file`); this path is for **link actuators**
+(`ChLinkTSDA` / `ChLinkRSDA`) only — not a custom 6-DOF body wrench:
 
-Three Python examples ship as RM3 demos, chosen to cover different verification
-properties rather than merely increasing complexity:
+```yaml
+# setup.yaml
+external_pto_file: my_case.external_pto.yaml
+```
 
-| Module | Property verified | Oracle | Demo |
-|--------|-------------------|--------|------|
-| `linear_damper_pto.py` | Transport + force correctness (`F = -c v`) | Native `LinearPTO` / analytic law | `demos/.../external_pto/` |
-| `adaptive_damping_pto.py` | Stateful controller + constraints (PI variable damping, anti-windup, saturation, sliding window) | Prescribed-input replay vs independent recurrence | `demos/.../external_pto_adaptive/` |
-| `hydraulic_accumulator_pto.py` | Dynamic external subsystem (two pressure states, rectifier, accumulators, relief valve, motor) | Component equations + exact energy balance | `demos/.../external_pto_hydraulic/` |
+```yaml
+# my_case.external_pto.yaml
+link: PTO                 # name of a ChLinkTSDA or ChLinkRSDA
+command: ["python", "my_pto.py"]
+# rich_state: false       # optional; default true (17-channel kinematics)
+timeout_ms: 20000
+config:
+  damping: 1200000
+```
 
-`adaptive_damping_pto.py` is a *variable-damping* controller: it never returns
-net energy to the device, so it is deliberately not labelled "reactive control"
-(which has a specific WEC meaning). `hydraulic_accumulator_pto.py` is a reduced
-circuit inspired by the public WEC-Sim PTO-Sim RM3 hydraulic case; it integrates
-its own pressure states each accepted step and implements `reset`/`commit`/
-`rollback` over that state.
+An inline `external_pto:` map in setup is still accepted for small one-offs;
+do not set both `external_pto_file` and `external_pto:` together.
+
+### Worked examples
+
+| Module | What it shows | Demo |
+|--------|---------------|------|
+| `linear_damper_pto.py` | Stateless `F = -c v` | `demos/.../external_pto/` |
+| `adaptive_damping_pto.py` | Adapting `c(t)` + saturation + `reset` | `demos/.../external_pto_adaptive/` |
+| `hydraulic_accumulator_pto.py` | Internal states + `commit`/`rollback` | `demos/.../external_pto_hydraulic/` |
+
+Start with the linear damper, then open the adaptive file — it is the same
+skeleton with three small additions. The hydraulic demo is the advanced case.
 
 ### Verifying a module without a full run
 
@@ -151,16 +236,6 @@ events. `examples/external_pto/verify_examples.py` runs the prescribed-input
 golden checks for all three cases (ctest `test_external_pto_examples_golden`).
 Use the harness to check a new module against your own reference before wiring
 it into an RM3 run.
-
-YAML (`*.setup.yaml`), when `SEASTACK_ENABLE_EXTERNAL` is on:
-
-```yaml
-external_pto:
-  link: PTO
-  command: ["python", "my_pto.py"]
-  config:
-    damping: 1200000
-```
 
 Release ZIPs install the IPC helper at `python/seastack_external.py`. Demo
 scripts under `demos/` search parents for that folder (and, in a source
@@ -194,9 +269,14 @@ To add one:
 3. Point the demo at it:
 
    ```yaml
-   external_pto:
-     link: PTO
-     command: ["matlab", "-batch", "run_my_pto"]
+   # setup.yaml
+   external_pto_file: my_case.external_pto.yaml
+   ```
+
+   ```yaml
+   # my_case.external_pto.yaml
+   link: PTO
+   command: ["matlab", "-batch", "run_my_pto"]
    ```
 
 The same displacement/velocity replay approach used by `replay_harness.py`

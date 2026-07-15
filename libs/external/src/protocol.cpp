@@ -82,6 +82,19 @@ std::string EncodeDoubleArray(const std::vector<double>& values) {
     return oss.str();
 }
 
+std::string EncodeStringArray(const std::vector<std::string>& values) {
+    std::ostringstream oss;
+    oss << '[';
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            oss << ',';
+        }
+        oss << '"' << JsonEscape(values[i]) << '"';
+    }
+    oss << ']';
+    return oss.str();
+}
+
 bool DecodeDoubleArray(const std::string& json, size_t start,
                        std::vector<double>& out, size_t& end_pos) {
     out.clear();
@@ -184,6 +197,9 @@ std::string MakeInitializeRequest(const ExternalInit& init) {
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%.17g", init.dt);
     oss << buf;
+    if (!init.in_names.empty()) {
+        oss << ",\"in_names\":" << EncodeStringArray(init.in_names);
+    }
     oss << ",\"config\":" << cfg << '}';
     return oss.str();
 }

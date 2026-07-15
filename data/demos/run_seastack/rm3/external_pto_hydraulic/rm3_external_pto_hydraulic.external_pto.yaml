@@ -1,0 +1,18 @@
+# Two-accumulator hydraulic PTO on ChLinkTSDA "PTO".
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+link: PTO
+command: ["python", "hydraulic_accumulator_pto.py"]
+timeout_ms: 20000
+config:
+  piston_area: 0.05
+  gamma: 1.4
+  V_gas_hi: 2.0
+  V_gas_lo: 2.0
+  p_precharge_hi: 1.0e7
+  p_precharge_lo: 2.0e6
+  p_relief: 3.0e7
+  relief_conductance: 1.0e-7
+  motor_conductance: 5.0e-8   # higher => closer decay timescale to linear/adaptive
+  v_eps: 0.02
+  n_substeps: 10
+  diagnostics_csv: outputs/pto_diagnostics.csv

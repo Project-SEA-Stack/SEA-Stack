@@ -42,6 +42,9 @@ bool ParseEvaluateReply(const std::string& json, std::vector<double>& out);
 /// Encode a double array as a JSON array string.
 std::string EncodeDoubleArray(const std::vector<double>& values);
 
+/// Encode a string array as a JSON array of quoted strings.
+std::string EncodeStringArray(const std::vector<std::string>& values);
+
 /// Decode a JSON array of doubles from a substring starting at '['.
 bool DecodeDoubleArray(const std::string& json, size_t start,
                        std::vector<double>& out, size_t& end_pos);

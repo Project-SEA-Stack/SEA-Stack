@@ -60,6 +60,12 @@ if(TARGET seastack_mooring)
     target_link_libraries(seastack_chrono_adapter PUBLIC SEAStack::Mooring)
 endif()
 
+# External PTO rich functors; SEASTACK_HAVE_EXTERNAL comes from seastack/config.h
+# when SEASTACK_ENABLE_EXTERNAL=ON.
+if(TARGET seastack_external)
+    target_link_libraries(seastack_chrono_adapter PUBLIC SEAStack::External)
+endif()
+
 target_compile_features(seastack_chrono_adapter PUBLIC ${SEASTACK_CXX_STANDARD})
 
 # Generated headers (version.h, config.h) — PUBLIC because hydro_system.h includes seastack/config.h

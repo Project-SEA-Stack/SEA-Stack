@@ -41,11 +41,12 @@ struct SetupConfig {
 
     /// Optional out-of-process PTO module (requires SEASTACK_ENABLE_EXTERNAL).
     struct ExternalPtoConfig {
-        std::string link_name;                 ///< ChLinkTSDA name to override
+        std::string link_name;                 ///< ChLinkTSDA or ChLinkRSDA name
         std::vector<std::string> command;      ///< argv to spawn
         std::string config_json = "{}";        ///< JSON object for module config
         std::string working_directory;         ///< optional cwd for child
         int timeout_ms = 10000;
+        bool rich_state = true;                ///< publish full kinematics channel list
     };
     ExternalPtoConfig external_pto;
     bool has_external_pto = false;

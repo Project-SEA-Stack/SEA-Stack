@@ -7,7 +7,7 @@ verified against an independent oracle.
 | Script | Property verified | Oracle |
 |--------|-------------------|--------|
 | `linear_damper_pto.py` | Transport + force correctness (stateless `F = -c v`) | Native SEA-Stack `LinearPTO` / exact analytic law |
-| `adaptive_damping_pto.py` | Stateful controller + constraints (PI variable damping, anti-windup, saturation, history window) | Prescribed-input replay vs an independent PI recurrence |
+| `adaptive_damping_pto.py` | Stateful step-up (PI-adapted `c(t)`, saturation, `reset`) | Prescribed-input replay vs an independent PI recurrence |
 | `hydraulic_accumulator_pto.py` | Dynamic external subsystem (two pressure states, rectifier, accumulators, relief valve, motor) | Component equations + exact internal energy balance |
 
 The canonical copies live in the RM3 demo directories (they ship in the release
@@ -18,7 +18,26 @@ ZIP under `demos/`) and are copied next to `external_pto_example` at build time:
 - `data/demos/run_seastack/rm3/external_pto_hydraulic/hydraulic_accumulator_pto.py`
 
 The physics live in those module files; `seastack_external.py` is only the IPC
-helper.
+helper. All three demos use the same named-state API (`PtoModule.force(state)`
++ `run(...)`) — the same script attaches to a `ChLinkTSDA` or `ChLinkRSDA`.
+Case wiring lives in `*.external_pto.yaml` (pointed at by `external_pto_file`
+in setup); that path is for link actuators only, not 6-DOF body forces.
+
+Minimal damper:
+
+```python
+from seastack_external import PtoModule, run
+
+class MyPTO(PtoModule):
+    def setup(self, cfg):
+        self.c = float(cfg.get("damping", 50.0))
+
+    def force(self, state):
+        return -self.c * state.velocity
+
+if __name__ == "__main__":
+    run(MyPTO())
+```
 
 ## Watch the simulations
 

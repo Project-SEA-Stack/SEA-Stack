@@ -13,14 +13,19 @@ not bundle MATLAB; provide your own license and interpreter.
 ## Launch from setup YAML
 
 ```yaml
-external_pto:
-  link: PTO
-  command:
-    - matlab
-    - -batch
-    - "addpath('path/to/libs/external/matlab'); seastack_external('linear_damper')"
-  config:
-    damping: 1200000
+# setup.yaml
+external_pto_file: my_case.external_pto.yaml
+```
+
+```yaml
+# my_case.external_pto.yaml
+link: PTO
+command:
+  - matlab
+  - -batch
+  - "addpath('path/to/libs/external/matlab'); seastack_external('linear_damper')"
+config:
+  damping: 1200000
 ```
 
 Pass the listen port via environment variable `SEASTACK_PORT` if your MATLAB

@@ -4,22 +4,5 @@ hydro_file: rm3_external_pto_adaptive.hydro.yaml
 
 output_directory: outputs
 
-# Stateful PI variable-damping PTO: spring + adapted c(t) + coulomb + force clip.
-# Requires -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
-external_pto:
-  link: PTO
-  command: ["python", "adaptive_damping_pto.py"]
-  config:
-    stiffness: 0.0
-    damping: 800000        # initial c [N.s/m]
-    coulomb: 50000         # friction [N]
-    force_max: 3.0e6       # |F| clip [N]
-    kp: 2.0e5
-    ki: 5.0e4
-    vel_setpoint: 0.4      # target peak |v| [m/s]
-    window_s: 4.0
-    c_min: 1.0e5
-    c_max: 3.0e6
-    v_eps: 0.05             # coulomb smoothing: F_c * tanh(v / v_eps)
-    diagnostics_csv: outputs/pto_diagnostics.csv
-  timeout_ms: 20000
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+external_pto_file: rm3_external_pto_adaptive.external_pto.yaml

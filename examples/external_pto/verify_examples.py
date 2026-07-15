@@ -14,11 +14,9 @@ Exit code 0 on success, 1 on any mismatch. Intended to run as a fast CI test.
 
 from __future__ import annotations
 
-import math
 import sys
-from collections import deque
 from pathlib import Path
-from typing import Any, Deque, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
@@ -75,33 +73,24 @@ def verify_linear(ck: Checker) -> None:
 
 # --- Case 2: adaptive damping ----------------------------------------------
 class _AdaptiveReference:
-    """Independent re-implementation of the PI variable-damping recurrence."""
+    """Independent re-implementation of the simplified PI variable-damping law."""
 
     def __init__(self, cfg: Dict[str, Any]) -> None:
-        self.k = cfg["stiffness"]
         self.c = cfg["damping"]
         self.c0 = cfg["damping"]
-        self.f_c = cfg["coulomb"]
         self.f_max = cfg["force_max"]
         self.kp = cfg["kp"]
         self.ki = cfg["ki"]
         self.vsp = cfg["vel_setpoint"]
-        self.window_s = cfg["window_s"]
         self.c_min = cfg["c_min"]
         self.c_max = cfg["c_max"]
-        self.v_eps = max(float(cfg.get("v_eps", 0.05)), 1.0e-6)
         self.integral = 0.0
-        self.hist: Deque[Tuple[float, float]] = deque()
         self.sat = 0
 
     def step(self, t: float, dt: float, x: float, v: float) -> float:
+        del t, x  # unused; law depends on velocity + controller state only
         if dt > 0.0:
-            self.hist.append((t, abs(v)))
-            t_cut = t - self.window_s
-            while self.hist and self.hist[0][0] < t_cut:
-                self.hist.popleft()
-            peak = max(vv for _, vv in self.hist) if self.hist else abs(v)
-            err = self.vsp - peak
+            err = self.vsp - abs(v)
             self.integral += err * dt
             u = self.c0 - self.kp * err - self.ki * self.integral
             if u > self.c_max:
@@ -111,7 +100,7 @@ class _AdaptiveReference:
                 self.integral -= err * dt
                 u = self.c_min
             self.c = u
-        f_cmd = -self.k * x - self.c * v - self.f_c * math.tanh(v / self.v_eps)
+        f_cmd = -self.c * v
         f = max(-self.f_max, min(self.f_max, f_cmd))
         if f != f_cmd:
             self.sat += 1
@@ -119,17 +108,14 @@ class _AdaptiveReference:
 
 
 def verify_adaptive(ck: Checker) -> None:
-    print("Case 2: adaptive_damping_pto.py (stateful PI + constraints)")
+    print("Case 2: adaptive_damping_pto.py (stateful PI + saturation)")
     cls = _load_module_class(ADAPTIVE, "AdaptiveDampingPTO")
     cfg = {
-        "stiffness": 0.0,
         "damping": 8.0e5,
-        "coulomb": 5.0e4,
         "force_max": 1.0e6,   # low enough to force saturation on velocity peaks
         "kp": 2.0e5,
         "ki": 5.0e4,
         "vel_setpoint": 0.4,
-        "window_s": 3.0,      # short enough to exercise window pops
         "c_min": 1.0e5,
         "c_max": 3.0e6,
     }

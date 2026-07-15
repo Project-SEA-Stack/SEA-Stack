@@ -26,7 +26,8 @@ constexpr int kProtocolVersion = 1;
 
 /// Arguments passed to IExternalForceModel::Initialize.
 struct ExternalInit {
-    /// Logical model kind (e.g. "pto", "body_force"). Informational.
+    /// Logical model kind (e.g. "pto", "pto_tsda", "pto_rsda", "body_force").
+    /// Informational for the module; also used as a unit/label hint.
     std::string kind;
     /// Expected number of scalar inputs per Evaluate call.
     int n_inputs = 0;
@@ -37,6 +38,9 @@ struct ExternalInit {
     /// Opaque JSON object string for model-specific configuration.
     /// Empty string means "{}".
     std::string config_json;
+    /// Optional channel names for the positional `in` array (additive v1 field).
+    /// Empty means the module must rely on its default layout for `kind`.
+    std::vector<std::string> in_names;
 };
 
 /// Metadata returned by a successful Initialize.

@@ -107,6 +107,13 @@ if(TARGET seastack_external)
     target_link_libraries(test_external_pto_model PRIVATE SEAStack::External)
     set_tests_properties(test_external_pto_model PROPERTIES LABELS "unit;chrono-free")
 
+    if(TARGET seastack_chrono_adapter AND SEASTACK_ENABLE_CHRONO)
+        build_unit_test(test_external_pto_functors)
+        target_link_libraries(test_external_pto_functors PRIVATE SEAStack::ChronoAdapter)
+        target_include_directories(test_external_pto_functors PRIVATE "${CMAKE_BINARY_DIR}")
+        set_tests_properties(test_external_pto_functors PROPERTIES LABELS "unit")
+    endif()
+
     if(TARGET external_pto_example)
         add_test(
             NAME test_example_external_pto_mock
@@ -130,6 +137,14 @@ if(TARGET seastack_external)
                 "${CMAKE_SOURCE_DIR}/examples/external_pto/verify_examples.py"
         )
         set_tests_properties(test_external_pto_examples_golden PROPERTIES
+            LABELS "unit;chrono-free" COST 1)
+
+        add_test(
+            NAME test_external_pto_python_api
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_SOURCE_DIR}/examples/external_pto/test_pto_python_api.py"
+        )
+        set_tests_properties(test_external_pto_python_api PROPERTIES
             LABELS "unit;chrono-free" COST 1)
 
         # IPC-level equivalence: the same prescribed trace through the full IPC

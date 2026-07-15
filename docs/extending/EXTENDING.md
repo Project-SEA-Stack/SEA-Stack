@@ -168,8 +168,9 @@ Full protocol, lifecycle, YAML keys, and language helpers are documented in
 2. Bridge via `ExternalPtoModel` (1-DOF `IPTOModel`) or
    `ExternalForceComponent` (6-DOF hydro component).
 3. Enable with `-DSEASTACK_ENABLE_EXTERNAL=ON`.
-4. Point `run_seastack` at the script with an `external_pto:` block in the
-   setup YAML, or wire in C++ with `PTOForceFunctor`.
+4. Point `run_seastack` at the script with `external_pto_file:` in the
+   setup YAML (details in `*.external_pto.yaml`), or wire in C++ with
+   `PTOForceFunctor`.
 
 **Examples (Python, by verification property):** `linear_damper_pto.py`
 (transport), `adaptive_damping_pto.py` (stateful PI control) and

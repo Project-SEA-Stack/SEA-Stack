@@ -794,6 +794,9 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/demos/run_seastack/
         PATTERN "*.nc"               EXCLUDE
         PATTERN "*.nemoh"            EXCLUDE
         PATTERN "meshes"             EXCLUDE
+        PATTERN "outputs"            EXCLUDE
+        PATTERN "_visual_native_linpto" EXCLUDE
+        PATTERN "_regression_native_linpto" EXCLUDE
         PATTERN ".gitignore"         EXCLUDE)
 
 # IPC helper for external force demos (Python modules under demos/ look here).

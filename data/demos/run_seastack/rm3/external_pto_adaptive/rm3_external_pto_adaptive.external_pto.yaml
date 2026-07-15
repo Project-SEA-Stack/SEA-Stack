@@ -1,0 +1,14 @@
+# Linear damper + PI-adapted c(t) + force saturation on ChLinkTSDA "PTO".
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+link: PTO
+command: ["python", "adaptive_damping_pto.py"]
+timeout_ms: 20000
+config:
+  damping: 800000        # initial c [N.s/m]
+  force_max: 3.0e6       # |F| clip [N]
+  kp: 2.0e5
+  ki: 5.0e4
+  vel_setpoint: 0.4      # target |v| [m/s]
+  c_min: 1.0e5
+  c_max: 3.0e6
+  diagnostics_csv: outputs/pto_diagnostics.csv
