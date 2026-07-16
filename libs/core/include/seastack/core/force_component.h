@@ -28,7 +28,8 @@ enum class HydroComponentType {
     kRadiation,                 ///< Radiation damping (RIRF convolution)
     kExcitation,                ///< Wave excitation forces
     kMooring,                   ///< Mooring forces (e.g. MoorDyn)
-    kDamping                    ///< User-specified per-DOF damping (linear + optional quadratic)
+    kDamping,                   ///< User-specified per-DOF damping (linear + optional quadratic)
+    kExternal                   ///< External force module (out-of-process / FMI bridge)
 };
 
 /**

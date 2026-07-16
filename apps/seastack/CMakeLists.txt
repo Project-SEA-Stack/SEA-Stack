@@ -30,6 +30,10 @@ add_library(seastack_app_lib STATIC
     ${GUI_SOURCES}
 )
 
+if(SEASTACK_ENABLE_EXTERNAL)
+    target_sources(seastack_app_lib PRIVATE external_pto_yaml.cpp)
+endif()
+
 target_include_directories(seastack_app_lib
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/gui"
@@ -41,6 +45,16 @@ target_link_libraries(seastack_app_lib
         SEAStack::ChronoAdapter
         Chrono::Chrono_parsers
 )
+
+if(SEASTACK_ENABLE_EXTERNAL AND TARGET seastack_external)
+    target_link_libraries(seastack_app_lib PUBLIC SEAStack::External)
+    # external_pto_yaml.cpp uses yaml-cpp directly
+    if(TARGET yaml-cpp::yaml-cpp)
+        target_link_libraries(seastack_app_lib PRIVATE yaml-cpp::yaml-cpp)
+    elseif(TARGET Chrono::yaml-cpp)
+        target_link_libraries(seastack_app_lib PRIVATE Chrono::yaml-cpp)
+    endif()
+endif()
 
 # Campaign summary HDF5 (power_matrix_summary.h5): define for this target's TUs only.
 # Link-time dependency on HydroIO comes transitively from ChronoAdapter.

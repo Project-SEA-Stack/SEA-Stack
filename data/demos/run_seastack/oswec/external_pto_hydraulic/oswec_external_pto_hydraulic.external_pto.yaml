@@ -1,0 +1,25 @@
+# Two-accumulator hydraulic PTO on ChLinkRSDA "PTO".
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+#
+# Same reduced circuit as the RM3 demo; on an RSDA the module maps
+#   τ = -A_p * (p_hi - p_lo) * sign(ω)
+# so A_p is an effective rotary displacement [m³/rad], not a literal piston bore.
+#
+#   c_eff ~ A_p^2 / G_mot ≈ (0.19)^2 / 3e-9 ≈ 1.2e7 N·m·s/rad
+# (near the linear RSDA baseline of 12e6).
+link: PTO
+command: ["python", "hydraulic_accumulator_pto.py"]
+timeout_ms: 20000
+config:
+  piston_area: 0.19
+  gamma: 1.4
+  V_gas_hi: 2.0
+  V_gas_lo: 2.0
+  p_precharge_hi: 1.2e7
+  p_precharge_lo: 2.0e6
+  p_relief: 3.0e7
+  relief_conductance: 1.0e-7
+  motor_conductance: 3.0e-9
+  v_eps: 0.02
+  n_substeps: 10
+  diagnostics_csv: outputs/pto_diagnostics.csv

@@ -89,6 +89,9 @@ endif()
 option(SEASTACK_ENABLE_CHRONO    "Build Chrono adapter and apps"           ON)
 option(SEASTACK_ENABLE_HYDRO_IO  "Build HDF5-based hydro IO"              ON)
 option(SEASTACK_ENABLE_MOORING   "Build MoorDyn mooring module"           OFF)
+# Release packaging (build.ps1 -Package / build.sh --package) turns this ON so
+# RM3/OSWEC external_pto demos and examples/external_pto plot scripts ship.
+option(SEASTACK_ENABLE_EXTERNAL  "Build external force module (IPC)"      OFF)
 option(SEASTACK_ENABLE_VSG       "Enable VSG visualization in seastack"   OFF)
 option(SEASTACK_ENABLE_TESTS     "Build tests"                            ON)
 option(SEASTACK_ENABLE_DEMOS     "Build demo executables"                 OFF)
@@ -348,6 +351,11 @@ if(SEASTACK_ENABLE_MOORING)
 else()
     set(SEASTACK_HAS_MOORDYN "/* #undef SEASTACK_HAVE_MOORDYN */")
 endif()
+if(SEASTACK_ENABLE_EXTERNAL)
+    set(SEASTACK_HAS_EXTERNAL "#define SEASTACK_HAVE_EXTERNAL")
+else()
+    set(SEASTACK_HAS_EXTERNAL "/* #undef SEASTACK_HAVE_EXTERNAL */")
+endif()
 set(SEASTACK_DATA_DIR "#define SEASTACK_DATA_DIR_PATH \"${SEASTACK_BUILD_DATA}\"")
 if(SEASTACK_ENABLE_CHRONO AND DEFINED CHRONO_DATA_DIR)
     set(SEASTACK_CHRONO_DATA_DIR "#define SEASTACK_CHRONO_DATA_DIR_PATH \"${CHRONO_DATA_DIR}\"")
@@ -369,6 +377,10 @@ add_subdirectory(libs/hydro)
 add_subdirectory(libs/infrastructure)
 add_subdirectory(libs/pto)
 add_subdirectory(libs/control)
+
+if(SEASTACK_ENABLE_EXTERNAL)
+    add_subdirectory(libs/external)
+endif()
 
 if(SEASTACK_ENABLE_HYDRO_IO)
     add_subdirectory(libs/hydro_io)
@@ -397,6 +409,9 @@ add_subdirectory(examples/standalone_controller)
 if(SEASTACK_ENABLE_HYDRO_IO)
     add_subdirectory(examples/standalone_hydro)
 endif()
+if(SEASTACK_ENABLE_EXTERNAL)
+    add_subdirectory(examples/external_pto)
+endif()
 
 # ── Apply compile settings to all SEAStack targets ──────────────────────────
 # (prevents leaking to third-party code like MoorDyn)
@@ -406,6 +421,7 @@ foreach(_target
     seastack_infra
     seastack_pto
     seastack_control
+    seastack_external
 )
     if(TARGET ${_target})
         seastack_apply_compile_settings(${_target})
@@ -432,6 +448,9 @@ if(TARGET standalone_controller)
 endif()
 if(TARGET standalone_hydro)
     seastack_apply_compile_settings(standalone_hydro)
+endif()
+if(TARGET external_pto_example)
+    seastack_apply_compile_settings(external_pto_example)
 endif()
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -486,6 +505,9 @@ endif()
 # Always-built library targets
 set(_seastack_lib_targets seastack_core seastack_hydro seastack_infra seastack_pto seastack_control)
 
+if(TARGET seastack_external)
+    list(APPEND _seastack_lib_targets seastack_external)
+endif()
 if(TARGET seastack_hydro_io)
     list(APPEND _seastack_lib_targets seastack_hydro_io)
 endif()
@@ -504,6 +526,9 @@ set_target_properties(seastack_hydro PROPERTIES EXPORT_NAME Hydro)
 set_target_properties(seastack_infra PROPERTIES EXPORT_NAME Infra)
 set_target_properties(seastack_pto PROPERTIES EXPORT_NAME PTO)
 set_target_properties(seastack_control PROPERTIES EXPORT_NAME Control)
+if(TARGET seastack_external)
+    set_target_properties(seastack_external PROPERTIES EXPORT_NAME External)
+endif()
 if(TARGET seastack_hydro_io)
     set_target_properties(seastack_hydro_io PROPERTIES EXPORT_NAME HydroIO)
 endif()
@@ -528,6 +553,9 @@ install(DIRECTORY libs/hydro/include/         DESTINATION include)
 install(DIRECTORY libs/infrastructure/include/ DESTINATION include)
 install(DIRECTORY libs/pto/include/           DESTINATION include)
 install(DIRECTORY libs/control/include/       DESTINATION include)
+if(TARGET seastack_external)
+    install(DIRECTORY libs/external/include/ DESTINATION include)
+endif()
 if(TARGET seastack_hydro_io)
     install(DIRECTORY libs/hydro_io/include/ DESTINATION include)
 endif()
@@ -768,7 +796,30 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/demos/run_seastack/
         PATTERN "*.nc"               EXCLUDE
         PATTERN "*.nemoh"            EXCLUDE
         PATTERN "meshes"             EXCLUDE
+        PATTERN "outputs"            EXCLUDE
+        PATTERN "_visual_native_linpto" EXCLUDE
+        PATTERN "_visual_native_rsda" EXCLUDE
+        PATTERN "_regression_native_linpto" EXCLUDE
         PATTERN ".gitignore"         EXCLUDE)
+
+# External-PTO Python tooling. The demo cases (demos/**/external_pto*) are plain
+# data and ship unconditionally via the install(DIRECTORY) above, but they only
+# run when run_seastack is built with SEASTACK_ENABLE_EXTERNAL (compile-time
+# SEASTACK_HAVE_EXTERNAL). Gate the tooling on the same flag so the ZIP does not
+# advertise a workflow the shipped binary cannot execute. Release packaging
+# (build.ps1 -Package / build.sh --package) sets this flag ON.
+if(SEASTACK_ENABLE_EXTERNAL)
+    # IPC helper (demo Python modules import this from python/).
+    install(FILES "${CMAKE_SOURCE_DIR}/libs/external/python/seastack_external.py"
+            DESTINATION python COMPONENT runtime)
+    # Comparison-plot scripts for RM3 (TSDA) / OSWEC (RSDA). They resolve demos/
+    # under the package root (or data/demos/run_seastack/ in a source checkout).
+    install(FILES
+                "${CMAKE_SOURCE_DIR}/examples/external_pto/plot_verification.py"
+                "${CMAKE_SOURCE_DIR}/examples/external_pto/run_visual_verification.py"
+                "${CMAKE_SOURCE_DIR}/examples/external_pto/README.md"
+            DESTINATION examples/external_pto COMPONENT runtime)
+endif()
 
 # MSVC runtime DLLs (msvcp, vcruntime, ucrt) and OpenMP runtime
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT runtime)

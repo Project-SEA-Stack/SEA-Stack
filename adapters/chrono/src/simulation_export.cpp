@@ -381,7 +381,8 @@ bool LookupRsdaDampingFromModelYaml(const std::string& model_yaml,
 }
 
 // Time-mean PTO metrics: c*v^2 with v from Chrono. Chrono MBS YAML always sets a built-in
-// ForceFunctor on TSDAs; only SEA-Stack PTOForceFunctor (IPTOModel) needs -(F*v) fallback.
+// ForceFunctor on TSDAs; only SEA-Stack PTOForceFunctor / ExternalPtoForceFunctor
+// (IPTOModel) need -(F*v) fallback.
 double ComputeTsdaPtoPowerW(::chrono::ChLinkTSDA* L,
                             double damping_coeff_ns_per_m,
                             const std::string& sanitized_name,
@@ -392,11 +393,24 @@ double ComputeTsdaPtoPowerW(::chrono::ChLinkTSDA* L,
     } catch (...) {
     }
     auto fun = L->GetForceFunctor();
-    if (fun && dynamic_cast<const PTOForceFunctor*>(fun.get())) {
+    bool use_fv = false;
+    if (fun) {
+        if (dynamic_cast<const PTOForceFunctor*>(fun.get())) {
+            use_fv = true;
+        }
+#ifdef SEASTACK_HAVE_EXTERNAL
+        if (dynamic_cast<const ExternalPtoForceFunctor*>(fun.get())) {
+            use_fv = true;
+        }
+#endif
+    }
+    if (use_fv) {
+        // Expected for IPTOModel / external PTO: native c is zero, so power is
+        // -(F*v). Keep at debug — a yellow warning looks like a misconfiguration.
         if (functor_warned.insert(sanitized_name).second) {
-            seastack::infra::cli::LogWarning(
+            seastack::infra::debug::LogDebug(
                 std::string("TSDA '") + sanitized_name +
-                "': IPTOModel (PTOForceFunctor); PTO power uses -(F*v) instead of c*v^2");
+                "': IPTOModel force functor; PTO power uses -(F*v) instead of c*v^2");
         }
         double F = 0.0;
         try {
@@ -408,8 +422,39 @@ double ComputeTsdaPtoPowerW(::chrono::ChLinkTSDA* L,
     return damping_coeff_ns_per_m * v * v;
 }
 
-// MBS YAML always registers a torque functor on RSDAs; use c*w^2 with c from buffer/YAML.
-double ComputeRsdaPtoPowerW(double damping_coeff_nms_per_rad, double w) {
+// Absorbed power for RSDA: c*w^2 unless an IPTO / external torque functor is attached,
+// in which case use -(T*w) (mirror of the TSDA path).
+double ComputeRsdaPtoPowerW(::chrono::ChLinkRSDA* L,
+                            double damping_coeff_nms_per_rad,
+                            double w,
+                            const std::string& sanitized_name,
+                            std::unordered_set<std::string>& functor_warned) {
+    auto fun = L->GetTorqueFunctor();
+    bool use_tw = false;
+    if (fun) {
+        if (dynamic_cast<const PTOTorqueFunctor*>(fun.get())) {
+            use_tw = true;
+        }
+#ifdef SEASTACK_HAVE_EXTERNAL
+        if (dynamic_cast<const ExternalPtoTorqueFunctor*>(fun.get())) {
+            use_tw = true;
+        }
+#endif
+    }
+    if (use_tw) {
+        // Expected for IPTOModel / external PTO (see TSDA note above).
+        if (functor_warned.insert(sanitized_name).second) {
+            seastack::infra::debug::LogDebug(
+                std::string("RSDA '") + sanitized_name +
+                "': IPTOModel torque functor; PTO power uses -(T*w) instead of c*w^2");
+        }
+        double T = 0.0;
+        try {
+            T = L->GetTorque();
+        } catch (...) {
+        }
+        return -(T * w);
+    }
     return damping_coeff_nms_per_rad * w * w;
 }
 
@@ -963,7 +1008,8 @@ void SimulationExporter::RecordStep(::chrono::ChSystem* system) {
             w = L->GetVelocity();
         } catch (...) {
         }
-        const double power = ComputeRsdaPtoPowerW(r.c, w);
+        const double power = ComputeRsdaPtoPowerW(
+            L, r.c, w, r.name, impl_->pto_functor_power_fallback_warned);
         if (impl_->total_steps_seen > 0) {
             r.running_energy += 0.5 * (power + r.prev_power) * dt_energy;
         }
@@ -1068,7 +1114,8 @@ void SimulationExporter::RecordStep(::chrono::ChSystem* system) {
         r.torque_mag.push_back(tmag);
         r.angle.push_back(rel_angle);
         r.ang_speed.push_back(angle_dt);
-        r.absorbed_power.push_back(ComputeRsdaPtoPowerW(r.c, angle_dt));
+        r.absorbed_power.push_back(ComputeRsdaPtoPowerW(
+            L, r.c, angle_dt, r.name, impl_->pto_functor_power_fallback_warned));
         r.absorbed_energy.push_back(r.running_energy);
 
         if (!is_compact) {
@@ -1397,6 +1444,7 @@ void SimulationExporter::Finalize() {
                 case T::kExcitation:            return "excitation";
                 case T::kDamping:               return "damping";
                 case T::kMooring:               return "mooring";
+                case T::kExternal:              return "external";
                 default:                        return "unknown";
             }
         };

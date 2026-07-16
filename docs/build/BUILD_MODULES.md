@@ -13,6 +13,7 @@ built and their dependency requirements.
 | `SEASTACK_ENABLE_CHRONO` | ON | Chrono adapter, apps (`run_seastack`), and Chrono-dependent tests |
 | `SEASTACK_ENABLE_HYDRO_IO` | ON | HDF5-based BEMIO import/export (`SEAStack::HydroIO`) |
 | `SEASTACK_ENABLE_MOORING` | OFF | MoorDyn mooring module (`SEAStack::Mooring`) |
+| `SEASTACK_ENABLE_EXTERNAL` | OFF | Out-of-process force modules (`SEAStack::External`) |
 | `SEASTACK_ENABLE_VSG` | OFF | Vulkan Scene Graph 3D visualization |
 | `SEASTACK_ENABLE_TESTS` | ON | Test executables |
 | `SEASTACK_ENABLE_DEMOS` | OFF | C++ demo executables |
@@ -131,6 +132,7 @@ SEAStack::Hydro         (static)        → Core, Infra, OpenMP (optional)
 SEAStack::HydroIO       (static)        → Hydro, Infra, HDF5
 SEAStack::PTO           (static)        → C++ stdlib only
 SEAStack::Control       (header-only)   → C++ stdlib only
+SEAStack::External      (static, opt.)  → PTO, Core (TCP/JSON IPC for Python/MATLAB)
 SEAStack::Mooring       (static)        → Core, Infra, MoorDyn
 SEAStack::ChronoAdapter (static)        → Core, Hydro, PTO, Infra, Chrono
                                           optional: HydroIO, Mooring

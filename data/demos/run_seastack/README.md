@@ -37,6 +37,7 @@ parameters**, and an **available cases** table (paths below are relative to
 | 5sa | spreading | 5SA attenuator, directional spreading | `5sa/spreading/5sa_spreading.setup.yaml` |
 | 5sa | power_matrix | Batch / AEP-style inputs | `5sa/power_matrix/` (see `README.md` there) |
 | rm3 | irregular_waves | RM3 WEC, JONSWAP irregular sea, linear PTO | `rm3/irregular_waves/rm3_irregular_waves.setup.yaml` |
+| rm3 | external_pto* | Irregular waves + out-of-process Python PTO on TSDA (linear / adaptive / hydraulic) | `rm3/external_pto*/` |
 | rm3 | mooring | RM3 WEC with MoorDyn mooring lines, irregular waves (eta import) | `rm3/mooring/rm3_mooring.setup.yaml` |
 | rm3 | decay | RM3 two-body free decay in still water (minimal) | `rm3/decay/rm3_decay.setup.yaml` |
 | rm3 | regular_waves | *(source repo only; omitted from release ZIP)* | `rm3/regular_waves/rm3_regular_waves.setup.yaml` |
@@ -48,6 +49,7 @@ parameters**, and an **available cases** table (paths below are relative to
 | iea_sphere | decay_lin_5m | IEA sphere, linear hydrostatics, 5 m drop | `iea_sphere/decay_lin_5m/iea_sphere_decay_lin_5m.setup.yaml` |
 | oswec | regular_waves | OSWEC flap, regular waves | `oswec/regular_waves/oswec_regular_waves.setup.yaml` |
 | oswec | irregular_waves | OSWEC flap, JONSWAP irregular sea | `oswec/irregular_waves/oswec_irregular_waves.setup.yaml` |
+| oswec | external_pto* | Irregular waves + out-of-process Python PTO on RSDA (linear / adaptive / hydraulic) | `oswec/external_pto*/` |
 | oswec | decay | OSWEC flap free decay in still water (minimal) | `oswec/decay/oswec_decay.setup.yaml` |
 | f3of | irregular_waves | F3OF platform, JONSWAP irregular sea, surge restraint | `f3of/irregular_waves/f3of_irregular_waves.setup.yaml` |
 | f3of | decay_dt3 | F3OF platform, DT3 flap pitch decay (base locked) | `f3of/decay_dt3/f3of_decay_dt3.setup.yaml` |

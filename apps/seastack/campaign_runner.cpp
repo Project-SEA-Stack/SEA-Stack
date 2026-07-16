@@ -18,6 +18,10 @@
 #include <seastack/hydro/config/yaml_parser.h>
 #include <seastack/hydro/config/hydro_config.h>
 
+#ifdef SEASTACK_HAVE_EXTERNAL
+#include "external_pto_yaml.h"
+#endif
+
 #ifdef SEASTACK_HAVE_HYDRO_IO
 #include <H5Cpp.h>
 #include <seastack/hydro_io/h5_writer.h>
@@ -67,6 +71,9 @@ struct CampaignConfig {
     std::string model_file;
     std::string simulation_file;
     std::string hydro_file;
+
+    bool has_external_pto = false;
+    seastack::infra::SetupConfig::ExternalPtoConfig external_pto;
 
     // Axes
     AxisSpec hs;
@@ -348,6 +355,17 @@ bool ResolveCaseFiles(CampaignConfig& cfg) {
             cfg.simulation_file = (case_dir / sc.simulation_file).lexically_normal().string();
         if (sc.has_hydro_file)
             cfg.hydro_file = (case_dir / sc.hydro_file).lexically_normal().string();
+#ifdef SEASTACK_HAVE_EXTERNAL
+        try {
+            LoadExternalPtoFromSetupYaml(setup_path, sc);
+            cfg.has_external_pto = sc.has_external_pto;
+            cfg.external_pto = sc.external_pto;
+        } catch (const std::exception& e) {
+            seastack::infra::cli::LogError(
+                std::string("Failed to parse external_pto: ") + e.what());
+            return false;
+        }
+#endif
     }
 
     // Fallback auto-detection
@@ -784,6 +802,8 @@ int RunCampaign(const std::string& campaign_yaml_path,
             run_cfg.cell_label      = label;
             run_cfg.concise_cli     = concise_cells;
             run_cfg.capture_pto_total_timeseries = capture_summary_timeseries;
+            run_cfg.has_external_pto = cfg.has_external_pto;
+            run_cfg.external_pto = cfg.external_pto;
 
             std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
             fs::create_directories(cell_diag_dir, ec);
@@ -859,6 +879,8 @@ int RunCampaign(const std::string& campaign_yaml_path,
                 run_cfg.cell_label      = label;
                 run_cfg.concise_cli     = concise_cells;
                 run_cfg.capture_pto_total_timeseries = capture_summary_timeseries;
+                run_cfg.has_external_pto = cfg.has_external_pto;
+                run_cfg.external_pto = cfg.external_pto;
 
                 std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
                 fs::create_directories(cell_diag_dir, ec);
@@ -906,6 +928,8 @@ int RunCampaign(const std::string& campaign_yaml_path,
             run_cfg.profile_mode    = profile_mode;
             run_cfg.cell_label      = label;
             run_cfg.concise_cli     = concise_cells;
+            run_cfg.has_external_pto = cfg.has_external_pto;
+            run_cfg.external_pto = cfg.external_pto;
 
             std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
             fs::create_directories(cell_diag_dir, ec);

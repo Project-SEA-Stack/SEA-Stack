@@ -8,6 +8,7 @@
 #   SEAStack::Infra           (static, no external deps)
 #   SEAStack::PTO             (static, depends on Core)
 #   SEAStack::Control         (header-only, depends on Core)
+#   SEAStack::External        (static, depends on PTO + Core)   [optional]
 #   SEAStack::HydroIO         (static, depends on Hydro + HDF5)    [optional]
 #   SEAStack::Mooring         (static, depends on Core + MoorDyn)  [optional]
 #   SEAStack::ChronoAdapter   (static, depends on Hydro + Chrono)  [optional]

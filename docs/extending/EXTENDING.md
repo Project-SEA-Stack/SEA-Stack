@@ -13,6 +13,7 @@ For the full architecture and module inventory, see
 - **Wave models** — subclass `WaveBase`
 - **PTO models** — implement `IPTOModel`
 - **Controllers** — implement `IController`
+- **External force modules** — out-of-process Python/MATLAB (or FMI) via `IExternalForceModel`; see [EXTERNAL_FORCE_MODULES.md](EXTERNAL_FORCE_MODULES.md)
 - **Solver adapters** — add an adapter analogous to `adapters/chrono/`
 
 ---
@@ -149,6 +150,47 @@ with anti-windup). Also see the `ProportionalController` in
 
 **Testing:** add a unit test under `tests/unit/`. Controller tests are
 chrono-free.
+
+---
+
+## Add an external force module (Python / MATLAB)
+
+**Interface:** `IExternalForceModel` in
+`libs/external/include/seastack/external/external_force_model.h`
+
+Full protocol, lifecycle, YAML keys, and language helpers are documented in
+[EXTERNAL_FORCE_MODULES.md](EXTERNAL_FORCE_MODULES.md).
+
+**Summary:**
+
+1. Implement a user script that speaks the length-prefixed JSON protocol
+   (use the shipped `seastack_external` Python or MATLAB helper).
+2. Bridge via `ExternalPtoModel` (1-DOF `IPTOModel`) or
+   `ExternalForceComponent` (6-DOF hydro component).
+3. Enable with `-DSEASTACK_ENABLE_EXTERNAL=ON`.
+4. Point `run_seastack` at the script with `external_pto_file:` in the
+   setup YAML (details in `*.external_pto.yaml`), or wire in C++ with
+   `PTOForceFunctor`.
+
+**Examples (Python, by verification property):** `linear_damper_pto.py`
+(transport), `adaptive_damping_pto.py` (stateful PI control) and
+`hydraulic_accumulator_pto.py` (dynamic subsystem) under
+`data/demos/run_seastack/rm3/external_pto*` (TSDA) and
+`data/demos/run_seastack/oswec/external_pto*` (RSDA; same scripts, rotational
+config).
+
+**Testing:** a three-level verification ladder (see
+`examples/external_pto/README.md`):
+- chrono-free unit tests under `tests/unit/test_ipc_external_*` and
+  `tests/unit/test_external_pto_model.cpp`;
+- prescribed-input golden + hydraulic component checks via
+  `examples/external_pto/verify_examples.py` (ctest
+  `test_external_pto_examples_golden`);
+- IPC transport equivalence via `compare_ipc_replay.py` (ctests
+  `test_external_pto_ipc_{linear,adaptive,hydraulic}`);
+- a focused Chrono RM3 regression via `verify_rm3_regression.py` (ctest
+  `test_external_pto_rm3_regression`) — linear exact-equivalence vs a native
+  `LinearPTO` twin, aggregate checks for adaptive/hydraulic.
 
 ---
 

@@ -1,0 +1,8 @@
+model_file: rm3_external_pto_hydraulic.model.yaml
+simulation_file: rm3_external_pto_hydraulic.simulation.yaml
+hydro_file: rm3_external_pto_hydraulic.hydro.yaml
+
+output_directory: outputs
+
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+external_pto_file: rm3_external_pto_hydraulic.external_pto.yaml

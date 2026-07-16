@@ -7,12 +7,32 @@ This describes what ships in the **runtime** ZIP produced by `cmake --install` a
 | Path | Purpose |
 |------|---------|
 | `bin/` | Executables (`run_seastack.exe`, optional `standalone_controller.exe`, optional `demo_sphere_decay.exe` when demos were enabled at build time) and third-party/runtime DLLs |
-| `demos/` | YAML-driven `run_seastack` case data (geometry, hydro HDF5 inputs, configs) |
+| `demos/` | YAML-driven `run_seastack` case data (geometry, hydro HDF5 inputs, configs), including RM3/OSWEC `external_pto*` Python PTO cases |
+| `python/` | Thin IPC helper `seastack_external.py` for out-of-process force demos under `demos/` |
+| `examples/external_pto/` | Comparison-plot scripts (`run_visual_verification.py`, `plot_verification.py`) for the external PTO demos |
 | `data/chrono/` | Chrono runtime assets (optional) |
 | `tests/` | Python/PowerShell regression helpers to validate an install |
 | `LICENSE` | Project license |
 | `THIRD_PARTY_NOTICES.txt` | Third-party notices (if present in source tree) |
 | `QUICKSTART.txt` | Short getting-started notes (installed from `docs/build/QUICKSTART_RELEASE.txt`) |
+
+## External PTO demos and comparison plots
+
+Release packaging (`build.ps1 -Package` / `build.sh --package`) configures
+`-DSEASTACK_ENABLE_EXTERNAL=ON` so `run_seastack` honours `external_pto_file`
+and the plot scripts are installed.
+
+From the unzipped package root (Python 3 + `h5py`/`numpy`/`matplotlib` from
+`tests/requirements.txt`):
+
+```text
+bin\run_seastack.exe --nogui demos\rm3\external_pto
+python examples\external_pto\run_visual_verification.py
+python examples\external_pto\run_visual_verification.py --platform oswec
+```
+
+`run_visual_verification.py` finds `bin/run_seastack` and `demos/<platform>/`
+automatically when launched from the package tree.
 
 ## Policy: generated HDF5 results
 

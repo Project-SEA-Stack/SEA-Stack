@@ -1,0 +1,8 @@
+# Out-of-process linear damper attached to ChLinkTSDA "PTO".
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+# Baseline for the shared irregular sea state (same c as rm3/irregular_waves).
+link: PTO
+command: ["python", "linear_damper_pto.py"]
+timeout_ms: 20000
+config:
+  damping: 1200000

@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace seastack::infra {
 
@@ -37,6 +38,21 @@ struct SetupConfig {
     };
     OutputConfig output_config;
     bool has_output_config = false;
+
+    /// Optional out-of-process PTO module (requires SEASTACK_ENABLE_EXTERNAL).
+    struct ExternalPtoConfig {
+        std::string link_name;                 ///< ChLinkTSDA or ChLinkRSDA name
+        std::vector<std::string> command;      ///< argv to spawn
+        std::string config_json = "{}";        ///< JSON object for module config
+        std::string working_directory;         ///< optional cwd for child
+        int timeout_ms = 10000;
+        bool rich_state = true;                ///< publish full kinematics channel list
+    };
+    ExternalPtoConfig external_pto;
+    bool has_external_pto = false;
+    /// Path as given in setup (`external_pto_file`), empty when inline `external_pto:`.
+    std::string external_pto_file;
+    bool has_external_pto_file = false;
 };
 
 /// Parse a model.setup.yaml file and return configuration

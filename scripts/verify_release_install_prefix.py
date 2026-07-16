@@ -30,12 +30,31 @@ def main() -> int:
         root / "tests" / "utilities" / "plot_helpers.py",
         root / "tests" / "compare_template.py",
         root / "demos" / "f3of" / "decay_dt3" / "f3of_decay_dt3.setup.yaml",
+        # External PTO demos (RM3 TSDA + OSWEC RSDA) + IPC helper + plot workflow.
+        root / "python" / "seastack_external.py",
+        root / "demos" / "rm3" / "external_pto" / "linear_damper_pto.py",
+        root / "demos" / "rm3" / "external_pto" / "rm3_external_pto.external_pto.yaml",
+        root / "demos" / "rm3" / "external_pto_adaptive" / "adaptive_damping_pto.py",
+        root / "demos" / "rm3" / "external_pto_hydraulic" / "hydraulic_accumulator_pto.py",
+        root / "demos" / "oswec" / "external_pto" / "linear_damper_pto.py",
+        root / "demos" / "oswec" / "external_pto" / "oswec_external_pto.external_pto.yaml",
+        root / "demos" / "oswec" / "external_pto_adaptive" / "adaptive_damping_pto.py",
+        root / "demos" / "oswec" / "external_pto_hydraulic" / "hydraulic_accumulator_pto.py",
+        root / "examples" / "external_pto" / "plot_verification.py",
+        root / "examples" / "external_pto" / "run_visual_verification.py",
+        root / "examples" / "external_pto" / "README.md",
     ]
     missing = [p for p in required if not p.is_file()]
     if missing:
         print("[FAIL] Release install prefix missing required files:", file=sys.stderr)
         for p in missing:
             print(f"  {p}", file=sys.stderr)
+        print(
+            "\nHint: package builds must enable -DSEASTACK_ENABLE_EXTERNAL=ON "
+            "(scripts/windows/build.ps1 -Package and scripts/unix/build.sh --package "
+            "do this automatically).",
+            file=sys.stderr,
+        )
         return 1
     print(f"[OK] Release install prefix checks passed ({root})")
     return 0
