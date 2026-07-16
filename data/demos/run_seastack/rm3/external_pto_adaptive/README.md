@@ -1,12 +1,16 @@
 # RM3 adaptive-damping external PTO (stateful)
 
-Same short RM3 decay case as [`../external_pto/`](../external_pto/), but the
+Same irregular-wave RM3 case as [`../external_pto/`](../external_pto/), but the
 Python module is a small step up from the linear damper:
 
 - same base law `F = -c v`
 - `c` adapted online by a PI loop on `|v|`
 - force clipped to `+/- force_max`
 - `reset()` clears the controller state
+
+Sea state: JONSWAP Hs = 2 m, Tp = 8 s, seed = 42 (shared with the sibling demos).
+Controller gains / `c` band in `*.external_pto.yaml` are tuned so absorbed
+power stays near the linear / hydraulic band under that sea state.
 
 **Run**
 

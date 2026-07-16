@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Human-visible verification plots for the three RM3 external-PTO demos.
+Human-visible verification / comparison plots for the three RM3 external-PTO
+demos under a shared irregular sea state (JONSWAP Hs=2 m, Tp=8 s, seed=42).
 
 Produces a *small curated set* of figures in the same visual style as the
 SEA-Stack regression / comparison / verification reports
 (``tests/utilities/plot_helpers.py``):
 
-  01_cross_case_overview.png   float heave, PTO force, absorbed energy
+  01_cross_case_overview.png   heave, relative vel, force, energy (all 3 PTOs)
   02_linear_vs_native.png      external vs native LinearPTO (confidence plot)
   03_adaptive_controller.png   force, adapted c(t), energy (+ saturation)
   04_hydraulic_energy_balance.png  E_abs = dE_gas + E_motor + E_relief
@@ -71,21 +72,51 @@ CASE_LABELS = {
     "adaptive": "Adaptive damping",
     "hydraulic": "Hydraulic accumulator PTO",
 }
-# Match report palette: primary blue + EXTRA_PALETTE accents.
+# Medium line weight + distinct linestyles so overlapping irregular-wave
+# traces stay readable without looking sparse or ink-heavy.
 CASE_STYLE = {
-    "linear": {**SERIES_STYLES["primary"], "label": CASE_LABELS["linear"]},
+    "linear": {
+        "color": SERIES_STYLES["primary"]["color"],
+        "linewidth": 1.4,
+        "linestyle": "-",
+        "alpha": 0.85,
+        "label": CASE_LABELS["linear"],
+    },
     "adaptive": {
-        "color": EXTRA_PALETTE[1], "linewidth": 2.5, "linestyle": "-",
-        "alpha": 0.9, "label": CASE_LABELS["adaptive"],
+        "color": EXTRA_PALETTE[1],
+        "linewidth": 1.4,
+        "linestyle": "--",
+        "alpha": 0.9,
+        "label": CASE_LABELS["adaptive"],
     },
     "hydraulic": {
-        "color": EXTRA_PALETTE[0], "linewidth": 2.5, "linestyle": "-",
-        "alpha": 0.9, "label": CASE_LABELS["hydraulic"],
+        "color": EXTRA_PALETTE[0],
+        "linewidth": 1.4,
+        "linestyle": "-.",
+        "alpha": 0.9,
+        "label": CASE_LABELS["hydraulic"],
     },
 }
 
-HEAVE_TOL = 1.0e-3
+# Local overrides of report SERIES_STYLES for this dense irregular-wave PDF.
+_LINE = {"linewidth": 1.4, "alpha": 0.85}
+_STYLE_EXTERNAL = {
+    **SERIES_STYLES["primary"], **_LINE, "linestyle": "-",
+}
+_STYLE_NATIVE = {
+    **SERIES_STYLES["secondary"], **_LINE, "linestyle": "--", "alpha": 0.9,
+}
+_STYLE_ERROR = {
+    **SERIES_STYLES["error"], "linewidth": 1.1, "alpha": 0.8, "linestyle": "-",
+}
+
+# Slightly looser than the old 40 s decay case: a long irregular run accumulates
+# more explicit-within-step drift between external and native LinearPTO.
+HEAVE_TOL = 2.0e-3
 FORCE_TOL = 2.0e-2
+
+# Excitation ramp in the shared irregular-wave YAML (seconds).
+RAMP_DURATION_S = 60.0
 
 
 @dataclass
@@ -111,8 +142,9 @@ class SummaryRow:
     peak_force: float
     rms_force: float
     net_energy: float
+    mean_power: float
     peak_power: float
-    final_heave: float
+    heave_rms: float
     heave_peak: float
     saturation_events: Optional[int]
     relief_events: Optional[int]
@@ -134,7 +166,8 @@ def find_results_h5(case_dir: Path) -> Path:
     outs = list((case_dir / "outputs").glob("results.*.h5"))
     if not outs:
         raise FileNotFoundError(f"no results.*.h5 under {case_dir / 'outputs'}")
-    return sorted(outs)[0]
+    # Prefer the newest file (avoids picking a stale results.still.h5).
+    return max(outs, key=lambda p: p.stat().st_mtime)
 
 
 def load_csv(path: Path) -> Dict[str, np.ndarray]:
@@ -223,6 +256,29 @@ def _info_box(ax: plt.Axes, text: str, loc: str = "lower right") -> None:
     )
 
 
+def _shade_ramp(ax: plt.Axes, t: np.ndarray) -> None:
+    """Shade the excitation-ramp window so post-ramp performance is obvious."""
+    t_end = float(t[-1]) if len(t) else RAMP_DURATION_S
+    ramp_end = min(RAMP_DURATION_S, t_end)
+    if ramp_end <= 0.0:
+        return
+    ax.axvspan(0.0, ramp_end, color="#adb5bd", alpha=0.18, zorder=0)
+    if ramp_end < t_end:
+        ax.axvline(ramp_end, color="#adb5bd", linewidth=0.9, linestyle=":",
+                   zorder=1)
+
+
+def _post_ramp_mask(t: np.ndarray) -> np.ndarray:
+    return t >= RAMP_DURATION_S
+
+
+def _mean_power_post_ramp(case: CaseData) -> float:
+    mask = _post_ramp_mask(case.t)
+    if not np.any(mask):
+        return float(np.mean(case.power))
+    return float(np.mean(case.power[mask]))
+
+
 def save_fig(fig: plt.Figure, out_dir: Path, stem: str, pdf: PdfPages) -> Path:
     png = out_dir / f"{stem}.png"
     fig.savefig(png, dpi=FIGURE_DPI, facecolor="white")
@@ -237,24 +293,43 @@ def save_fig(fig: plt.Figure, out_dir: Path, stem: str, pdf: PdfPages) -> Path:
 
 def plot_cross_case(cases: Sequence[CaseData], out_dir: Path,
                     pdf: PdfPages) -> Path:
-    fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True,
+    fig, axes = plt.subplots(4, 1, figsize=(12, 11), sharex=True,
                              facecolor="white")
     fig.suptitle(
-        "External PTO examples — cross-case RM3 response",
-        fontsize=13, fontweight="bold", color="#212529", y=0.98,
+        "External PTO comparison — RM3 irregular sea "
+        f"(JONSWAP Hs=2 m, Tp=8 s, seed=42)",
+        fontsize=13, fontweight="bold", color="#212529", y=0.995,
     )
     panels = [
         (axes[0], "Float heave (m)", lambda c: c.heave_float),
-        (axes[1], "PTO force (N)", lambda c: c.force),
-        (axes[2], "Absorbed energy (J)", lambda c: c.energy),
+        (axes[1], "PTO relative velocity (m/s)", lambda c: c.speed),
+        (axes[2], "PTO force (N)", lambda c: c.force),
+        (axes[3], "Absorbed energy (J)", lambda c: c.energy),
     ]
+    t0 = cases[0].t if cases else np.array([0.0])
+    # Draw solid first, then dashed / dash-dot on top so covered data stays visible.
+    draw_order = sorted(cases, key=lambda c: {"linear": 0, "adaptive": 1,
+                                              "hydraulic": 2}.get(c.name, 9))
     for ax, ylabel, getter in panels:
-        for c in cases:
-            ax.plot(c.t, getter(c), **_plot_kw(CASE_STYLE[c.name]))
+        _shade_ramp(ax, t0)
+        for i, c in enumerate(draw_order):
+            ax.plot(c.t, getter(c), **_plot_kw(CASE_STYLE[c.name]),
+                    zorder=2 + i)
         _label_axis(ax, ylabel)
-        ax.legend(fontsize=10, framealpha=0.9)
-    axes[2].set_xlabel("Time (s)", **AXIS_STYLE["xlabel"])
-    fig.subplots_adjust(left=0.10, right=0.97, top=0.93, bottom=0.07, hspace=0.18)
+        ax.legend(fontsize=9, framealpha=0.9, loc="upper right")
+    axes[3].set_xlabel("Time (s)", **AXIS_STYLE["xlabel"])
+    # Compact mean-power callout (post-ramp) for performance comparison.
+    lines = ["Mean absorbed power after ramp:"]
+    for c in cases:
+        lines.append(f"  {c.label}: {_mean_power_post_ramp(c):.3g} W")
+    _info_box(axes[3], "\n".join(lines), loc="lower right")
+    fig.text(
+        0.5, 0.005,
+        f"Grey band = excitation ramp (0–{RAMP_DURATION_S:.0f} s). "
+        "Same sea state for all three PTO modules.",
+        ha="center", va="bottom", fontsize=8, style="italic", color="#495057",
+    )
+    fig.subplots_adjust(left=0.10, right=0.97, top=0.95, bottom=0.05, hspace=0.16)
     return save_fig(fig, out_dir, "01_cross_case_overview", pdf)
 
 
@@ -268,17 +343,20 @@ def plot_linear_vs_native(
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True, facecolor="white")
     fig.suptitle(
-        "Linear verification — external damper vs native Chrono LinearPTO",
+        "Linear verification — external damper vs native Chrono LinearPTO "
+        "(irregular waves)",
         fontsize=13, fontweight="bold", color="#212529", y=0.98,
     )
+    for ax in axes:
+        _shade_ramp(ax, linear.t)
 
     if native is None:
         status = "INCOMPLETE"
         extra = "native LinearPTO reference H5 not provided"
         axes[0].plot(linear.t, linear.heave_float,
-                     **_plot_kw(SERIES_STYLES["primary"], label="External"))
+                     **_plot_kw(_STYLE_EXTERNAL, label="External"))
         axes[1].plot(linear.t, linear.force,
-                     **_plot_kw(SERIES_STYLES["primary"], label="External"))
+                     **_plot_kw(_STYLE_EXTERNAL, label="External"))
         axes[2].text(0.5, 0.5, extra, transform=axes[2].transAxes,
                      ha="center", va="center", color="#dc3545")
     else:
@@ -293,23 +371,22 @@ def plot_linear_vs_native(
             status = "FAIL"
         extra = (f"heave_rms_rel={heave_err:.3e}; force_rms_rel={force_err:.3e}")
 
-        # Solid external first; dashed native on top (report secondary style).
+        # Solid external; dashed native on top.
         axes[0].plot(t, linear.heave_float,
-                     **_plot_kw(SERIES_STYLES["primary"], label="External", zorder=2))
+                     **_plot_kw(_STYLE_EXTERNAL, label="External", zorder=2))
         axes[0].plot(t, n_heave,
-                     **_plot_kw(SERIES_STYLES["secondary"],
-                                label="Native LinearPTO", zorder=3))
+                     **_plot_kw(_STYLE_NATIVE, label="Native LinearPTO",
+                                zorder=3))
         axes[1].plot(t, linear.force,
-                     **_plot_kw(SERIES_STYLES["primary"], label="External", zorder=2))
+                     **_plot_kw(_STYLE_EXTERNAL, label="External", zorder=2))
         axes[1].plot(t, n_force,
-                     **_plot_kw(SERIES_STYLES["secondary"],
-                                label="Native LinearPTO", zorder=3))
+                     **_plot_kw(_STYLE_NATIVE, label="Native LinearPTO",
+                                zorder=3))
 
         ax_h, ax_f = axes[2], axes[2].twinx()
-        h1, = ax_h.plot(t, d_heave, **_plot_kw(SERIES_STYLES["error"],
-                                               label="Heave diff"))
-        h2, = ax_f.plot(t, d_force, color="#6f42c1", linewidth=2.0,
-                        alpha=0.85, label="Force diff")
+        h1, = ax_h.plot(t, d_heave, **_plot_kw(_STYLE_ERROR, label="Heave diff"))
+        h2, = ax_f.plot(t, d_force, color="#6f42c1", linewidth=1.1,
+                        alpha=0.8, label="Force diff")
         ax_h.axhline(0.0, color="#adb5bd", linewidth=0.8)
         ax_h.set_ylabel("Heave difference (m)", **AXIS_STYLE["ylabel"])
         ax_f.set_ylabel("Force difference (N)", **AXIS_STYLE["ylabel"])
@@ -346,8 +423,9 @@ def plot_linear_vs_native(
         peak_force=float(np.max(np.abs(linear.force))),
         rms_force=rms(linear.force),
         net_energy=float(linear.energy[-1]),
+        mean_power=_mean_power_post_ramp(linear),
         peak_power=float(np.max(linear.power)),
-        final_heave=float(linear.heave_float[-1]),
+        heave_rms=rms(linear.heave_float),
         heave_peak=float(np.max(np.abs(linear.heave_float))),
         saturation_events=None, relief_events=None,
         status=status, extra=extra,
@@ -364,40 +442,46 @@ def plot_adaptive(adaptive: CaseData, out_dir: Path,
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True, facecolor="white")
     fig.suptitle(
-        "Adaptive damping — controller verification",
+        "Adaptive damping — controller under irregular waves",
         fontsize=13, fontweight="bold", color="#212529", y=0.98,
     )
+
+    for ax in axes:
+        _shade_ramp(ax, adaptive.t)
 
     if diag is None:
         status = "INCOMPLETE"
         extra = "missing controller CSV"
         axes[0].plot(adaptive.t, adaptive.force,
-                     **_plot_kw(CASE_STYLE["adaptive"]))
+                     **_plot_kw(CASE_STYLE["adaptive"]), zorder=2)
         axes[1].plot(adaptive.t, adaptive.speed,
-                     **_plot_kw(CASE_STYLE["adaptive"], label="Velocity"))
+                     **_plot_kw(CASE_STYLE["adaptive"], label="Velocity"),
+                     zorder=2)
         axes[2].plot(adaptive.t, adaptive.energy,
-                     **_plot_kw(CASE_STYLE["adaptive"]))
+                     **_plot_kw(CASE_STYLE["adaptive"]), zorder=2)
     else:
         t = diag["time"]
         sat_events = int(diag["saturation_events"][-1])
         axes[0].plot(t, diag["force"],
-                     **_plot_kw(CASE_STYLE["adaptive"], label="PTO force"))
+                     **_plot_kw(CASE_STYLE["adaptive"], label="PTO force"),
+                     zorder=2)
         axes[0].plot(t, diag["force_max"], color="#dc3545", linewidth=1.5,
-                     linestyle="--", alpha=0.8, label="+F_max")
+                     linestyle="--", alpha=0.8, label="+F_max", zorder=2)
         axes[0].plot(t, -diag["force_max"], color="#dc3545", linewidth=1.5,
-                     linestyle="--", alpha=0.8, label="-F_max")
+                     linestyle="--", alpha=0.8, label="-F_max", zorder=2)
         sat = diag["saturated"] > 0.5
         if np.any(sat):
             axes[0].fill_between(
                 t, -diag["force_max"], diag["force_max"], where=sat,
-                color="#dc3545", alpha=0.12, label="Saturation",
+                color="#dc3545", alpha=0.12, label="Saturation", zorder=1,
             )
         axes[1].plot(t, diag["damping_c"],
-                     color="#6f42c1", linewidth=2.5, alpha=0.9,
-                     label="Adapted c(t)")
+                     color="#6f42c1", linewidth=1.4, alpha=0.9,
+                     label="Adapted c(t)", zorder=2)
         axes[2].plot(adaptive.t, adaptive.energy,
-                     **_plot_kw(CASE_STYLE["adaptive"]))
-        extra = f"sat_events={sat_events}"
+                     **_plot_kw(CASE_STYLE["adaptive"]), zorder=2)
+        extra = (f"sat_events={sat_events}; "
+                 f"mean_P_post_ramp={_mean_power_post_ramp(adaptive):.3g} W")
         if float(adaptive.energy[-1]) <= 0.0:
             status = "FAIL"
 
@@ -416,8 +500,9 @@ def plot_adaptive(adaptive: CaseData, out_dir: Path,
         peak_force=float(np.max(np.abs(adaptive.force))),
         rms_force=rms(adaptive.force),
         net_energy=float(adaptive.energy[-1]),
+        mean_power=_mean_power_post_ramp(adaptive),
         peak_power=float(np.max(adaptive.power)),
-        final_heave=float(adaptive.heave_float[-1]),
+        heave_rms=rms(adaptive.heave_float),
         heave_peak=float(np.max(np.abs(adaptive.heave_float))),
         saturation_events=sat_events, relief_events=None,
         status=status, extra=extra,
@@ -436,17 +521,19 @@ def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 9), sharex=False, facecolor="white")
     fig.suptitle(
-        "Hydraulic accumulator PTO — energy balance",
+        "Hydraulic accumulator PTO — energy balance (irregular waves)",
         fontsize=13, fontweight="bold", color="#212529", y=0.98,
     )
 
     if diag is None:
         status = "INCOMPLETE"
         extra = "missing hydraulic CSV"
+        _shade_ramp(axes[0], hydraulic.t)
+        _shade_ramp(axes[1], hydraulic.t)
         axes[0].plot(hydraulic.t, hydraulic.force,
-                     **_plot_kw(CASE_STYLE["hydraulic"]))
+                     **_plot_kw(CASE_STYLE["hydraulic"]), zorder=2)
         axes[1].plot(hydraulic.t, hydraulic.energy,
-                     **_plot_kw(CASE_STYLE["hydraulic"]))
+                     **_plot_kw(CASE_STYLE["hydraulic"]), zorder=2)
         _label_axis(axes[0], "PTO force (N)")
         _label_axis(axes[1], "Absorbed energy (J)", xlabel="Time (s)")
     else:
@@ -459,18 +546,22 @@ def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
         scale = max(float(np.max(np.abs(e_abs))), 1.0)
         max_rel_res = max_abs_res / scale
         extra = (f"max_abs_residual={max_abs_res:.3e}; "
-                 f"max_rel_residual={max_rel_res:.3e}")
+                 f"max_rel_residual={max_rel_res:.3e}; "
+                 f"mean_P_post_ramp={_mean_power_post_ramp(hydraulic):.3g} W")
 
+        _shade_ramp(axes[0], t)
+        _shade_ramp(axes[1], t)
         axes[0].plot(t, e_abs, **_plot_kw(CASE_STYLE["hydraulic"],
-                                          label="E_abs (mechanical)"))
-        axes[0].plot(t, diag["E_gas"], color=EXTRA_PALETTE[1], linewidth=2.0,
-                     linestyle="--", alpha=0.9, label="ΔE_gas (stored)")
-        axes[0].plot(t, diag["E_motor"], color=EXTRA_PALETTE[2], linewidth=2.0,
-                     alpha=0.9, label="E_motor")
-        axes[0].plot(t, diag["E_relief"], color=EXTRA_PALETTE[3], linewidth=2.0,
-                     alpha=0.9, label="E_relief")
-        axes[0].plot(t, e_sum, color="#212529", linewidth=2.0, linestyle=":",
-                     alpha=0.9, label="ΔE_gas+E_motor+E_relief")
+                                          label="E_abs (mechanical)"), zorder=2)
+        axes[0].plot(t, diag["E_gas"], color=EXTRA_PALETTE[1], linewidth=1.4,
+                     linestyle="--", alpha=0.9, label="ΔE_gas (stored)",
+                     zorder=3)
+        axes[0].plot(t, diag["E_motor"], color=EXTRA_PALETTE[2], linewidth=1.4,
+                     linestyle=":", alpha=0.9, label="E_motor", zorder=3)
+        axes[0].plot(t, diag["E_relief"], color=EXTRA_PALETTE[3], linewidth=1.4,
+                     linestyle="-.", alpha=0.9, label="E_relief", zorder=3)
+        axes[0].plot(t, e_sum, color="#212529", linewidth=1.2, linestyle=":",
+                     alpha=0.75, label="ΔE_gas+E_motor+E_relief", zorder=4)
         _label_axis(axes[0], "Energy (J)",
                     title="E_abs = ΔE_gas + E_motor + E_relief")
         axes[0].legend(fontsize=9, framealpha=0.9, loc="best")
@@ -478,8 +569,8 @@ def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
                   f"max |residual| = {max_abs_res:.3e} J\n"
                   f"max |residual|/max|E_abs| = {max_rel_res:.3e}")
 
-        axes[1].plot(t, residual, **_plot_kw(SERIES_STYLES["error"],
-                                             label="Residual"))
+        axes[1].plot(t, residual, **_plot_kw(_STYLE_ERROR, label="Residual"),
+                     zorder=2)
         axes[1].axhline(0.0, color="#adb5bd", linewidth=0.8)
         _label_axis(axes[1], "Energy residual (J)", xlabel="Time (s)")
         axes[1].legend(fontsize=10, framealpha=0.9)
@@ -495,8 +586,9 @@ def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
         peak_force=float(np.max(np.abs(hydraulic.force))),
         rms_force=rms(hydraulic.force),
         net_energy=float(hydraulic.energy[-1]),
+        mean_power=_mean_power_post_ramp(hydraulic),
         peak_power=float(np.max(hydraulic.power)),
-        final_heave=float(hydraulic.heave_float[-1]),
+        heave_rms=rms(hydraulic.heave_float),
         heave_peak=float(np.max(np.abs(hydraulic.heave_float))),
         saturation_events=None, relief_events=relief_events,
         status=status, extra=extra,
@@ -508,8 +600,9 @@ def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path
     csv_path = out_dir / "summary.csv"
     txt_path = out_dir / "summary.txt"
     fields = [
-        "case", "peak_force_N", "rms_force_N", "net_energy_J", "peak_power_W",
-        "final_heave_m", "heave_peak_m", "saturation_events", "relief_events",
+        "case", "peak_force_N", "rms_force_N", "net_energy_J",
+        "mean_power_post_ramp_W", "peak_power_W",
+        "heave_rms_m", "heave_peak_m", "saturation_events", "relief_events",
         "status", "extra",
     ]
     with open(csv_path, "w", newline="", encoding="utf-8") as fh:
@@ -518,8 +611,9 @@ def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path
         for r in rows:
             w.writerow([
                 r.case, f"{r.peak_force:.6g}", f"{r.rms_force:.6g}",
-                f"{r.net_energy:.6g}", f"{r.peak_power:.6g}",
-                f"{r.final_heave:.6g}", f"{r.heave_peak:.6g}",
+                f"{r.net_energy:.6g}", f"{r.mean_power:.6g}",
+                f"{r.peak_power:.6g}",
+                f"{r.heave_rms:.6g}", f"{r.heave_peak:.6g}",
                 "" if r.saturation_events is None else r.saturation_events,
                 "" if r.relief_events is None else r.relief_events,
                 r.status, r.extra,
@@ -527,16 +621,17 @@ def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path
 
     lines = [
         "SEA-Stack external PTO visual verification summary",
+        "Sea state: irregular JONSWAP Hs=2 m, Tp=8 s, seed=42, ramp=60 s",
         f"Generated: {datetime.now().isoformat(timespec='seconds')}",
-        "=" * 72,
+        "=" * 78,
         f"{'Case':<28} {'Peak F':>10} {'RMS F':>10} {'E_net':>10} "
-        f"{'P_peak':>10} {'z_final':>9} {'status':>10}",
-        "-" * 72,
+        f"{'P_mean':>10} {'z_rms':>9} {'status':>10}",
+        "-" * 78,
     ]
     for r in rows:
         lines.append(
             f"{r.case:<28} {r.peak_force:10.3g} {r.rms_force:10.3g} "
-            f"{r.net_energy:10.3g} {r.peak_power:10.3g} {r.final_heave:9.3g} "
+            f"{r.net_energy:10.3g} {r.mean_power:10.3g} {r.heave_rms:9.3g} "
             f"{r.status:>10}"
         )
         if r.saturation_events is not None:
@@ -545,7 +640,11 @@ def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path
             lines.append(f"  relief_events = {r.relief_events}")
         if r.extra:
             lines.append(f"  {r.extra}")
-    lines.append("-" * 72)
+    lines.append("-" * 78)
+    lines.append(
+        "P_mean is time-mean absorbed power after the excitation ramp "
+        f"({RAMP_DURATION_S:.0f} s)."
+    )
     lines.append(
         "Absorbed power sign convention (SEA-Stack HDF5): positive = absorbing "
         "(-force_mag * speed)."

@@ -1,18 +1,26 @@
 # Two-accumulator hydraulic PTO on ChLinkTSDA "PTO".
 # Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+#
+# Physical scale (RM3-class reduced circuit, not a full PTO-Sim port):
+#   piston_area 0.08 m^2  -> ~319 mm bore (plausible for a large WEC cylinder)
+#   p_precharge 2–12 MPa, relief 30 MPa  -> industrial hydraulic range
+#   V_gas 2.0 m^3 each   -> oversized vs shipboard bladders (~tens–hundreds L);
+#                           kept large so the reduced model stores energy smoothly
+#   motor_conductance    -> lumped HP->LP drain (not a real motor displacement)
+#   c_eff ~ A_p^2 / G_mot ≈ (0.08)^2 / 3e-9 ≈ 2.1e6 N.s/m
 link: PTO
 command: ["python", "hydraulic_accumulator_pto.py"]
 timeout_ms: 20000
 config:
-  piston_area: 0.05
+  piston_area: 0.08
   gamma: 1.4
   V_gas_hi: 2.0
   V_gas_lo: 2.0
-  p_precharge_hi: 1.0e7
+  p_precharge_hi: 1.2e7
   p_precharge_lo: 2.0e6
   p_relief: 3.0e7
   relief_conductance: 1.0e-7
-  motor_conductance: 5.0e-8   # higher => closer decay timescale to linear/adaptive
+  motor_conductance: 3.0e-9
   v_eps: 0.02
   n_substeps: 10
   diagnostics_csv: outputs/pto_diagnostics.csv

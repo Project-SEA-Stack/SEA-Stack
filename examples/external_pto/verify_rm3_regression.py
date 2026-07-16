@@ -2,18 +2,18 @@
 """
 Focused Chrono regression for the RM3 external-PTO demos.
 
-Runs the full RM3 decay case through run_seastack for each external module and
-checks physically meaningful quantities without committing large time-history
-baselines:
+Runs each external module through the shared RM3 irregular-wave case
+(JONSWAP Hs=2 m, Tp=8 s, seed=42, 600 s) and checks physically meaningful
+quantities without committing large time-history baselines:
 
   * Linear  : EXACT-equivalence regression. A native Chrono LinearPTO twin of
-              the same case (TSDA damping = c, no external block) is generated
-              on the fly and run; the external linear damper must reproduce the
+              the same sea state (TSDA damping = c, no external block) is
+              generated on the fly; the external linear damper must reproduce
               native heave and PTO force to solver tolerance.
-  * Adaptive: aggregate checks (net energy absorbed > 0, plausible peak force,
-              motion decays).
-  * Hydraulic: aggregate checks + cross-case ordering (accumulator preload makes
-              the hydraulic peak force clearly exceed the linear damper's).
+  * Adaptive: aggregate checks (net energy > 0, post-ramp mean power > 0,
+              excited heave, plausible peak force).
+  * Hydraulic: aggregate checks (energy, post-ramp power, wave-excited heave)
+              plus a soft check that mean power stays within ~0.3x of linear.
 
 Skips (exit 77) if h5py is unavailable. Requires run_seastack (Chrono) and a
 Python 3 interpreter on PATH (the demos spawn `python <module>.py`).
@@ -64,6 +64,9 @@ FORCE = "/results/model/tsdas/PTO/force_mag"
 POWER = "/results/model/tsdas/PTO/absorbed_power"
 ENERGY = "/results/model/tsdas/PTO/absorbed_energy"
 TIME = "/results/time/time"
+
+# Matches ramp_duration in the shared irregular-wave hydro YAML.
+RAMP_DURATION_S = 60.0
 
 
 class Checker:
@@ -144,8 +147,11 @@ def cleanup(*dirs: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exe", required=True)
-    parser.add_argument("--tol", type=float, default=1e-3,
-                        help="RMS-rel tolerance for the integrated heave response")
+    parser.add_argument("--tol", type=float, default=2e-3,
+                        help="RMS-rel tolerance for the integrated heave response "
+                             "(default 2e-3; slightly looser than a short decay run "
+                             "because a longer irregular case accumulates more "
+                             "explicit-within-step drift)")
     parser.add_argument("--force-tol", type=float, default=2e-2,
                         help="RMS-rel tolerance for instantaneous PTO force. Looser "
                              "than heave because the external module is frozen per "
@@ -159,8 +165,17 @@ def main() -> int:
     hydraulic_dir = _RM3 / "external_pto_hydraulic"
     twin_dir = None
     try:
+        def mean_power_post_ramp(h5: Path) -> float:
+            t = read(h5, TIME)
+            p = read(h5, POWER)
+            mask = t >= RAMP_DURATION_S
+            if not np.any(mask):
+                return float(np.mean(p))
+            return float(np.mean(p[mask]))
+
         # --- Linear: exact equivalence vs native Chrono LinearPTO ---
-        print("Linear: external damper vs native Chrono LinearPTO (c=1.2e6)")
+        print("Linear: external damper vs native Chrono LinearPTO "
+              "(irregular waves, c=1.2e6)")
         ext_h5 = run_case(args.exe, linear_dir)
         twin_dir = make_native_twin(1.2e6)
         nat_h5 = run_case(args.exe, twin_dir)
@@ -181,32 +196,51 @@ def main() -> int:
 
         lin_peak = float(np.max(np.abs(force_ext)))
         lin_energy = float(read(ext_h5, ENERGY)[-1])
+        lin_pmean = mean_power_post_ramp(ext_h5)
+        heave_rms = float(np.sqrt(np.mean(heave_ext ** 2)))
         ck.check(lin_energy > 0.0, f"linear net absorbed energy > 0 ({lin_energy:.3g} J)")
+        ck.check(lin_pmean > 0.0,
+                 f"linear post-ramp mean power > 0 ({lin_pmean:.3g} W)")
+        ck.check(heave_rms > 0.05,
+                 f"linear heave is wave-excited (RMS {heave_rms:.3g} m)")
 
-        # --- Adaptive: aggregate checks ---
-        print("Adaptive: aggregate checks")
+        # --- Adaptive: aggregate checks under the same sea state ---
+        print("Adaptive: aggregate checks (irregular waves)")
         ad_h5 = run_case(args.exe, adaptive_dir)
         ad_energy = float(read(ad_h5, ENERGY)[-1])
-        ad_power = read(ad_h5, POWER)
+        ad_pmean = mean_power_post_ramp(ad_h5)
         ad_peak = float(np.max(np.abs(read(ad_h5, FORCE))))
         ad_heave = read(ad_h5, HEAVE, 2)
+        ad_heave_rms = float(np.sqrt(np.mean(ad_heave ** 2)))
         ck.check(ad_energy > 0.0, f"adaptive net absorbed energy > 0 ({ad_energy:.3g} J)")
-        ck.check(float(np.mean(ad_power)) > 0.0, "adaptive mean absorbed power > 0")
-        ck.check(abs(ad_heave[-1]) < abs(np.min(ad_heave)) + 1e-6
-                 and abs(ad_heave[-1]) > 0.3, "adaptive heave decays to a settled offset")
-        ck.check(ad_peak > 0.4 * lin_peak, f"adaptive peak force plausible ({ad_peak:.3g} N)")
+        ck.check(ad_pmean > 0.0,
+                 f"adaptive post-ramp mean power > 0 ({ad_pmean:.3g} W)")
+        ck.check(ad_heave_rms > 0.05,
+                 f"adaptive heave is wave-excited (RMS {ad_heave_rms:.3g} m)")
+        ck.check(ad_peak > 0.4 * lin_peak,
+                 f"adaptive peak force plausible ({ad_peak:.3g} N)")
 
-        # --- Hydraulic: aggregate checks + cross-case ordering ---
-        print("Hydraulic: aggregate checks + ordering vs linear")
+        # --- Hydraulic: aggregate checks + distinct performance vs siblings ---
+        print("Hydraulic: aggregate checks (irregular waves)")
         hy_h5 = run_case(args.exe, hydraulic_dir)
         hy_energy = float(read(hy_h5, ENERGY)[-1])
-        hy_power = read(hy_h5, POWER)
+        hy_pmean = mean_power_post_ramp(hy_h5)
         hy_peak = float(np.max(np.abs(read(hy_h5, FORCE))))
+        hy_heave = read(hy_h5, HEAVE, 2)
+        hy_heave_rms = float(np.sqrt(np.mean(hy_heave ** 2)))
         ck.check(hy_energy > 0.0, f"hydraulic net absorbed energy > 0 ({hy_energy:.3g} J)")
-        ck.check(float(np.mean(hy_power)) > 0.0, "hydraulic mean absorbed power > 0")
-        ck.check(hy_peak > 1.5 * lin_peak,
-                 f"hydraulic peak force exceeds linear (accumulator preload): "
-                 f"{hy_peak:.3g} vs {lin_peak:.3g} N")
+        ck.check(hy_pmean > 0.0,
+                 f"hydraulic post-ramp mean power > 0 ({hy_pmean:.3g} W)")
+        ck.check(hy_heave_rms > 0.05,
+                 f"hydraulic heave is wave-excited (RMS {hy_heave_rms:.3g} m)")
+        ck.check(hy_peak > 1.0e3,
+                 f"hydraulic peak force is non-trivial ({hy_peak:.3g} N)")
+        # Tuned demos sit in a similar power band (~same order as linear); just
+        # require that none collapses to near-zero relative to the baseline.
+        for name, pmean in (("adaptive", ad_pmean), ("hydraulic", hy_pmean)):
+            ck.check(pmean > 0.3 * lin_pmean,
+                     f"{name} post-ramp mean power within 0.3x of linear "
+                     f"({pmean:.3g} vs {lin_pmean:.3g} W)")
     except Exception as e:  # noqa: BLE001
         sys.stderr.write(f"ERROR: {e}\n")
         return 1

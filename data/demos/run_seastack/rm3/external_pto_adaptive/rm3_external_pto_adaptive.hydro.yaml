@@ -6,6 +6,25 @@ hydrodynamics:
     - name: body2
       h5_file: ../assets/hydroData/rm3.h5
 
+  # Same irregular sea state as rm3/irregular_waves (shared across all
+  # external_pto examples so PTO/controller performance can be compared).
   waves:
-    type: still
+    type: irregular
+    depth: 50.0
+    height: 2.0          # Hs [m]
+    period: 8.0          # Tp [s]
+    direction: 0
+    spectrum: jonswap
+    gamma: 3.3
+    ramp_duration: 60.0
+    seed: 42
 
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.85
+      end_percent: 1.0
+      final_amplitude: 0.0

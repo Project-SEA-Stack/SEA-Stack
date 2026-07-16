@@ -187,8 +187,9 @@ if(TARGET seastack_external)
                     "${CMAKE_SOURCE_DIR}/examples/external_pto/verify_rm3_regression.py"
                     --exe $<TARGET_FILE:run_seastack>
             )
+            # Four ~600 s irregular-wave Chrono runs (3 demos + native twin).
             set_tests_properties(test_external_pto_rm3_regression PROPERTIES
-                LABELS "external;chrono" COST 30 SKIP_RETURN_CODE 77)
+                LABELS "external;chrono" COST 120 SKIP_RETURN_CODE 77)
             # On Windows, run_seastack needs Chrono/HDF5/VSG DLLs (VSG is loaded
             # even with --nogui) plus a `python` interpreter (the demos spawn
             # `python <module>.py`). We pass these directories to the test script

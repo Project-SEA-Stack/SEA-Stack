@@ -227,6 +227,11 @@ do not set both `external_pto_file` and `external_pto:` together.
 Start with the linear damper, then open the adaptive file — it is the same
 skeleton with three small additions. The hydraulic demo is the advanced case.
 
+The three RM3 demos share one irregular sea state (same JONSWAP Hs = 2 m,
+Tp = 8 s, seed = 42 as `rm3/irregular_waves`, but 600 s for PTO comparison)
+so absorbed power and controller behaviour can be compared. Use
+`examples/external_pto/run_visual_verification.py` for side-by-side plots.
+
 ### Verifying a module without a full run
 
 `examples/external_pto/replay_harness.py` replays a `(time, displacement,

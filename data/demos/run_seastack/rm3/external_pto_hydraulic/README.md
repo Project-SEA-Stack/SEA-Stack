@@ -1,6 +1,6 @@
 # RM3 hydraulic external PTO (dynamic subsystem)
 
-Same short RM3 decay case as [`../external_pto/`](../external_pto/). This is
+Same irregular-wave RM3 case as [`../external_pto/`](../external_pto/). This is
 the third step in the demo ladder:
 
 - linear: stateless `F = -c v`
@@ -10,6 +10,12 @@ the third step in the demo ladder:
 The module integrates two accumulator oil volumes each step and returns
 `F = -A_p (p_hi - p_lo) sign(v)`. Energy balance
 `E_abs = dE_gas + E_motor + E_relief` is its own oracle.
+
+Sea state: JONSWAP Hs = 2 m, Tp = 8 s, seed = 42 (shared with the sibling demos).
+Hydraulic sizes / `motor_conductance` in `*.external_pto.yaml` are tuned for
+that sea state so effective damping is on the same order as the linear damper
+(`c_eff ~ A_p^2 / G_mot`). Pressures and piston area are RM3-plausible;
+accumulator gas volumes are deliberately large for a smooth reduced-circuit demo.
 
 **Run**
 

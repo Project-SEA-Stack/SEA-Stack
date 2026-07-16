@@ -2,7 +2,9 @@
 
 Three external (out-of-process, Python) PTO modules, chosen to cover **different
 verification properties** rather than just increasing complexity. Each is
-verified against an independent oracle.
+verified against an independent oracle, then exercised on a **shared irregular
+sea state** (JONSWAP Hs = 2 m, Tp = 8 s, seed = 42, 600 s) so absorbed power and
+controller behaviour can be compared side-by-side.
 
 | Script | Property verified | Oracle |
 |--------|-------------------|--------|
@@ -55,8 +57,9 @@ build/bin/Release/run_seastack.exe data/demos/run_seastack/rm3/external_pto_adap
 build/bin/Release/run_seastack.exe data/demos/run_seastack/rm3/external_pto_hydraulic
 ```
 
-On Unix/macOS use `run_seastack` (no `.exe`) and ensure Chrono/HDF5 DLLs (or
-shared libraries) are on the loader path.
+On Windows, put Chrono / HDF5 / VSG DLL directories on `PATH` before launching
+(otherwise the process can exit silently). On Unix/macOS use `run_seastack`
+(no `.exe`) and ensure Chrono/HDF5 shared libraries are discoverable.
 
 The YAML runner sets a default camera suitable for RM3 float + spar motion
 (eye ≈ `(0, -50, -10)`, look-at ≈ `(0, 0, -10)`, Z-up). The GUI animation is a
@@ -96,9 +99,9 @@ python examples/external_pto/plot_verification.py --auto \
 
 # Or pass paths explicitly:
 python examples/external_pto/plot_verification.py \
-    --linear data/demos/run_seastack/rm3/external_pto/outputs/results.still.h5 \
-    --adaptive data/demos/run_seastack/rm3/external_pto_adaptive/outputs/results.still.h5 \
-    --hydraulic data/demos/run_seastack/rm3/external_pto_hydraulic/outputs/results.still.h5 \
+    --linear data/demos/run_seastack/rm3/external_pto/outputs/results.irregular.h5 \
+    --adaptive data/demos/run_seastack/rm3/external_pto_adaptive/outputs/results.irregular.h5 \
+    --hydraulic data/demos/run_seastack/rm3/external_pto_hydraulic/outputs/results.irregular.h5 \
     --native <native-linpto-h5> \
     --output-dir external_pto_verification
 ```
@@ -109,12 +112,12 @@ Requires Python packages: `h5py`, `numpy`, `matplotlib`.
 
 | File | Contents |
 |------|----------|
-| `01_cross_case_overview.png` | Float heave, PTO force, absorbed energy (all three cases) |
+| `01_cross_case_overview.png` | Heave, relative velocity, force, energy + post-ramp mean power |
 | `02_linear_vs_native.png` | External vs native LinearPTO: heave, force, residuals |
 | `03_adaptive_controller.png` | Force / saturation, adapted `c(t)`, absorbed energy |
 | `04_hydraulic_energy_balance.png` | `E_abs = ΔE_gas + E_motor + E_relief` + residual |
 | `external_pto_verification.pdf` | The four figures as a multipage PDF |
-| `summary.csv`, `summary.txt` | Compact metrics table + verification status |
+| `summary.csv`, `summary.txt` | Compact metrics (incl. post-ramp mean power) + status |
 
 Figures use the shared SEA-Stack report style from
 `tests/utilities/plot_helpers.py` (same palette / axis styling / DPI as
@@ -151,8 +154,8 @@ python replay_harness.py --module adaptive_damping_pto.py \
 
 ## Verification ladder
 
-The three examples are checked at increasing levels of integration. All tests
-are registered with CTest and run in a few seconds total.
+The three examples are checked at increasing levels of integration. Golden and
+IPC tests are seconds; the Chrono RM3 regression is four ~600 s runs (minutes).
 
 | Level | Script | CTest name(s) | Needs |
 |-------|--------|---------------|-------|
@@ -182,13 +185,13 @@ python compare_ipc_replay.py --exe ./external_pto_example \
     --module linear_damper_pto.py --class LinearDamperPTO
 ```
 
-**Chrono regression** — `verify_rm3_regression.py` runs the three RM3 decay demos
-through `run_seastack`. The linear case is an exact-equivalence check against a
-native Chrono `LinearPTO` twin generated on the fly (heave matches tightly; the
-instantaneous force matches within an explicit-within-step tolerance since the
-external module is frozen per accepted step). The adaptive and hydraulic cases
-use aggregate and cross-case ordering checks instead of committed time-history
-baselines:
+**Chrono regression** — `verify_rm3_regression.py` runs the three RM3 irregular-
+wave demos through `run_seastack`. The linear case is an exact-equivalence check
+against a native Chrono `LinearPTO` twin generated on the fly (heave matches
+tightly; the instantaneous force matches within an explicit-within-step
+tolerance since the external module is frozen per accepted step). The adaptive
+and hydraulic cases use aggregate checks (post-ramp mean power, wave-excited
+heave, peak-force ordering) instead of committed time-history baselines:
 
 ```bash
 python verify_rm3_regression.py --exe /path/to/run_seastack

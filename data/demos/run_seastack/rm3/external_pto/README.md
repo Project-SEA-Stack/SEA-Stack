@@ -1,8 +1,13 @@
 # RM3 external PTO demo
 
-Short decay-style RM3 case that replaces the Chrono TSDA spring-damper with an
-out-of-process Python linear damper via `external_pto_file` in the setup YAML
-(attach details live in `*.external_pto.yaml`).
+RM3 case in a shared irregular sea state that replaces the Chrono TSDA
+spring-damper with an out-of-process Python linear damper via
+`external_pto_file` in the setup YAML (attach details live in
+`*.external_pto.yaml`).
+
+Sea state (same for all three external-PTO demos): JONSWAP Hs = 2 m,
+Tp = 8 s, seed = 42, 60 s excitation ramp, 600 s total. PTO damping
+`c = 1.2e6` matches the native TSDA in `rm3/irregular_waves`.
 
 **Requirements**
 
@@ -17,7 +22,7 @@ run_seastack --nogui data/demos/run_seastack/rm3/external_pto
 
 Uses `linear_damper_pto.py` (`F = -c v`). This is the transport / force-
 correctness baseline: the external result is checked against the native
-SEA-Stack `LinearPTO` and the exact analytic law.
+SEA-Stack `LinearPTO` under the same irregular waves.
 
 **Authoring pattern**
 
@@ -39,11 +44,13 @@ if __name__ == "__main__":
     run(LinearDamperPTO())
 ```
 
-Sibling cases (same pattern; only the physics differ):
+Sibling cases (same sea state; only the PTO physics differ):
 
 - [`../external_pto_adaptive/`](../external_pto_adaptive/) — same `F = -c v`,
   plus adapting `c(t)`, force saturation, and `reset()`.
 - [`../external_pto_hydraulic/`](../external_pto_hydraulic/) — internal physics
   states (two accumulators) with `commit` / `rollback`.
+
+Comparison plots: `examples/external_pto/run_visual_verification.py`.
 
 See [EXTERNAL_FORCE_MODULES.md](../../../../docs/extending/EXTERNAL_FORCE_MODULES.md).

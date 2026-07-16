@@ -1,14 +1,16 @@
 # Linear damper + PI-adapted c(t) + force saturation on ChLinkTSDA "PTO".
 # Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+# Tuned for the shared irregular sea state (Hs=2 m, Tp=8 s): keep average
+# damping near the linear baseline (c=1.2e6) so absorbed power is comparable.
 link: PTO
 command: ["python", "adaptive_damping_pto.py"]
 timeout_ms: 20000
 config:
-  damping: 800000        # initial c [N.s/m]
-  force_max: 3.0e6       # |F| clip [N]
-  kp: 2.0e5
-  ki: 5.0e4
-  vel_setpoint: 0.4      # target |v| [m/s]
-  c_min: 1.0e5
-  c_max: 3.0e6
+  damping: 1.2e6         # initial c [N.s/m]; matches linear baseline
+  force_max: 2.0e6       # |F| clip [N]
+  kp: 1.5e5              # milder than before (less chatter / overshoot)
+  ki: 3.0e4
+  vel_setpoint: 0.65     # slightly below typical wave |v| peaks
+  c_min: 1.0e6           # floor near linear c (was 4e5 — too soft)
+  c_max: 1.8e6
   diagnostics_csv: outputs/pto_diagnostics.csv

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-One-command visual verification workflow for the three RM3 external-PTO demos.
+One-command visual verification / comparison workflow for the three RM3
+external-PTO demos under a shared irregular sea state.
 
 1. Runs the three demos headlessly via run_seastack (same YAML configs as the
-   automated regression tests).
+   automated regression tests: JONSWAP Hs=2 m, Tp=8 s, seed=42, 600 s).
 2. Runs a native Chrono LinearPTO twin of the linear case (reference force/heave).
-3. Generates verification plots (PNG + multipage PDF) and a summary table.
+3. Generates comparison / verification plots (PNG + multipage PDF) and a summary.
 4. Prints the PDF path (optionally opens it).
 
 Does not re-implement simulation logic in Python — it only invokes run_seastack
-and plot_verification.py.
+and plot_verification.py. Expect several minutes: four 600 s Chrono runs.
 
 Usage:
   python examples/external_pto/run_visual_verification.py \\
@@ -79,10 +80,14 @@ def run_case(exe: str, case_dir: Path) -> Path:
         sys.stderr.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         raise RuntimeError(f"run_seastack failed for {case_dir} (exit {proc.returncode})")
+    return find_results_h5(case_dir)
+
+
+def find_results_h5(case_dir: Path) -> Path:
     outs = list((case_dir / "outputs").glob("results.*.h5"))
     if not outs:
         raise FileNotFoundError(f"no results H5 under {case_dir / 'outputs'}")
-    return sorted(outs)[0]
+    return max(outs, key=lambda p: p.stat().st_mtime)
 
 
 def make_native_twin(damping: float) -> Path:
@@ -168,10 +173,25 @@ def main(argv: Optional[list] = None) -> int:
             results["native"] = run_case(exe, twin_dir)
         else:
             for name, case_dir in CASES:
-                results[name] = sorted((case_dir / "outputs").glob("results.*.h5"))[0]
-            twin_h5 = _RM3 / "_visual_native_linpto" / "outputs"
-            native_candidates = list(twin_h5.glob("results.*.h5")) if twin_h5.exists() else []
-            results["native"] = native_candidates[0] if native_candidates else None
+                results[name] = find_results_h5(case_dir)
+            twin_h5_dir = _RM3 / "_visual_native_linpto" / "outputs"
+            native_candidates = (
+                list(twin_h5_dir.glob("results.*.h5")) if twin_h5_dir.exists() else []
+            )
+            if native_candidates:
+                results["native"] = max(
+                    native_candidates, key=lambda p: p.stat().st_mtime
+                )
+            elif Path(exe).exists():
+                # Replot without re-running the three demos, but rebuild the
+                # native twin so linear-vs-native is not left INCOMPLETE.
+                print("Native twin missing; running LinearPTO reference only…")
+                twin_dir = make_native_twin(args.damping)
+                results["native"] = run_case(exe, twin_dir)
+            else:
+                print("WARNING: native LinearPTO twin H5 not found; "
+                      "linear verification will be INCOMPLETE")
+                results["native"] = None
 
         cmd = [
             sys.executable, str(_PLOT),
