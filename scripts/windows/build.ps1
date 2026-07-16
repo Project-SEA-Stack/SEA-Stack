@@ -46,6 +46,7 @@ param(
     [switch]$NoChrono,
     [switch]$NoHydroIO,
     [switch]$MoorDyn,
+    [switch]$External,
     [switch]$VSG,
     [switch]$Demos,
     [switch]$NoTests,
@@ -502,6 +503,8 @@ if ($Help) {
     Write-Host "  -NoChrono          Chrono-free build (no config file needed)"
     Write-Host "  -NoHydroIO         Disable HDF5-based hydro IO"
     Write-Host "  -MoorDyn           Enable MoorDyn"
+    Write-Host "  -External          Enable out-of-process external force modules (Python PTO IPC)"
+    Write-Host "                     (implied by -Package so RM3/OSWEC external_pto demos work in the ZIP)"
     Write-Host "  -VSG               Enable VSG visualization"
     Write-Host "  -Demos             Build C++ demo executables"
     Write-Host "  -NoTests           Skip tests"
@@ -831,6 +834,8 @@ if ($shouldConfigure) {
         "-DSEASTACK_ENABLE_CHRONO=$(if ($useChrono) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_HYDRO_IO=$(if ($NoHydroIO) { 'OFF' } else { 'ON' })",
         "-DSEASTACK_ENABLE_MOORING=$(if ($MoorDyn) { 'ON' } else { 'OFF' })",
+        # Release ZIP ships RM3/OSWEC external_pto demos; packaging implies External ON.
+        "-DSEASTACK_ENABLE_EXTERNAL=$(if ($External -or $Package) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_VSG=$(if ($useVSG) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_TESTS=$(if ($NoTests) { 'OFF' } else { 'ON' })",
         "-DSEASTACK_ENABLE_DEMOS=$(if ($Demos) { 'ON' } else { 'OFF' })",

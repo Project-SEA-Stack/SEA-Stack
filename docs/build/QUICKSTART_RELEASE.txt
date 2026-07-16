@@ -9,6 +9,21 @@ Example (from package root):
 
 Add --nogui to run without the 3D window.
 
+External PTO demos (out-of-process Python modules; needs Python 3 on PATH):
+  bin\run_seastack.exe --nogui demos\rm3\external_pto
+  bin\run_seastack.exe --nogui demos\oswec\external_pto
+
+  Sibling cases (same sea state; different module physics):
+    demos\rm3\external_pto_adaptive   demos\rm3\external_pto_hydraulic
+    demos\oswec\external_pto_adaptive demos\oswec\external_pto_hydraulic
+
+Comparison plots (same four figures as the source-tree verification workflow;
+needs pip packages from tests\requirements.txt — several minutes, 4x ~600 s runs):
+  python examples\external_pto\run_visual_verification.py
+  python examples\external_pto\run_visual_verification.py --platform oswec
+
+  Optional: --skip-run to replot existing demos/*/outputs, --open to launch the PDF.
+
 Optional executables (if shipped in this build):
   bin\standalone_controller.exe  — small PTO/control example (no Chrono)
   bin\demo_sphere_decay.exe    — short C++ Chrono demo (when demos were enabled at build time)

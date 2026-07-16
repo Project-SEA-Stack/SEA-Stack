@@ -37,7 +37,8 @@ from plot_verification import PLATFORMS, PlatformSpec
 
 
 _HERE = Path(__file__).resolve().parent
-_REPO = _HERE.parents[1]
+# Parent of examples/external_pto — repo root or release ZIP root.
+_TREE_ROOT = _HERE.parents[1]
 _PLOT = _HERE / "plot_verification.py"
 
 
@@ -47,6 +48,10 @@ def _run_env() -> dict:
     if extra:
         dirs = [d for d in extra.split("|") if d]
         env["PATH"] = os.pathsep.join(dirs + [env.get("PATH", "")])
+    # Prefer package/staged bin so Chrono/HDF5 DLLs next to run_seastack resolve.
+    bin_dir = _TREE_ROOT / "bin"
+    if bin_dir.is_dir():
+        env["PATH"] = os.pathsep.join([str(bin_dir), env.get("PATH", "")])
     return env
 
 
@@ -59,9 +64,9 @@ def default_exe() -> str:
              else ("run_seastack", "run_seastack.exe"))
     for name in names:
         for p in (
-            _REPO / "build" / "bin" / "Release" / name,
-            _REPO / "build" / "bin" / "Debug" / name,
-            _REPO / "bin" / name,
+            _TREE_ROOT / "bin" / name,  # release ZIP / staged install
+            _TREE_ROOT / "build" / "bin" / "Release" / name,
+            _TREE_ROOT / "build" / "bin" / "Debug" / name,
         ):
             if p.exists():
                 return str(p)

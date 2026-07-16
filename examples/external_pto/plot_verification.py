@@ -47,9 +47,9 @@ except Exception as exc:  # noqa: BLE001
     sys.exit(2)
 
 _HERE = Path(__file__).resolve().parent
-_REPO = _HERE.parents[1]
-_DEMOS = _REPO / "data" / "demos" / "run_seastack"
-_UTIL = _REPO / "tests" / "utilities"
+# Parent of examples/external_pto — repo root or release ZIP root.
+_TREE_ROOT = _HERE.parents[1]
+_UTIL = _TREE_ROOT / "tests" / "utilities"
 if str(_UTIL) not in sys.path:
     sys.path.insert(0, str(_UTIL))
 
@@ -64,13 +64,35 @@ from plot_helpers import (  # noqa: E402
 TIME = "/results/time/time"
 
 
+def platform_demo_root(plat_key: str) -> Path:
+    """Resolve RM3/OSWEC demo root in a source checkout or release ZIP.
+
+    Release layout:  <zip>/demos/<plat>/external_pto/
+    Source layout:   <repo>/data/demos/run_seastack/<plat>/external_pto/
+
+    Prefer the tree that actually contains the external_pto cases (a source
+    checkout may also have a partial demos/ from a local install/smoke test).
+    """
+    source = _TREE_ROOT / "data" / "demos" / "run_seastack" / plat_key
+    packaged = _TREE_ROOT / "demos" / plat_key
+    for candidate in (source, packaged):
+        if (candidate / "external_pto").is_dir():
+            return candidate
+    for candidate in (source, packaged):
+        if candidate.is_dir():
+            return candidate
+    raise FileNotFoundError(
+        f"No {plat_key} demos under {_TREE_ROOT} "
+        f"(expected demos/{plat_key} or data/demos/run_seastack/{plat_key})"
+    )
+
+
 @dataclass(frozen=True)
 class PlatformSpec:
     """HDF5 paths and axis labels for TSDA (RM3) vs RSDA (OSWEC)."""
 
     key: str
     title: str
-    demo_root: Path
     force: str
     speed: str
     extension: str
@@ -94,12 +116,15 @@ class PlatformSpec:
     motion_tol: float
     actuator_tol: float
 
+    @property
+    def demo_root(self) -> Path:
+        return platform_demo_root(self.key)
+
 
 PLATFORMS: Dict[str, PlatformSpec] = {
     "rm3": PlatformSpec(
         key="rm3",
         title="RM3",
-        demo_root=_DEMOS / "rm3",
         force="/results/model/tsdas/PTO/force_mag",
         speed="/results/model/tsdas/PTO/speed",
         extension="/results/model/tsdas/PTO/extension",
@@ -126,7 +151,6 @@ PLATFORMS: Dict[str, PlatformSpec] = {
     "oswec": PlatformSpec(
         key="oswec",
         title="OSWEC",
-        demo_root=_DEMOS / "oswec",
         force="/results/model/rsdas/PTO/torque_mag",
         speed="/results/model/rsdas/PTO/ang_speed",
         extension="/results/model/rsdas/PTO/angle",

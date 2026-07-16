@@ -12,20 +12,30 @@ controller behaviour can be compared side-by-side.
 | `adaptive_damping_pto.py` | Stateful step-up (PI-adapted `c(t)`, saturation, `reset`) | Prescribed-input replay vs an independent PI recurrence |
 | `hydraulic_accumulator_pto.py` | Dynamic external subsystem (two pressure states, rectifier, accumulators, relief valve, motor) | Component equations + exact internal energy balance |
 
-The canonical copies live in the RM3 (TSDA) and OSWEC (RSDA) demo directories
-(they ship in the release ZIP under `demos/`). Build also copies the RM3
-scripts next to `external_pto_example`:
+The canonical copies live in the RM3 (TSDA) and OSWEC (RSDA) demo directories.
+They ship in the release ZIP under `demos/` (with this README and the plot
+scripts under `examples/external_pto/`). In a source checkout:
 
 - `data/demos/run_seastack/rm3/external_pto/linear_damper_pto.py`
 - `data/demos/run_seastack/rm3/external_pto_adaptive/adaptive_damping_pto.py`
 - `data/demos/run_seastack/rm3/external_pto_hydraulic/hydraulic_accumulator_pto.py`
 - `data/demos/run_seastack/oswec/external_pto*/` — same three scripts on an RSDA
 
+Release packaging enables `-DSEASTACK_ENABLE_EXTERNAL=ON` automatically
+(`build.ps1 -Package` / `build.sh --package`). From an unzipped package root:
+
+```bash
+bin/run_seastack --nogui demos/rm3/external_pto
+python examples/external_pto/run_visual_verification.py
+python examples/external_pto/run_visual_verification.py --platform oswec
+```
+
 The physics live in those module files; `seastack_external.py` is only the IPC
-helper. All three demos use the same named-state API (`PtoModule.force(state)`
-+ `run(...)`) — the same script attaches to a `ChLinkTSDA` or `ChLinkRSDA`.
-Case wiring lives in `*.external_pto.yaml` (pointed at by `external_pto_file`
-in setup); that path is for link actuators only, not 6-DOF body forces.
+helper (`python/` in the ZIP). All three demos use the same named-state API
+(`PtoModule.force(state)` + `run(...)`) — the same script attaches to a
+`ChLinkTSDA` or `ChLinkRSDA`. Case wiring lives in `*.external_pto.yaml`
+(pointed at by `external_pto_file` in setup); that path is for link actuators
+only, not 6-DOF body forces.
 
 Minimal damper:
 

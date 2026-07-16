@@ -231,7 +231,9 @@ change (N / m/s vs N·m / rad/s).
 
 RM3 (TSDA) and OSWEC (RSDA) each share one irregular sea state within their
 trio (JONSWAP Hs = 2 m, Tp = 8 s, seed = 42, 600 s) so absorbed power and
-controller behaviour can be compared. Side-by-side plots:
+controller behaviour can be compared. Side-by-side plots (source checkout or
+release ZIP — packaging installs these scripts under `examples/external_pto/`
+and enables `-DSEASTACK_ENABLE_EXTERNAL=ON`):
 
 ```bash
 python examples/external_pto/run_visual_verification.py              # RM3

@@ -23,6 +23,7 @@ GENERATOR_CLI=""
 USE_CHRONO=1
 NO_HYDRO_IO=0
 MOORDYN=0
+EXTERNAL=0
 VSG=0
 DEMOS=0
 NO_TESTS=0
@@ -139,6 +140,8 @@ Options:
   --no-chrono           Chrono-free build (no build-config.json required for Chrono)
   --no-hydro-io         Disable HDF5 hydro IO
   --moordyn             Enable MoorDyn
+  --external            Enable out-of-process external force modules (Python PTO IPC)
+                        (implied by --package so RM3/OSWEC external_pto demos work in the ZIP)
   --vsg                 Enable VSG (requires Chrono with VSG)
   --demos               Build demo executables
   --no-tests            Skip tests target
@@ -156,7 +159,7 @@ EOF
 ALL_LONG_OPTS=(
   --build-type --clean --verbose --configure-only --reconfigure
   --no-configure --test --test-label --package --target --generator
-  --no-chrono --no-hydro-io --moordyn --vsg --demos --no-tests
+  --no-chrono --no-hydro-io --moordyn --external --vsg --demos --no-tests
   --no-apps --config-path --doctor --help
 )
 
@@ -251,6 +254,7 @@ while [[ $# -gt 0 ]]; do
     --no-chrono) USE_CHRONO=0; shift ;;
     --no-hydro-io) NO_HYDRO_IO=1; shift ;;
     --moordyn) MOORDYN=1; shift ;;
+    --external) EXTERNAL=1; shift ;;
     --vsg) VSG=1; shift ;;
     --demos) DEMOS=1; shift ;;
     --no-tests) NO_TESTS=1; shift ;;
@@ -422,6 +426,11 @@ seastack_hydro=ON
 [[ "${NO_HYDRO_IO}" -eq 1 ]] && seastack_hydro=OFF
 seastack_moor=OFF
 [[ "${MOORDYN}" -eq 1 ]] && seastack_moor=ON
+# Release ZIP ships RM3/OSWEC external_pto demos; packaging implies External ON.
+seastack_external=OFF
+if [[ "${EXTERNAL}" -eq 1 || "${DO_PACKAGE}" -eq 1 ]]; then
+  seastack_external=ON
+fi
 seastack_vsg=OFF
 [[ "${USE_VSG}" -eq 1 ]] && seastack_vsg=ON
 seastack_tests=ON
@@ -442,6 +451,7 @@ if [[ "${should_configure}" -eq 1 ]]; then
     "-DSEASTACK_ENABLE_CHRONO=${seastack_chrono}"
     "-DSEASTACK_ENABLE_HYDRO_IO=${seastack_hydro}"
     "-DSEASTACK_ENABLE_MOORING=${seastack_moor}"
+    "-DSEASTACK_ENABLE_EXTERNAL=${seastack_external}"
     "-DSEASTACK_ENABLE_VSG=${seastack_vsg}"
     "-DSEASTACK_ENABLE_TESTS=${seastack_tests}"
     "-DSEASTACK_ENABLE_DEMOS=${seastack_demos}"
