@@ -1,3 +1,8 @@
+/*********************************************************************
+ * @file  external_pto_model.cpp
+ * @brief IPTOModel bridge: pack kinematics, time-cache, call IExternalForceModel.
+ *********************************************************************/
+
 #include <seastack/external/external_pto_model.h>
 
 #include <stdexcept>
@@ -7,6 +12,7 @@
 namespace seastack {
 namespace external {
 
+/// Take ownership of the transport (usually IpcExternalForceModel).
 ExternalPtoModel::ExternalPtoModel(std::unique_ptr<IExternalForceModel> backend)
     : backend_(std::move(backend)) {
     if (!backend_) {
@@ -21,6 +27,7 @@ ExternalPtoModel::~ExternalPtoModel() {
     }
 }
 
+/// Choose TSDA vs RSDA channel names for the initialize handshake.
 void ExternalPtoModel::SetLinkKind(ExternalPtoLinkKind kind) {
     if (initialized_) {
         throw std::runtime_error(
@@ -29,6 +36,7 @@ void ExternalPtoModel::SetLinkKind(ExternalPtoLinkKind kind) {
     link_kind_ = kind;
 }
 
+/// Rich = 17 kinematics channels; lean = displacement + velocity only.
 void ExternalPtoModel::EnableRichState(bool enable) {
     if (initialized_) {
         throw std::runtime_error(
@@ -37,6 +45,7 @@ void ExternalPtoModel::EnableRichState(bool enable) {
     rich_state_ = enable;
 }
 
+/// Build ExternalInit (kind, in_names, config) and handshake with the backend.
 ExternalMeta ExternalPtoModel::Initialize(double dt,
                                           const std::string& config_json) {
     ExternalInit init;
@@ -69,11 +78,13 @@ ExternalMeta ExternalPtoModel::Initialize(double dt,
     return meta;
 }
 
+/// Pack the universal 2-channel layout: [displacement, velocity].
 std::vector<double> ExternalPtoModel::PackLean(double displacement,
                                                double velocity) const {
     return {displacement, velocity};
 }
 
+/// Pack the 17-channel rich layout (link extras + body kinematics).
 std::vector<double> ExternalPtoModel::PackRich(
     const ExternalPtoState& state) const {
     std::vector<double> in(17);
@@ -96,12 +107,14 @@ std::vector<double> ExternalPtoModel::PackRich(
     return in;
 }
 
+/// Call the backend unless `time` was already evaluated (HHT re-query cache).
 double ExternalPtoModel::EvaluatePacked(double time,
                                         const std::vector<double>& in) {
     if (!initialized_) {
         throw std::runtime_error(
             "ExternalPtoModel::ComputeForce before Initialize");
     }
+    // Same (or earlier) time → return last force; no IPC / no re-evaluate.
     if (time <= prev_time_ && prev_time_ >= 0.0) {
         return cached_force_;
     }
@@ -119,10 +132,13 @@ double ExternalPtoModel::EvaluatePacked(double time,
     return cached_force_;
 }
 
+/// IPTOModel entry used by lean Chrono functors (disp/vel only).
 double ExternalPtoModel::ComputeForce(double displacement,
                                       double velocity,
                                       double time) {
     if (rich_state_) {
+        // Functors that only have disp/vel still go through the rich path so
+        // channel counts match the handshake (other fields stay zero).
         ExternalPtoState s;
         s.time = time;
         s.displacement = displacement;
@@ -132,17 +148,19 @@ double ExternalPtoModel::ComputeForce(double displacement,
     return EvaluatePacked(time, PackLean(displacement, velocity));
 }
 
+/// Full-state entry used by ExternalPtoForceFunctor / ExternalPtoTorqueFunctor.
 double ExternalPtoModel::ComputeForce(const ExternalPtoState& state) {
     if (!initialized_) {
         throw std::runtime_error(
             "ExternalPtoModel::ComputeForce before Initialize");
     }
-    // Cache hit: do not update FD state.
+    // Cache hit: do not update FD acceleration state.
     if (state.time <= prev_time_ && prev_time_ >= 0.0) {
         return cached_force_;
     }
 
     ExternalPtoState packed = state;
+    // Finite-difference relative acceleration across accepted steps.
     if (have_prev_velocity_ && prev_time_ >= 0.0) {
         const double dt = state.time - prev_time_;
         if (dt > 0.0) {
@@ -165,6 +183,7 @@ double ExternalPtoModel::ComputeForce(const ExternalPtoState& state) {
     return force;
 }
 
+/// Clear module state and drop the force cache.
 void ExternalPtoModel::Reset() {
     if (backend_ && initialized_) {
         backend_->Reset();
@@ -175,6 +194,7 @@ void ExternalPtoModel::Reset() {
     have_prev_velocity_ = false;
 }
 
+/// Tear down the backend (closes IPC / joins the child process).
 void ExternalPtoModel::Shutdown() {
     if (backend_ && initialized_) {
         backend_->Shutdown();

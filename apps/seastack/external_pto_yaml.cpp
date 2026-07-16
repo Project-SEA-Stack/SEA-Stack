@@ -65,6 +65,8 @@ std::string YamlNodeToJsonObject(const YAML::Node& node) {
     return oss.str();
 }
 
+/// Fill ExternalPtoConfig from one YAML map (sidecar or inline `external_pto:`).
+/// Resolves relative script paths against `setup_dir`.
 void ParseExternalPtoAttachNode(const YAML::Node& ep,
                                 seastack::infra::SetupConfig::ExternalPtoConfig& cfg,
                                 const std::filesystem::path& setup_dir,
@@ -121,6 +123,7 @@ void ParseExternalPtoAttachNode(const YAML::Node& ep,
 
 }  // namespace
 
+/// Read setup YAML: prefer `external_pto_file`, else inline `external_pto:`.
 void LoadExternalPtoFromSetupYaml(const std::filesystem::path& setup_path,
                                   seastack::infra::SetupConfig& config) {
     config.has_external_pto = false;
@@ -194,6 +197,8 @@ ExternalPtoAttachment ExternalPtoAttachment::Attach(
     ::chrono::ChSystem& system,
     const seastack::infra::SetupConfig::ExternalPtoConfig& cfg,
     double dt) {
+    // Find named TSDA/RSDA -> spawn IPC child -> wrap in ExternalPtoModel ->
+    // register Chrono force/torque functor (rich or lean).
     std::shared_ptr<::chrono::ChLinkTSDA> tsda;
     std::shared_ptr<::chrono::ChLinkRSDA> rsda;
     for (auto& link : system.GetLinks()) {

@@ -12,6 +12,7 @@ PTOForceFunctor::PTOForceFunctor(std::shared_ptr<seastack::pto::IPTOModel> model
     }
 }
 
+/// Chrono TSDA callback → lean IPTOModel (displacement, velocity).
 double PTOForceFunctor::evaluate(double time,
                                  double rest_length,
                                  double length,
@@ -29,6 +30,7 @@ PTOTorqueFunctor::PTOTorqueFunctor(std::shared_ptr<seastack::pto::IPTOModel> mod
     }
 }
 
+/// Chrono RSDA callback → lean IPTOModel (angle-rest as displacement, omega).
 double PTOTorqueFunctor::evaluate(double time,
                                   double rest_angle,
                                   double angle,
@@ -42,6 +44,7 @@ double PTOTorqueFunctor::evaluate(double time,
 
 namespace {
 
+/// Copy world-frame body positions/velocities into ExternalPtoState.
 void FillBodyKinematics(::chrono::ChBodyFrame* body1,
                         ::chrono::ChBodyFrame* body2,
                         seastack::external::ExternalPtoState& s) {
@@ -78,6 +81,7 @@ ExternalPtoForceFunctor::ExternalPtoForceFunctor(
     }
 }
 
+/// Chrono TSDA callback → pack rich ExternalPtoState → ExternalPtoModel.
 double ExternalPtoForceFunctor::evaluate(double time,
                                          double rest_length,
                                          double length,
@@ -102,6 +106,7 @@ ExternalPtoTorqueFunctor::ExternalPtoTorqueFunctor(
     }
 }
 
+/// Chrono RSDA callback → pack rich ExternalPtoState → ExternalPtoModel.
 double ExternalPtoTorqueFunctor::evaluate(double time,
                                           double rest_angle,
                                           double angle,

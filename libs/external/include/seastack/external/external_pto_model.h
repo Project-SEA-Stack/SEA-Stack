@@ -2,12 +2,16 @@
  * @file  external_pto_model.h
  * @brief IPTOModel bridge over IExternalForceModel with time-caching.
  *
+ * Sits between Chrono (PTOForceFunctor / ExternalPtoForceFunctor) and the
+ * transport (usually IpcExternalForceModel). Packs kinematics, calls
+ * backend->Evaluate, returns one force/torque.
+ *
  * Lean inputs:  [displacement, velocity]
  * Rich inputs:  TSDA or RSDA 17-channel layouts (see ExternalPtoChannelNames*).
  * Output:       [force]  (N on TSDA, N·m on RSDA)
  *
- * Caching matches RectifiedHydraulicPTO: one Evaluate round-trip per new
- * simulation time; repeated/earlier times return the cached force.
+ * Caching: one IPC round-trip per new simulation time; HHT re-queries at the
+ * same time return the cached force (matches RectifiedHydraulicPTO).
  *********************************************************************/
 #ifndef SEASTACK_EXTERNAL_EXTERNAL_PTO_MODEL_H
 #define SEASTACK_EXTERNAL_EXTERNAL_PTO_MODEL_H

@@ -1,3 +1,19 @@
+/*********************************************************************
+ * @file  ipc_external_force_model.cpp
+ * @brief Out-of-process transport for IExternalForceModel.
+ *
+ * Lifecycle (host = SEA-Stack, child = user script e.g. Python):
+ *   1. Constructor: listen on 127.0.0.1:<ephemeral>, spawn child with
+ *      `--seastack-port <N>` (Windows CreateProcess / POSIX fork+exec).
+ *   2. Initialize(): accept TCP client, send `initialize` JSON, read meta.
+ *   3. Evaluate() / Reset() / Commit() / Rollback(): one request/reply each
+ *      (length-prefixed JSON; see protocol.h).
+ *   4. Shutdown(): send `shutdown`, close sockets, terminate child.
+ *
+ * Time-step caching lives in ExternalPtoModel (caller), not here — every
+ * Evaluate() is a real round-trip.
+ *********************************************************************/
+
 #include <seastack/external/ipc_external_force_model.h>
 #include <seastack/external/protocol.h>
 
@@ -33,6 +49,7 @@ namespace seastack {
 namespace external {
 namespace {
 
+/// One-time Winsock startup on Windows; no-op elsewhere.
 class WinsockInit {
   public:
 #ifdef _WIN32
@@ -48,11 +65,13 @@ class WinsockInit {
 #endif
 };
 
+/// Ensure sockets are usable (idempotent process-wide init).
 WinsockInit& EnsureSockets() {
     static WinsockInit init;
     return init;
 }
 
+/// Close a socket handle; safe to call with an invalid socket.
 void CloseSocket(socket_t s) {
     if (s == kInvalidSocket) {
         return;
@@ -64,6 +83,7 @@ void CloseSocket(socket_t s) {
 #endif
 }
 
+/// Toggle blocking mode so timed select()/send()/recv() loops can run.
 bool SetNonBlocking(socket_t s, bool nonblock) {
 #ifdef _WIN32
     u_long mode = nonblock ? 1u : 0u;
@@ -82,6 +102,7 @@ bool SetNonBlocking(socket_t s, bool nonblock) {
 #endif
 }
 
+/// Block until the socket is readable or `timeout_ms` elapses.
 bool WaitReadable(socket_t s, int timeout_ms) {
     fd_set rfds;
     FD_ZERO(&rfds);
@@ -97,6 +118,7 @@ bool WaitReadable(socket_t s, int timeout_ms) {
     return rc > 0;
 }
 
+/// Block until the socket is writable or `timeout_ms` elapses.
 bool WaitWritable(socket_t s, int timeout_ms) {
     fd_set wfds;
     FD_ZERO(&wfds);
@@ -112,6 +134,7 @@ bool WaitWritable(socket_t s, int timeout_ms) {
     return rc > 0;
 }
 
+/// Send exactly `len` bytes (handles short writes and timeouts).
 void SendAll(socket_t s, const char* data, size_t len, int timeout_ms) {
     size_t sent = 0;
     while (sent < len) {
@@ -130,6 +153,7 @@ void SendAll(socket_t s, const char* data, size_t len, int timeout_ms) {
     }
 }
 
+/// Receive exactly `len` bytes (handles short reads and timeouts).
 void RecvAll(socket_t s, char* data, size_t len, int timeout_ms) {
     size_t got = 0;
     while (got < len) {
@@ -148,6 +172,7 @@ void RecvAll(socket_t s, char* data, size_t len, int timeout_ms) {
     }
 }
 
+/// Wire framing: 4-byte big-endian length, then UTF-8 JSON payload.
 void SendFramed(socket_t s, const std::string& payload, int timeout_ms) {
     if (payload.size() > 0xffffffffu) {
         throw std::runtime_error("IPC message too large");
@@ -163,6 +188,7 @@ void SendFramed(socket_t s, const std::string& payload, int timeout_ms) {
     SendAll(s, payload.data(), payload.size(), timeout_ms);
 }
 
+/// Read one framed message (header + body). Caps body at 16 MiB.
 std::string RecvFramed(socket_t s, int timeout_ms) {
     unsigned char hdr[4];
     RecvAll(s, reinterpret_cast<char*>(hdr), 4, timeout_ms);
@@ -180,6 +206,7 @@ std::string RecvFramed(socket_t s, int timeout_ms) {
     return payload;
 }
 
+/// OS process handle for the spawned external module.
 struct ChildProcess {
 #ifdef _WIN32
     PROCESS_INFORMATION pi{};
@@ -189,6 +216,7 @@ struct ChildProcess {
 #endif
 };
 
+/// Ask the child to exit; escalate to kill if it ignores SIGTERM (POSIX).
 void TerminateChild(ChildProcess& child) {
 #ifdef _WIN32
     if (child.running) {
@@ -217,6 +245,9 @@ void TerminateChild(ChildProcess& child) {
 #endif
 }
 
+/// Launch the external module (Windows CreateProcess / POSIX fork+exec).
+/// Host has already bound the listen port; argv already includes
+/// `--seastack-port <N>`.
 ChildProcess SpawnChild(const std::vector<std::string>& command,
                         const std::string& working_directory) {
     if (command.empty()) {
@@ -284,18 +315,21 @@ ChildProcess SpawnChild(const std::vector<std::string>& command,
 
 }  // namespace
 
+/// Runtime state held behind the pImpl (sockets + child process).
 struct IpcExternalForceModel::Impl {
-    socket_t listen_sock = kInvalidSocket;
-    socket_t client_sock = kInvalidSocket;
+    socket_t listen_sock = kInvalidSocket;  ///< Accepts the child's first connect.
+    socket_t client_sock = kInvalidSocket;  ///< Connected session used for all ops.
     ChildProcess child{};
     int timeout_ms = 10000;
 };
 
+/// Bind 127.0.0.1:<ephemeral>, listen, then spawn the child with that port.
 IpcExternalForceModel::IpcExternalForceModel(IpcExternalForceOptions options)
     : impl_(std::make_unique<Impl>()), options_(std::move(options)) {
     EnsureSockets();
     impl_->timeout_ms = options_.timeout_ms;
 
+    // Port 0 → OS picks a free port; child learns it via --seastack-port.
     impl_->listen_sock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (impl_->listen_sock == kInvalidSocket) {
         throw std::runtime_error("Failed to create listen socket");
@@ -343,6 +377,7 @@ IpcExternalForceModel::IpcExternalForceModel(IpcExternalForceOptions options)
     }
 
     if (!options_.command.empty()) {
+        // Empty command = test mode: caller connects a client itself.
         std::vector<std::string> cmd = options_.command;
         cmd.push_back("--seastack-port");
         cmd.push_back(std::to_string(listen_port_));
@@ -350,6 +385,7 @@ IpcExternalForceModel::IpcExternalForceModel(IpcExternalForceOptions options)
     }
 }
 
+/// Always try to tear down cleanly (best-effort; never throw from destructor).
 IpcExternalForceModel::~IpcExternalForceModel() {
     try {
         Shutdown();
@@ -357,6 +393,7 @@ IpcExternalForceModel::~IpcExternalForceModel() {
     }
 }
 
+/// Send one framed JSON request to the connected child.
 void IpcExternalForceModel::SendRequest(const std::string& json) {
     if (impl_->client_sock == kInvalidSocket) {
         throw std::runtime_error("IPC client socket not connected");
@@ -364,6 +401,7 @@ void IpcExternalForceModel::SendRequest(const std::string& json) {
     SendFramed(impl_->client_sock, json, impl_->timeout_ms);
 }
 
+/// Receive one framed JSON reply from the child.
 std::string IpcExternalForceModel::RecvReply() {
     if (impl_->client_sock == kInvalidSocket) {
         throw std::runtime_error("IPC client socket not connected");
@@ -371,6 +409,7 @@ std::string IpcExternalForceModel::RecvReply() {
     return RecvFramed(impl_->client_sock, impl_->timeout_ms);
 }
 
+/// Parse `"status":"ok"` (or raise with the child's error message).
 void IpcExternalForceModel::RequireOk(const std::string& reply,
                                       const char* context) {
     std::string status;
@@ -385,6 +424,7 @@ void IpcExternalForceModel::RequireOk(const std::string& reply,
     }
 }
 
+/// Accept the child TCP connection and complete the initialize handshake.
 ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
     if (shutdown_) {
         throw std::runtime_error("IpcExternalForceModel already shut down");
@@ -395,6 +435,7 @@ ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
     init_ = init;
     last_dt_ = init.dt;
 
+    // Wait for the child to connect, then run the initialize handshake.
     if (!WaitReadable(impl_->listen_sock, impl_->timeout_ms)) {
         TerminateChild(impl_->child);
         throw std::runtime_error(
@@ -437,6 +478,7 @@ ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
     return meta;
 }
 
+/// Ask the child for outputs at simulation time `time` (one TCP round-trip).
 void IpcExternalForceModel::Evaluate(double time,
                                      const std::vector<double>& in,
                                      std::vector<double>& out) {
@@ -459,6 +501,7 @@ void IpcExternalForceModel::Evaluate(double time,
     }
 }
 
+/// Tell the child to clear controller / integrator state.
 void IpcExternalForceModel::Reset() {
     if (!initialized_ || shutdown_) {
         return;
@@ -467,6 +510,7 @@ void IpcExternalForceModel::Reset() {
     RequireOk(RecvReply(), "reset");
 }
 
+/// Optional co-sim hook: accept the last Evaluate as committed (often a no-op).
 void IpcExternalForceModel::Commit() {
     if (!initialized_ || shutdown_) {
         return;
@@ -475,6 +519,7 @@ void IpcExternalForceModel::Commit() {
     RequireOk(RecvReply(), "commit");
 }
 
+/// Optional co-sim hook: discard tentative state from the last Evaluate.
 void IpcExternalForceModel::Rollback() {
     if (!initialized_ || shutdown_) {
         return;
@@ -483,6 +528,7 @@ void IpcExternalForceModel::Rollback() {
     RequireOk(RecvReply(), "rollback");
 }
 
+/// Send shutdown (best-effort), close sockets, and terminate the child process.
 void IpcExternalForceModel::Shutdown() {
     if (shutdown_) {
         return;
@@ -491,7 +537,7 @@ void IpcExternalForceModel::Shutdown() {
     if (initialized_ && impl_->client_sock != kInvalidSocket) {
         try {
             SendRequest(protocol::MakeSimpleOpRequest("shutdown"));
-            // Best-effort reply; ignore failures during teardown.
+            // Ignore reply failures — the child may already be exiting.
             try {
                 (void)RecvReply();
             } catch (...) {

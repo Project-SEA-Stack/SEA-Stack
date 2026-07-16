@@ -2,8 +2,11 @@
  * @file  pto_chrono_adapter.h
  * @brief Adapter: plug a solver-agnostic IPTOModel into Chrono's TSDA/RSDA.
  *
+ * Chrono calls evaluate() each force query; functors pack kinematics and
+ * forward to IPTOModel / ExternalPtoModel (which may IPC to a user process).
+ *
  * Wrappers:
- *   PTOForceFunctor      — ChLinkTSDA::ForceFunctor  → IPTOModel
+ *   PTOForceFunctor      — ChLinkTSDA::ForceFunctor  → IPTOModel (disp, vel)
  *   PTOTorqueFunctor     — ChLinkRSDA::TorqueFunctor → IPTOModel
  *   ExternalPtoForceFunctor / ExternalPtoTorqueFunctor — rich ExternalPtoState
  *     packing when SEASTACK_HAVE_EXTERNAL is defined.

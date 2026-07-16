@@ -1,10 +1,13 @@
 /*********************************************************************
  * @file  external_force_model.h
- * @brief Abstract interface for out-of-process (or other) external force models.
+ * @brief Abstract interface for external force / PTO / controller modules.
+ *
+ * Layering:
+ *   Chrono functor -> ExternalPtoModel (cache + pack) -> IExternalForceModel
+ *   -> IpcExternalForceModel (TCP JSON) -> user process (Python/MATLAB/…)
  *
  * Solver-agnostic: depends only on the C++ standard library.
  * Transport backends (IPC, FMI, …) implement this interface.
- * Higher-level bridges (ExternalPtoModel, ExternalForceComponent) call it.
  *
  * Units (SI) and sign conventions are application-defined for the generic
  * vector interface; the 1-DOF PTO bridge documents them explicitly.

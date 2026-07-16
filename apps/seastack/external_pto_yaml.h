@@ -1,6 +1,10 @@
 /*********************************************************************
  * @file  external_pto_yaml.h
  * @brief Parse optional external PTO attach YAML and register on Chrono TSDA/RSDA.
+ *
+ * Wiring used by run_seastack:
+ *   setup `external_pto_file` -> spawn IPC child -> ExternalPtoModel ->
+ *   Chrono force/torque functor on the named link.
  *********************************************************************/
 #ifndef SEASTACK_APP_EXTERNAL_PTO_YAML_H
 #define SEASTACK_APP_EXTERNAL_PTO_YAML_H
@@ -39,7 +43,8 @@ class ExternalPtoAttachment {
     ExternalPtoAttachment(ExternalPtoAttachment&&) noexcept;
     ExternalPtoAttachment& operator=(ExternalPtoAttachment&&) noexcept;
 
-    /// Locate named ChLinkTSDA/RSDA and register ExternalPtoModel force/torque functor.
+    /// Spawn the IPC child, handshake, and register a Chrono force/torque functor
+    /// on the named TSDA or RSDA. Keeps the model alive for the run.
     static ExternalPtoAttachment Attach(
         ::chrono::ChSystem& system,
         const seastack::infra::SetupConfig::ExternalPtoConfig& cfg,
