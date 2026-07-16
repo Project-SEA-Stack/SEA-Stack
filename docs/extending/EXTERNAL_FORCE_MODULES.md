@@ -216,6 +216,14 @@ config:
 An inline `external_pto:` map in setup is still accepted for small one-offs;
 do not set both `external_pto_file` and `external_pto:` together.
 
+The `command` array is the child's argv (SEA-Stack appends `--seastack-port
+<N>`). `["python", "my_pto.py"]` is the portable convention: on Windows it needs
+`python` on `PATH`, and on macOS/Linux the host retries `python3` automatically
+if `python` is not found, so a stock Homebrew/apt Python 3 works unmodified. To
+pin a specific interpreter, set `command[0]` to an absolute path (e.g. a venv's
+`python`). Relative `.py` paths in `command` are resolved against the setup
+directory.
+
 ### Worked examples
 
 | Module | What it shows | TSDA (heave) | RSDA (pitch) |

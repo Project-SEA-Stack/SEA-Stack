@@ -183,6 +183,11 @@ missing).
 
 Add `--nogui` to run without the 3D visualization window.
 
+The external-PTO demos (`demos/run_seastack/{rm3,oswec}/external_pto*`) spawn an
+out-of-process Python module. They need Python 3 on `PATH`; the demos use
+`command: ["python", ...]`, and the host falls back to `python3` on macOS/Linux,
+so a stock Homebrew Python 3 works without editing the case YAML.
+
 ## 7. Package (optional)
 
 `--package` is already included in the **Full, clean build & package generation**

@@ -50,12 +50,23 @@ reports):
 .\scripts\windows\run_benchmarks.ps1
 ```
 
-Repeat the equivalent ctest / suite runners on macOS.
+Repeat the equivalent runners on macOS via `scripts/unix/ctest_suite.sh`
+(`unit`, `chrono-free`, `regression`, `verification`, `comparison`,
+`benchmark`). If a fresh checkout reports `permission denied`, the scripts lost
+their executable bit — run `chmod +x scripts/unix/*.sh` (or invoke with
+`bash scripts/unix/...`).
+
+The six suite runners do **not** cover the `external` label. Run it separately
+on both platforms so the external-PTO Chrono regression is exercised:
+
+```bash
+ctest --test-dir build -C Release -L external --output-on-failure
+```
 
 **PDF reports:** suite scripts request PDF via pandoc when available. PDF needs a
-LaTeX engine on PATH (`xelatex` / `pdflatex` / `lualatex`, e.g. MiKTeX on Windows).
-Without it, suites still pass and write Markdown only — but release staging
-expects the PDFs.
+LaTeX engine on PATH (`xelatex` / `pdflatex` / `lualatex`, e.g. MiKTeX on
+Windows, MacTeX on macOS). Without it, suites still pass and write Markdown
+only — but release staging expects the PDFs.
 
 ## 5. Stage release report assets
 
@@ -69,10 +80,17 @@ Copies regression / verification / comparison **PDF** reports into
 
 ## 6. Staged-install smoke
 
-From the install prefix produced by packaging (`build/install` on Windows), run
-one or two representative demos with the staged `run_seastack` (and `PATH` set so
-bundled DLLs / shared libraries resolve). Confirm the case starts cleanly and
-writes outputs under the case directory.
+From the install prefix produced by packaging (`build/install`), run one or two
+representative demos with the staged `run_seastack` (and `PATH` set so bundled
+DLLs / shared libraries resolve). Confirm the case starts cleanly and writes
+outputs under the case directory.
+
+Include at least one external-PTO demo, since it exercises the child-process
+launch path (needs Python 3 on `PATH`; `python3` alone is fine on macOS/Linux):
+
+```bash
+./bin/run_seastack --nogui demos/rm3/external_pto
+```
 
 ## 7. Tagging and publishing
 

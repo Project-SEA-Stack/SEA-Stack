@@ -1,35 +1,51 @@
 SEA-Stack — quick start (release package)
 =========================================
 
+Commands are shown for Windows first, then macOS/Linux. Run them from the
+unzipped package root.
+
 Main application:
-  bin\run_seastack.exe
+  Windows:      bin\run_seastack.exe
+  macOS/Linux:  ./bin/run_seastack
 
 Example (from package root):
-  bin\run_seastack.exe demos\5sa\bimodal
+  Windows:      bin\run_seastack.exe demos\5sa\bimodal
+  macOS/Linux:  ./bin/run_seastack demos/5sa/bimodal
 
 Add --nogui to run without the 3D window.
 
 External PTO demos (out-of-process Python modules; needs Python 3 on PATH):
-  bin\run_seastack.exe --nogui demos\rm3\external_pto
-  bin\run_seastack.exe --nogui demos\oswec\external_pto
+  Windows:      bin\run_seastack.exe --nogui demos\rm3\external_pto
+                bin\run_seastack.exe --nogui demos\oswec\external_pto
+  macOS/Linux:  ./bin/run_seastack --nogui demos/rm3/external_pto
+                ./bin/run_seastack --nogui demos/oswec/external_pto
+
+  The demos launch `command: ["python", ...]`. On Windows this needs `python`
+  on PATH; on macOS/Linux the host automatically falls back to `python3` when
+  `python` is absent, so a stock Homebrew/apt Python 3 works unmodified. To
+  force a specific interpreter, edit `command` in the case's
+  *.external_pto.yaml (e.g. an absolute path to python).
 
   Sibling cases (same sea state; different module physics):
-    demos\rm3\external_pto_adaptive   demos\rm3\external_pto_hydraulic
-    demos\oswec\external_pto_adaptive demos\oswec\external_pto_hydraulic
+    demos/rm3/external_pto_adaptive    demos/rm3/external_pto_hydraulic
+    demos/oswec/external_pto_adaptive  demos/oswec/external_pto_hydraulic
 
 Comparison plots (same four figures as the source-tree verification workflow;
-needs pip packages from tests\requirements.txt — several minutes, 4x ~600 s runs):
-  python examples\external_pto\run_visual_verification.py
-  python examples\external_pto\run_visual_verification.py --platform oswec
+needs pip packages from tests/requirements.txt — several minutes, 4x ~600 s runs):
+  Windows:      python examples\external_pto\run_visual_verification.py
+                python examples\external_pto\run_visual_verification.py --platform oswec
+  macOS/Linux:  python3 examples/external_pto/run_visual_verification.py
+                python3 examples/external_pto/run_visual_verification.py --platform oswec
 
   Optional: --skip-run to replot existing demos/*/outputs, --open to launch the PDF.
 
 Optional executables (if shipped in this build):
-  bin\standalone_controller.exe  — small PTO/control example (no Chrono)
-  bin\demo_sphere_decay.exe    — short C++ Chrono demo (when demos were enabled at build time)
+  standalone_controller  — small PTO/control example (no Chrono)
+  demo_sphere_decay      — short C++ Chrono demo (when demos were enabled at build time)
+  (bin\...exe on Windows; ./bin/... on macOS/Linux)
 
-Verify install (needs Python 3.10+ and pip packages from tests\requirements.txt):
-  Windows:  tests\RUN-TESTS.ps1
+Verify install (needs Python 3.10+ and pip packages from tests/requirements.txt):
+  Windows:      tests\RUN-TESTS.ps1
   macOS/Linux:  ./tests/RUN-TESTS.sh
 
 Layout and outputs:
@@ -42,4 +58,5 @@ macOS troubleshooting (packaged build diverges or NaNs while Windows passes):
   verification after install: scripts/verify_release_install_prefix.py
 
 Support (source builds):
-  From a repo checkout, run:  scripts\windows\build.ps1 -Doctor
+  Windows:      scripts\windows\build.ps1 -Doctor
+  macOS/Linux:  bash scripts/unix/build.sh --doctor
