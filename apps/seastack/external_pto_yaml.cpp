@@ -127,6 +127,8 @@ void ParseExternalPtoAttachNode(const YAML::Node& ep,
 void LoadExternalPtoFromSetupYaml(const std::filesystem::path& setup_path,
                                   seastack::infra::SetupConfig& config) {
     config.has_external_pto = false;
+    config.has_external_pto_file = false;
+    config.external_pto_file.clear();
     if (!std::filesystem::exists(setup_path)) {
         return;
     }
@@ -151,7 +153,9 @@ void LoadExternalPtoFromSetupYaml(const std::filesystem::path& setup_path,
     YAML::Node ep;
     const char* source_label = "external_pto";
     if (has_file) {
-        std::filesystem::path pto_path(root["external_pto_file"].as<std::string>());
+        config.external_pto_file = root["external_pto_file"].as<std::string>();
+        config.has_external_pto_file = true;
+        std::filesystem::path pto_path(config.external_pto_file);
         if (pto_path.is_relative()) {
             pto_path = setup_dir / pto_path;
         }
@@ -254,9 +258,12 @@ ExternalPtoAttachment ExternalPtoAttachment::Attach(
             tsda->RegisterForceFunctor(
                 std::make_shared<seastack::chrono::PTOForceFunctor>(model));
         }
-        seastack::infra::cli::LogInfo(
-            "Attached external PTO module to TSDA link '" + cfg.link_name +
-            "'");
+        std::string detail = "Attached external PTO to TSDA '" + cfg.link_name + "'";
+        if (!cfg.command.empty()) {
+            detail += " via " +
+                      std::filesystem::path(cfg.command.back()).filename().string();
+        }
+        seastack::infra::cli::LogInfo(detail);
     } else {
         rsda->SetSpringCoefficient(0.0);
         rsda->SetDampingCoefficient(0.0);
@@ -268,9 +275,12 @@ ExternalPtoAttachment ExternalPtoAttachment::Attach(
             rsda->RegisterTorqueFunctor(
                 std::make_shared<seastack::chrono::PTOTorqueFunctor>(model));
         }
-        seastack::infra::cli::LogInfo(
-            "Attached external PTO module to RSDA link '" + cfg.link_name +
-            "'");
+        std::string detail = "Attached external PTO to RSDA '" + cfg.link_name + "'";
+        if (!cfg.command.empty()) {
+            detail += " via " +
+                      std::filesystem::path(cfg.command.back()).filename().string();
+        }
+        seastack::infra::cli::LogInfo(detail);
     }
 
     ExternalPtoAttachment out;

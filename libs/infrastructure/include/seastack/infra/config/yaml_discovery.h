@@ -50,6 +50,9 @@ struct SetupConfig {
     };
     ExternalPtoConfig external_pto;
     bool has_external_pto = false;
+    /// Path as given in setup (`external_pto_file`), empty when inline `external_pto:`.
+    std::string external_pto_file;
+    bool has_external_pto_file = false;
 };
 
 /// Parse a model.setup.yaml file and return configuration

@@ -405,8 +405,10 @@ double ComputeTsdaPtoPowerW(::chrono::ChLinkTSDA* L,
 #endif
     }
     if (use_fv) {
+        // Expected for IPTOModel / external PTO: native c is zero, so power is
+        // -(F*v). Keep at debug — a yellow warning looks like a misconfiguration.
         if (functor_warned.insert(sanitized_name).second) {
-            seastack::infra::cli::LogWarning(
+            seastack::infra::debug::LogDebug(
                 std::string("TSDA '") + sanitized_name +
                 "': IPTOModel force functor; PTO power uses -(F*v) instead of c*v^2");
         }
@@ -440,8 +442,9 @@ double ComputeRsdaPtoPowerW(::chrono::ChLinkRSDA* L,
 #endif
     }
     if (use_tw) {
+        // Expected for IPTOModel / external PTO (see TSDA note above).
         if (functor_warned.insert(sanitized_name).second) {
-            seastack::infra::cli::LogWarning(
+            seastack::infra::debug::LogDebug(
                 std::string("RSDA '") + sanitized_name +
                 "': IPTOModel torque functor; PTO power uses -(T*w) instead of c*w^2");
         }

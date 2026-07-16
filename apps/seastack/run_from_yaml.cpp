@@ -206,8 +206,18 @@ static void DisplaySimulationSummary(const std::string& input_directory,
     if (timestep <= 0.0) timestep = 0.001;
     
     std::vector<std::string> summary_content;
+
+    // Trailing separators make path::filename() empty (e.g. demos\case\).
+    std::filesystem::path case_path(input_directory);
+    while (!case_path.empty() &&
+           (case_path.filename().empty() || case_path.filename() == "." ||
+            case_path.filename() == "..")) {
+        case_path = case_path.parent_path();
+    }
+    const std::string case_name = case_path.filename().string();
     
-    summary_content.push_back(seastack::infra::cli::CreateAlignedLine("🎯", "Case", std::filesystem::path(input_directory).filename().string()));
+    summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+        "🎯", "Case", case_name.empty() ? "(unnamed)" : case_name));
     summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
         "📁", "Directory", seastack::infra::FormatCliPathForDisplay(input_directory)));
     summary_content.push_back(seastack::infra::cli::CreateAlignedLine("📄", "Model", std::filesystem::path(model_file).filename().string()));
@@ -217,6 +227,19 @@ static void DisplaySimulationSummary(const std::string& input_directory,
         summary_content.push_back(seastack::infra::cli::CreateAlignedLine("🌊", "Hydro", setup_config.hydro_file));
     } else {
         summary_content.push_back(seastack::infra::cli::CreateAlignedLine("🌊", "Hydro", "None (no forces)"));
+    }
+
+    if (setup_config.has_external_pto) {
+        if (setup_config.has_external_pto_file) {
+            summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+                "🔌", "External PTO",
+                std::filesystem::path(setup_config.external_pto_file)
+                    .filename()
+                    .string()));
+        } else {
+            summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+                "🔌", "External PTO", "inline (setup YAML)"));
+        }
     }
     
     summary_content.push_back("");
