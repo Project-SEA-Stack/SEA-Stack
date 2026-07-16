@@ -194,6 +194,9 @@ Output: `build/SEAStack-<version>-<platform>.zip` (CPack suffix is
 `darwin-arm64`, `darwin-x64`, or `linux-x64` depending on OS and architecture).
 See [PACKAGE_LAYOUT.md](PACKAGE_LAYOUT.md) for the archive layout.
 
+For a full cut (version bump → package → tests → GitHub assets), see
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
 ## 8. Troubleshooting
 
 ### Environment diagnostics

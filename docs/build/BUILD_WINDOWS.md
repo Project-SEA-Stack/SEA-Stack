@@ -177,6 +177,9 @@ configure.
 Output: `build\SEAStack-<version>-win64.zip`. See [PACKAGE_LAYOUT.md](PACKAGE_LAYOUT.md)
 for the ZIP layout.
 
+For a full cut (version bump → package → tests → GitHub assets), see
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
+
 ## 8. Troubleshooting
 
 ### Environment diagnostics
