@@ -5,8 +5,8 @@
     produced PDFs (they must exist under build/bin/<BuildType>/results/...).
 
     Usage:
-        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0-beta.2
-        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0-beta.2 -OutputDir .\release-assets
+        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0-beta.3
+        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0-beta.3 -OutputDir .\release-assets
 #>
 
 param(
