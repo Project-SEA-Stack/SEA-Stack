@@ -12,12 +12,14 @@ controller behaviour can be compared side-by-side.
 | `adaptive_damping_pto.py` | Stateful step-up (PI-adapted `c(t)`, saturation, `reset`) | Prescribed-input replay vs an independent PI recurrence |
 | `hydraulic_accumulator_pto.py` | Dynamic external subsystem (two pressure states, rectifier, accumulators, relief valve, motor) | Component equations + exact internal energy balance |
 
-The canonical copies live in the RM3 demo directories (they ship in the release
-ZIP under `demos/`) and are copied next to `external_pto_example` at build time:
+The canonical copies live in the RM3 (TSDA) and OSWEC (RSDA) demo directories
+(they ship in the release ZIP under `demos/`). Build also copies the RM3
+scripts next to `external_pto_example`:
 
 - `data/demos/run_seastack/rm3/external_pto/linear_damper_pto.py`
 - `data/demos/run_seastack/rm3/external_pto_adaptive/adaptive_damping_pto.py`
 - `data/demos/run_seastack/rm3/external_pto_hydraulic/hydraulic_accumulator_pto.py`
+- `data/demos/run_seastack/oswec/external_pto*/` — same three scripts on an RSDA
 
 The physics live in those module files; `seastack_external.py` is only the IPC
 helper. All three demos use the same named-state API (`PtoModule.force(state)`
@@ -47,14 +49,15 @@ GUI is the default for `run_seastack` (omit `--nogui`). From the repo root,
 with a Release build that has Chrono + external modules enabled:
 
 ```bash
-# Linear damper (transport / force-correctness baseline)
+# RM3 — TSDA (heave), c in N·s/m
 build/bin/Release/run_seastack.exe data/demos/run_seastack/rm3/external_pto
-
-# Adaptive damping (stateful PI + saturation)
 build/bin/Release/run_seastack.exe data/demos/run_seastack/rm3/external_pto_adaptive
-
-# Hydraulic accumulator PTO (dynamic subsystem)
 build/bin/Release/run_seastack.exe data/demos/run_seastack/rm3/external_pto_hydraulic
+
+# OSWEC — RSDA (pitch), same scripts, c in N·m·s/rad
+build/bin/Release/run_seastack.exe data/demos/run_seastack/oswec/external_pto
+build/bin/Release/run_seastack.exe data/demos/run_seastack/oswec/external_pto_adaptive
+build/bin/Release/run_seastack.exe data/demos/run_seastack/oswec/external_pto_hydraulic
 ```
 
 On Windows, put Chrono / HDF5 / VSG DLL directories on `PATH` before launching
@@ -64,7 +67,7 @@ On Windows, put Chrono / HDF5 / VSG DLL directories on `PATH` before launching
 The YAML runner sets a default camera suitable for RM3 float + spar motion
 (eye ≈ `(0, -50, -10)`, look-at ≈ `(0, 0, -10)`, Z-up). The GUI animation is a
 **qualitative physical sanity check** — confirm that the float and spar heave
-plausibly, the PTO link moves, and nothing diverges.
+plausibly (or the OSWEC flap pitches), the PTO link moves, and nothing diverges.
 
 **Frame / video capture:** the Chrono VSG visualization backend used by
 `run_seastack` does not currently expose screenshot or video recording APIs.
@@ -77,15 +80,21 @@ The plots and reported metrics provide the **quantitative verification**. They
 use the **same demo YAML configurations** as the automated regression tests
 (`test_external_pto_rm3_regression`).
 
-### One-command workflow
+### One-command workflow (RM3 / OSWEC)
 
-Runs the three demos headlessly, builds a native Chrono `LinearPTO` twin of the
+Runs the three demos headlessly, builds a native Chrono damper twin of the
 linear case, then writes figures + a multipage PDF:
 
 ```bash
+# RM3 — TSDA (default)
 python examples/external_pto/run_visual_verification.py \
     --run-seastack build/bin/Release/run_seastack.exe \
     --output-dir external_pto_verification
+
+# OSWEC — RSDA (same four figures; pitch / torque / ang. speed)
+python examples/external_pto/run_visual_verification.py --platform oswec \
+    --run-seastack build/bin/Release/run_seastack.exe \
+    --output-dir oswec_external_pto_verification
 ```
 
 Optional: `--open` to launch the PDF, `--skip-run` to replot existing outputs,
@@ -97,13 +106,8 @@ Optional: `--open` to launch the PDF, `--skip-run` to replot existing outputs,
 python examples/external_pto/plot_verification.py --auto \
     --output-dir external_pto_verification
 
-# Or pass paths explicitly:
-python examples/external_pto/plot_verification.py \
-    --linear data/demos/run_seastack/rm3/external_pto/outputs/results.irregular.h5 \
-    --adaptive data/demos/run_seastack/rm3/external_pto_adaptive/outputs/results.irregular.h5 \
-    --hydraulic data/demos/run_seastack/rm3/external_pto_hydraulic/outputs/results.irregular.h5 \
-    --native <native-linpto-h5> \
-    --output-dir external_pto_verification
+python examples/external_pto/plot_verification.py --platform oswec --auto \
+    --output-dir oswec_external_pto_verification
 ```
 
 Requires Python packages: `h5py`, `numpy`, `matplotlib`.
@@ -112,11 +116,11 @@ Requires Python packages: `h5py`, `numpy`, `matplotlib`.
 
 | File | Contents |
 |------|----------|
-| `01_cross_case_overview.png` | Heave, relative velocity, force, energy + post-ramp mean power |
-| `02_linear_vs_native.png` | External vs native LinearPTO: heave, force, residuals |
-| `03_adaptive_controller.png` | Force / saturation, adapted `c(t)`, absorbed energy |
+| `01_cross_case_overview.png` | Motion, relative rate, actuator, energy + post-ramp mean power |
+| `02_linear_vs_native.png` | External vs native damper: motion, actuator, residuals |
+| `03_adaptive_controller.png` | Actuator / saturation, adapted `c(t)`, absorbed energy |
 | `04_hydraulic_energy_balance.png` | `E_abs = ΔE_gas + E_motor + E_relief` + residual |
-| `external_pto_verification.pdf` | The four figures as a multipage PDF |
+| `external_pto_verification.pdf` | RM3 PDF (use `oswec_…pdf` for `--platform oswec`) |
 | `summary.csv`, `summary.txt` | Compact metrics (incl. post-ramp mean power) + status |
 
 Figures use the shared SEA-Stack report style from

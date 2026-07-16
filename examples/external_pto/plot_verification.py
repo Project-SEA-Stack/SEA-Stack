@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
 """
-Human-visible verification / comparison plots for the three RM3 external-PTO
-demos under a shared irregular sea state (JONSWAP Hs=2 m, Tp=8 s, seed=42).
+Human-visible verification / comparison plots for the three external-PTO demos
+(RM3 TSDA or OSWEC RSDA) under a shared irregular sea state
+(JONSWAP Hs=2 m, Tp=8 s, seed=42).
 
 Produces a *small curated set* of figures in the same visual style as the
 SEA-Stack regression / comparison / verification reports
 (``tests/utilities/plot_helpers.py``):
 
-  01_cross_case_overview.png   heave, relative vel, force, energy (all 3 PTOs)
-  02_linear_vs_native.png      external vs native LinearPTO (confidence plot)
-  03_adaptive_controller.png   force, adapted c(t), energy (+ saturation)
+  01_cross_case_overview.png   motion, relative rate, actuator, energy
+  02_linear_vs_native.png      external vs native damper (confidence plot)
+  03_adaptive_controller.png   actuator, adapted c(t), energy (+ saturation)
   04_hydraulic_energy_balance.png  E_abs = dE_gas + E_motor + E_relief
   summary.csv / summary.txt
-  external_pto_verification.pdf
+  external_pto_verification.pdf  (or oswec_external_pto_verification.pdf)
 
 Usage:
   python plot_verification.py --auto --output-dir external_pto_verification
+  python plot_verification.py --platform oswec --auto \\
+      --output-dir oswec_external_pto_verification
   python plot_verification.py \\
       --linear <h5> --adaptive <h5> --hydraulic <h5> --native <h5> \\
       --output-dir external_pto_verification
@@ -45,7 +48,7 @@ except Exception as exc:  # noqa: BLE001
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parents[1]
-_RM3 = _REPO / "data" / "demos" / "run_seastack" / "rm3"
+_DEMOS = _REPO / "data" / "demos" / "run_seastack"
 _UTIL = _REPO / "tests" / "utilities"
 if str(_UTIL) not in sys.path:
     sys.path.insert(0, str(_UTIL))
@@ -59,13 +62,96 @@ from plot_helpers import (  # noqa: E402
 )
 
 TIME = "/results/time/time"
-BODY1_POS = "/results/model/bodies/body1/position"
-BODY2_POS = "/results/model/bodies/body2/position"
-FORCE = "/results/model/tsdas/PTO/force_mag"
-SPEED = "/results/model/tsdas/PTO/speed"
-EXTENSION = "/results/model/tsdas/PTO/extension"
-POWER = "/results/model/tsdas/PTO/absorbed_power"
-ENERGY = "/results/model/tsdas/PTO/absorbed_energy"
+
+
+@dataclass(frozen=True)
+class PlatformSpec:
+    """HDF5 paths and axis labels for TSDA (RM3) vs RSDA (OSWEC)."""
+
+    key: str
+    title: str
+    demo_root: Path
+    force: str
+    speed: str
+    extension: str
+    power: str
+    energy: str
+    motion: str
+    motion_col: int
+    motion_ylabel: str
+    speed_ylabel: str
+    force_ylabel: str
+    damping_ylabel: str
+    native_label: str
+    force_diff_ylabel: str
+    motion_diff_ylabel: str
+    motion_summary_key: str
+    pdf_name: str
+    twin_dirname: str
+    model_stem: str
+    default_damping: float
+    power_sign_note: str
+    motion_tol: float
+    actuator_tol: float
+
+
+PLATFORMS: Dict[str, PlatformSpec] = {
+    "rm3": PlatformSpec(
+        key="rm3",
+        title="RM3",
+        demo_root=_DEMOS / "rm3",
+        force="/results/model/tsdas/PTO/force_mag",
+        speed="/results/model/tsdas/PTO/speed",
+        extension="/results/model/tsdas/PTO/extension",
+        power="/results/model/tsdas/PTO/absorbed_power",
+        energy="/results/model/tsdas/PTO/absorbed_energy",
+        motion="/results/model/bodies/body1/position",
+        motion_col=2,
+        motion_ylabel="Float heave (m)",
+        speed_ylabel="PTO relative velocity (m/s)",
+        force_ylabel="PTO force (N)",
+        damping_ylabel="Damping c (N·s/m)",
+        native_label="Native LinearPTO",
+        force_diff_ylabel="Force difference (N)",
+        motion_diff_ylabel="Heave difference (m)",
+        motion_summary_key="heave",
+        pdf_name="external_pto_verification.pdf",
+        twin_dirname="_visual_native_linpto",
+        model_stem="rm3_external_pto",
+        default_damping=1.2e6,
+        power_sign_note="(-force_mag * speed)",
+        motion_tol=2.0e-3,
+        actuator_tol=2.0e-2,
+    ),
+    "oswec": PlatformSpec(
+        key="oswec",
+        title="OSWEC",
+        demo_root=_DEMOS / "oswec",
+        force="/results/model/rsdas/PTO/torque_mag",
+        speed="/results/model/rsdas/PTO/ang_speed",
+        extension="/results/model/rsdas/PTO/angle",
+        power="/results/model/rsdas/PTO/absorbed_power",
+        energy="/results/model/rsdas/PTO/absorbed_energy",
+        motion="/results/model/bodies/body1/orientation_xyz",
+        motion_col=1,
+        motion_ylabel="Flap pitch (rad)",
+        speed_ylabel="PTO angular velocity (rad/s)",
+        force_ylabel="PTO torque (N·m)",
+        damping_ylabel="Damping c (N·m·s/rad)",
+        native_label="Native Chrono RSDA",
+        force_diff_ylabel="Torque difference (N·m)",
+        motion_diff_ylabel="Pitch difference (rad)",
+        motion_summary_key="pitch",
+        pdf_name="oswec_external_pto_verification.pdf",
+        twin_dirname="_visual_native_rsda",
+        model_stem="oswec_external_pto",
+        default_damping=1.2e7,
+        power_sign_note="(-(T*w))",
+        # Larger dt (0.03) than RM3 (0.01) → slightly more explicit-within-step drift.
+        motion_tol=1.0e-2,
+        actuator_tol=5.0e-2,
+    ),
+}
 
 CASE_LABELS = {
     "linear": "Linear damper",
@@ -110,11 +196,6 @@ _STYLE_ERROR = {
     **SERIES_STYLES["error"], "linewidth": 1.1, "alpha": 0.8, "linestyle": "-",
 }
 
-# Slightly looser than the old 40 s decay case: a long irregular run accumulates
-# more explicit-within-step drift between external and native LinearPTO.
-HEAVE_TOL = 2.0e-3
-FORCE_TOL = 2.0e-2
-
 # Excitation ramp in the shared irregular-wave YAML (seconds).
 RAMP_DURATION_S = 60.0
 
@@ -125,11 +206,10 @@ class CaseData:
     label: str
     h5: Path
     t: np.ndarray
-    heave_float: np.ndarray
-    heave_spar: np.ndarray
+    motion: np.ndarray  # heave (RM3) or flap pitch (OSWEC)
     extension: np.ndarray
     speed: np.ndarray
-    force: np.ndarray
+    force: np.ndarray  # force (TSDA) or torque (RSDA)
     power: np.ndarray
     energy: np.ndarray
     diag: Optional[Dict[str, np.ndarray]] = None
@@ -185,7 +265,12 @@ def discover_diag(h5: Path) -> Optional[Path]:
     return cand if cand.is_file() else None
 
 
-def load_case(name: str, h5: Path, diag_path: Optional[Path] = None) -> CaseData:
+def load_case(
+    name: str,
+    h5: Path,
+    plat: PlatformSpec,
+    diag_path: Optional[Path] = None,
+) -> CaseData:
     notes: List[str] = []
     diag = None
     csv_path = diag_path or discover_diag(h5)
@@ -196,13 +281,12 @@ def load_case(name: str, h5: Path, diag_path: Optional[Path] = None) -> CaseData
     return CaseData(
         name=name, label=CASE_LABELS[name], h5=h5,
         t=read_h5(h5, TIME),
-        heave_float=read_h5(h5, BODY1_POS, 2),
-        heave_spar=read_h5(h5, BODY2_POS, 2),
-        extension=read_h5(h5, EXTENSION),
-        speed=read_h5(h5, SPEED),
-        force=read_h5(h5, FORCE),
-        power=read_h5(h5, POWER),
-        energy=read_h5(h5, ENERGY),
+        motion=read_h5(h5, plat.motion, plat.motion_col),
+        extension=read_h5(h5, plat.extension),
+        speed=read_h5(h5, plat.speed),
+        force=read_h5(h5, plat.force),
+        power=read_h5(h5, plat.power),
+        energy=read_h5(h5, plat.energy),
         diag=diag, notes=notes,
     )
 
@@ -292,18 +376,18 @@ def save_fig(fig: plt.Figure, out_dir: Path, stem: str, pdf: PdfPages) -> Path:
 # ---------------------------------------------------------------------------
 
 def plot_cross_case(cases: Sequence[CaseData], out_dir: Path,
-                    pdf: PdfPages) -> Path:
+                    pdf: PdfPages, plat: PlatformSpec) -> Path:
     fig, axes = plt.subplots(4, 1, figsize=(12, 11), sharex=True,
                              facecolor="white")
     fig.suptitle(
-        "External PTO comparison — RM3 irregular sea "
+        f"External PTO comparison — {plat.title} irregular sea "
         f"(JONSWAP Hs=2 m, Tp=8 s, seed=42)",
         fontsize=13, fontweight="bold", color="#212529", y=0.995,
     )
     panels = [
-        (axes[0], "Float heave (m)", lambda c: c.heave_float),
-        (axes[1], "PTO relative velocity (m/s)", lambda c: c.speed),
-        (axes[2], "PTO force (N)", lambda c: c.force),
+        (axes[0], plat.motion_ylabel, lambda c: c.motion),
+        (axes[1], plat.speed_ylabel, lambda c: c.speed),
+        (axes[2], plat.force_ylabel, lambda c: c.force),
         (axes[3], "Absorbed energy (J)", lambda c: c.energy),
     ]
     t0 = cases[0].t if cases else np.array([0.0])
@@ -334,16 +418,21 @@ def plot_cross_case(cases: Sequence[CaseData], out_dir: Path,
 
 
 def plot_linear_vs_native(
-    linear: CaseData, native: Optional[CaseData], out_dir: Path, pdf: PdfPages,
+    linear: CaseData,
+    native: Optional[CaseData],
+    out_dir: Path,
+    pdf: PdfPages,
+    plat: PlatformSpec,
 ) -> Tuple[Path, SummaryRow]:
-    heave_err = float("nan")
+    motion_err = float("nan")
     force_err = float("nan")
     status = "PASS"
     extra = ""
+    mkey = plat.motion_summary_key
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True, facecolor="white")
     fig.suptitle(
-        "Linear verification — external damper vs native Chrono LinearPTO "
+        f"Linear verification — external damper vs {plat.native_label} "
         "(irregular waves)",
         fontsize=13, fontweight="bold", color="#212529", y=0.98,
     )
@@ -352,8 +441,8 @@ def plot_linear_vs_native(
 
     if native is None:
         status = "INCOMPLETE"
-        extra = "native LinearPTO reference H5 not provided"
-        axes[0].plot(linear.t, linear.heave_float,
+        extra = f"{plat.native_label} reference H5 not provided"
+        axes[0].plot(linear.t, linear.motion,
                      **_plot_kw(_STYLE_EXTERNAL, label="External"))
         axes[1].plot(linear.t, linear.force,
                      **_plot_kw(_STYLE_EXTERNAL, label="External"))
@@ -362,34 +451,35 @@ def plot_linear_vs_native(
     else:
         t = linear.t
         n_force = np.interp(t, native.t, native.force)
-        n_heave = np.interp(t, native.t, native.heave_float)
+        n_motion = np.interp(t, native.t, native.motion)
         d_force = linear.force - n_force
-        d_heave = linear.heave_float - n_heave
+        d_motion = linear.motion - n_motion
         force_err = rms_rel(n_force, linear.force)
-        heave_err = rms_rel(n_heave, linear.heave_float)
-        if heave_err > HEAVE_TOL or force_err > FORCE_TOL:
+        motion_err = rms_rel(n_motion, linear.motion)
+        if motion_err > plat.motion_tol or force_err > plat.actuator_tol:
             status = "FAIL"
-        extra = (f"heave_rms_rel={heave_err:.3e}; force_rms_rel={force_err:.3e}")
+        extra = (f"{mkey}_rms_rel={motion_err:.3e}; "
+                 f"actuator_rms_rel={force_err:.3e}")
 
-        # Solid external; dashed native on top.
-        axes[0].plot(t, linear.heave_float,
+        axes[0].plot(t, linear.motion,
                      **_plot_kw(_STYLE_EXTERNAL, label="External", zorder=2))
-        axes[0].plot(t, n_heave,
-                     **_plot_kw(_STYLE_NATIVE, label="Native LinearPTO",
+        axes[0].plot(t, n_motion,
+                     **_plot_kw(_STYLE_NATIVE, label=plat.native_label,
                                 zorder=3))
         axes[1].plot(t, linear.force,
                      **_plot_kw(_STYLE_EXTERNAL, label="External", zorder=2))
         axes[1].plot(t, n_force,
-                     **_plot_kw(_STYLE_NATIVE, label="Native LinearPTO",
+                     **_plot_kw(_STYLE_NATIVE, label=plat.native_label,
                                 zorder=3))
 
         ax_h, ax_f = axes[2], axes[2].twinx()
-        h1, = ax_h.plot(t, d_heave, **_plot_kw(_STYLE_ERROR, label="Heave diff"))
+        h1, = ax_h.plot(t, d_motion,
+                        **_plot_kw(_STYLE_ERROR, label=f"{mkey.capitalize()} diff"))
         h2, = ax_f.plot(t, d_force, color="#6f42c1", linewidth=1.1,
-                        alpha=0.8, label="Force diff")
+                        alpha=0.8, label="Actuator diff")
         ax_h.axhline(0.0, color="#adb5bd", linewidth=0.8)
-        ax_h.set_ylabel("Heave difference (m)", **AXIS_STYLE["ylabel"])
-        ax_f.set_ylabel("Force difference (N)", **AXIS_STYLE["ylabel"])
+        ax_h.set_ylabel(plat.motion_diff_ylabel, **AXIS_STYLE["ylabel"])
+        ax_f.set_ylabel(plat.force_diff_ylabel, **AXIS_STYLE["ylabel"])
         ax_h.tick_params(labelsize=9, colors="#495057")
         ax_f.tick_params(labelsize=9, colors="#495057")
         apply_modern_style(ax_h)
@@ -399,19 +489,22 @@ def plot_linear_vs_native(
                     loc="lower right")
         _info_box(
             axes[0],
-            f"Heave RMS-rel = {heave_err:.3e}  (tol {HEAVE_TOL:.0e})\n"
-            f"Force RMS-rel = {force_err:.3e}  (tol {FORCE_TOL:.0e})",
+            f"{mkey.capitalize()} RMS-rel = {motion_err:.3e}  "
+            f"(tol {plat.motion_tol:.0e})\n"
+            f"Actuator RMS-rel = {force_err:.3e}  "
+            f"(tol {plat.actuator_tol:.0e})",
         )
 
-    _label_axis(axes[0], "Float heave (m)")
-    _label_axis(axes[1], "PTO force (N)")
+    _label_axis(axes[0], plat.motion_ylabel)
+    _label_axis(axes[1], plat.force_ylabel)
     axes[0].legend(fontsize=10, framealpha=0.9, loc="upper right")
     axes[1].legend(fontsize=10, framealpha=0.9, loc="upper right")
     axes[2].set_xlabel("Time (s)", **AXIS_STYLE["xlabel"])
+    link_kind = "RSDA" if plat.key == "oswec" else "TSDA"
     fig.text(
         0.5, 0.01,
-        "Force need not match instantaneously: external module is frozen per "
-        "accepted time level (explicit-within-step HHT); native TSDA is "
+        "Actuator need not match instantaneously: external module is frozen per "
+        f"accepted time level (explicit-within-step HHT); native {link_kind} is "
         "re-evaluated every Newton iteration.",
         ha="center", va="bottom", fontsize=8, style="italic", color="#495057",
     )
@@ -425,24 +518,26 @@ def plot_linear_vs_native(
         net_energy=float(linear.energy[-1]),
         mean_power=_mean_power_post_ramp(linear),
         peak_power=float(np.max(linear.power)),
-        heave_rms=rms(linear.heave_float),
-        heave_peak=float(np.max(np.abs(linear.heave_float))),
+        heave_rms=rms(linear.motion),
+        heave_peak=float(np.max(np.abs(linear.motion))),
         saturation_events=None, relief_events=None,
         status=status, extra=extra,
     )
     return path, row
 
 
-def plot_adaptive(adaptive: CaseData, out_dir: Path,
-                  pdf: PdfPages) -> Tuple[Path, SummaryRow]:
+def plot_adaptive(
+    adaptive: CaseData, out_dir: Path, pdf: PdfPages, plat: PlatformSpec,
+) -> Tuple[Path, SummaryRow]:
     diag = adaptive.diag
     sat_events: Optional[int] = None
     status = "PASS"
     extra = ""
+    act_short = "torque" if plat.key == "oswec" else "force"
 
     fig, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True, facecolor="white")
     fig.suptitle(
-        "Adaptive damping — controller under irregular waves",
+        f"Adaptive damping — controller under irregular waves ({plat.title})",
         fontsize=13, fontweight="bold", color="#212529", y=0.98,
     )
 
@@ -463,12 +558,13 @@ def plot_adaptive(adaptive: CaseData, out_dir: Path,
         t = diag["time"]
         sat_events = int(diag["saturation_events"][-1])
         axes[0].plot(t, diag["force"],
-                     **_plot_kw(CASE_STYLE["adaptive"], label="PTO force"),
+                     **_plot_kw(CASE_STYLE["adaptive"],
+                                label=f"PTO {act_short}"),
                      zorder=2)
         axes[0].plot(t, diag["force_max"], color="#dc3545", linewidth=1.5,
-                     linestyle="--", alpha=0.8, label="+F_max", zorder=2)
+                     linestyle="--", alpha=0.8, label="+limit", zorder=2)
         axes[0].plot(t, -diag["force_max"], color="#dc3545", linewidth=1.5,
-                     linestyle="--", alpha=0.8, label="-F_max", zorder=2)
+                     linestyle="--", alpha=0.8, label="-limit", zorder=2)
         sat = diag["saturated"] > 0.5
         if np.any(sat):
             axes[0].fill_between(
@@ -485,9 +581,9 @@ def plot_adaptive(adaptive: CaseData, out_dir: Path,
         if float(adaptive.energy[-1]) <= 0.0:
             status = "FAIL"
 
-    _label_axis(axes[0], "PTO force (N)")
-    _label_axis(axes[1], "Damping c (N·s/m)" if diag is not None
-                else "Relative velocity (m/s)")
+    _label_axis(axes[0], plat.force_ylabel)
+    _label_axis(axes[1], plat.damping_ylabel if diag is not None
+                else plat.speed_ylabel)
     _label_axis(axes[2], "Absorbed energy (J)")
     for ax in axes:
         ax.legend(fontsize=10, framealpha=0.9, loc="best")
@@ -502,16 +598,17 @@ def plot_adaptive(adaptive: CaseData, out_dir: Path,
         net_energy=float(adaptive.energy[-1]),
         mean_power=_mean_power_post_ramp(adaptive),
         peak_power=float(np.max(adaptive.power)),
-        heave_rms=rms(adaptive.heave_float),
-        heave_peak=float(np.max(np.abs(adaptive.heave_float))),
+        heave_rms=rms(adaptive.motion),
+        heave_peak=float(np.max(np.abs(adaptive.motion))),
         saturation_events=sat_events, relief_events=None,
         status=status, extra=extra,
     )
     return path, row
 
 
-def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
-                   pdf: PdfPages) -> Tuple[Path, SummaryRow]:
+def plot_hydraulic(
+    hydraulic: CaseData, out_dir: Path, pdf: PdfPages, plat: PlatformSpec,
+) -> Tuple[Path, SummaryRow]:
     diag = hydraulic.diag
     relief_events: Optional[int] = None
     status = "PASS"
@@ -521,7 +618,8 @@ def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 9), sharex=False, facecolor="white")
     fig.suptitle(
-        "Hydraulic accumulator PTO — energy balance (irregular waves)",
+        f"Hydraulic accumulator PTO — energy balance "
+        f"({plat.title}, irregular waves)",
         fontsize=13, fontweight="bold", color="#212529", y=0.98,
     )
 
@@ -534,7 +632,7 @@ def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
                      **_plot_kw(CASE_STYLE["hydraulic"]), zorder=2)
         axes[1].plot(hydraulic.t, hydraulic.energy,
                      **_plot_kw(CASE_STYLE["hydraulic"]), zorder=2)
-        _label_axis(axes[0], "PTO force (N)")
+        _label_axis(axes[0], plat.force_ylabel)
         _label_axis(axes[1], "Absorbed energy (J)", xlabel="Time (s)")
     else:
         t = diag["time"]
@@ -588,22 +686,27 @@ def plot_hydraulic(hydraulic: CaseData, out_dir: Path,
         net_energy=float(hydraulic.energy[-1]),
         mean_power=_mean_power_post_ramp(hydraulic),
         peak_power=float(np.max(hydraulic.power)),
-        heave_rms=rms(hydraulic.heave_float),
-        heave_peak=float(np.max(np.abs(hydraulic.heave_float))),
+        heave_rms=rms(hydraulic.motion),
+        heave_peak=float(np.max(np.abs(hydraulic.motion))),
         saturation_events=None, relief_events=relief_events,
         status=status, extra=extra,
     )
     return path, row
 
 
-def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path]:
+def write_summary(
+    rows: Sequence[SummaryRow], out_dir: Path, plat: PlatformSpec,
+) -> Tuple[Path, Path]:
     csv_path = out_dir / "summary.csv"
     txt_path = out_dir / "summary.txt"
+    mkey = plat.motion_summary_key
+    act_unit = "Nm" if plat.key == "oswec" else "N"
+    motion_unit = "rad" if plat.key == "oswec" else "m"
     fields = [
-        "case", "peak_force_N", "rms_force_N", "net_energy_J",
-        "mean_power_post_ramp_W", "peak_power_W",
-        "heave_rms_m", "heave_peak_m", "saturation_events", "relief_events",
-        "status", "extra",
+        "case", f"peak_actuator_{act_unit}", f"rms_actuator_{act_unit}",
+        "net_energy_J", "mean_power_post_ramp_W", "peak_power_W",
+        f"{mkey}_rms_{motion_unit}", f"{mkey}_peak_{motion_unit}",
+        "saturation_events", "relief_events", "status", "extra",
     ]
     with open(csv_path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
@@ -619,13 +722,14 @@ def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path
                 r.status, r.extra,
             ])
 
+    motion_hdr = "pitch_rms" if plat.key == "oswec" else "z_rms"
     lines = [
-        "SEA-Stack external PTO visual verification summary",
+        f"SEA-Stack external PTO visual verification summary ({plat.title})",
         "Sea state: irregular JONSWAP Hs=2 m, Tp=8 s, seed=42, ramp=60 s",
         f"Generated: {datetime.now().isoformat(timespec='seconds')}",
         "=" * 78,
-        f"{'Case':<28} {'Peak F':>10} {'RMS F':>10} {'E_net':>10} "
-        f"{'P_mean':>10} {'z_rms':>9} {'status':>10}",
+        f"{'Case':<28} {'Peak':>10} {'RMS':>10} {'E_net':>10} "
+        f"{'P_mean':>10} {motion_hdr:>9} {'status':>10}",
         "-" * 78,
     ]
     for r in rows:
@@ -647,7 +751,7 @@ def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path
     )
     lines.append(
         "Absorbed power sign convention (SEA-Stack HDF5): positive = absorbing "
-        "(-force_mag * speed)."
+        f"{plat.power_sign_note}."
     )
     lines.append(
         "Plots use the same demo YAML configs as the automated regression tests."
@@ -662,15 +766,19 @@ def write_summary(rows: Sequence[SummaryRow], out_dir: Path) -> Tuple[Path, Path
     return csv_path, txt_path
 
 
-def resolve_inputs(args: argparse.Namespace) -> Dict[str, Any]:
+def resolve_inputs(
+    args: argparse.Namespace, plat: PlatformSpec,
+) -> Dict[str, Any]:
+    root = plat.demo_root
     if args.auto:
+        twin = root / plat.twin_dirname
         return {
-            "linear": find_results_h5(_RM3 / "external_pto"),
-            "adaptive": find_results_h5(_RM3 / "external_pto_adaptive"),
-            "hydraulic": find_results_h5(_RM3 / "external_pto_hydraulic"),
+            "linear": find_results_h5(root / "external_pto"),
+            "adaptive": find_results_h5(root / "external_pto_adaptive"),
+            "hydraulic": find_results_h5(root / "external_pto_hydraulic"),
             "native": (
-                find_results_h5(_RM3 / "_visual_native_linpto")
-                if (_RM3 / "_visual_native_linpto" / "outputs").exists()
+                find_results_h5(twin)
+                if (twin / "outputs").exists()
                 else None
             ),
             "adaptive_csv": None,
@@ -695,6 +803,10 @@ def resolve_inputs(args: argparse.Namespace) -> Dict[str, Any]:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--platform", choices=sorted(PLATFORMS), default="rm3",
+        help="Demo platform: rm3 (TSDA) or oswec (RSDA)",
+    )
     parser.add_argument("--linear", type=Path)
     parser.add_argument("--adaptive", type=Path)
     parser.add_argument("--hydraulic", type=Path)
@@ -702,11 +814,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--adaptive-csv", type=Path, default=None)
     parser.add_argument("--hydraulic-csv", type=Path, default=None)
     parser.add_argument("--auto", action="store_true")
-    parser.add_argument("--output-dir", type=Path,
-                        default=Path("external_pto_verification"))
+    parser.add_argument("--output-dir", type=Path, default=None)
     args = parser.parse_args(argv)
 
-    paths = resolve_inputs(args)
+    plat = PLATFORMS[args.platform]
+    if args.output_dir is None:
+        args.output_dir = Path(
+            "oswec_external_pto_verification" if plat.key == "oswec"
+            else "external_pto_verification"
+        )
+
+    paths = resolve_inputs(args, plat)
     out_dir = args.output_dir.resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -714,32 +832,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for old in out_dir.glob("*.png"):
         old.unlink()
 
-    linear = load_case("linear", paths["linear"])
-    adaptive = load_case("adaptive", paths["adaptive"], paths["adaptive_csv"])
-    hydraulic = load_case("hydraulic", paths["hydraulic"], paths["hydraulic_csv"])
+    linear = load_case("linear", paths["linear"], plat)
+    adaptive = load_case(
+        "adaptive", paths["adaptive"], plat, paths["adaptive_csv"],
+    )
+    hydraulic = load_case(
+        "hydraulic", paths["hydraulic"], plat, paths["hydraulic_csv"],
+    )
     native = None
     if paths["native"] is not None and Path(paths["native"]).is_file():
-        native = load_case("linear", paths["native"])
+        native = load_case("linear", paths["native"], plat)
         native.name = "native"
-        native.label = "Native LinearPTO"
+        native.label = plat.native_label
 
-    pdf_path = out_dir / "external_pto_verification.pdf"
+    pdf_path = out_dir / plat.pdf_name
     written: List[Path] = []
     rows: List[SummaryRow] = []
 
     with PdfPages(pdf_path) as pdf:
-        written.append(plot_cross_case([linear, adaptive, hydraulic], out_dir, pdf))
-        p, row = plot_linear_vs_native(linear, native, out_dir, pdf)
+        written.append(
+            plot_cross_case([linear, adaptive, hydraulic], out_dir, pdf, plat),
+        )
+        p, row = plot_linear_vs_native(linear, native, out_dir, pdf, plat)
         written.append(p)
         rows.append(row)
-        p, row = plot_adaptive(adaptive, out_dir, pdf)
+        p, row = plot_adaptive(adaptive, out_dir, pdf, plat)
         written.append(p)
         rows.append(row)
-        p, row = plot_hydraulic(hydraulic, out_dir, pdf)
+        p, row = plot_hydraulic(hydraulic, out_dir, pdf, plat)
         written.append(p)
         rows.append(row)
 
-    csv_path, txt_path = write_summary(rows, out_dir)
+    csv_path, txt_path = write_summary(rows, out_dir, plat)
     print(f"Wrote {len(written)} PNG figures ({FIGURE_DPI} DPI) and PDF:")
     for p in written:
         print(f"  {p}")

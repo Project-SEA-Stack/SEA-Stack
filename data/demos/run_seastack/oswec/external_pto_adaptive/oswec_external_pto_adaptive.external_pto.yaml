@@ -1,0 +1,17 @@
+# Linear damper + PI-adapted c(t) + torque saturation on ChLinkRSDA "PTO".
+# Requires SEA-Stack built with -DSEASTACK_ENABLE_EXTERNAL=ON and Python 3.
+# Same script as RM3; config is in rotational units (N·m, rad/s, N·m·s/rad).
+# Tuned for the shared irregular sea state so average c stays near the linear
+# baseline (12e6 N·m·s/rad).
+link: PTO
+command: ["python", "adaptive_damping_pto.py"]
+timeout_ms: 20000
+config:
+  damping: 1.2e7         # initial c [N·m·s/rad]; matches linear baseline
+  force_max: 2.0e7       # |τ| clip [N·m]
+  kp: 1.5e6              # scaled ~10× from RM3 heave gains
+  ki: 3.0e5
+  vel_setpoint: 0.15     # typical flap |ω| under Hs=2 / Tp=8 [rad/s]
+  c_min: 1.0e7
+  c_max: 1.8e7
+  diagnostics_csv: outputs/pto_diagnostics.csv

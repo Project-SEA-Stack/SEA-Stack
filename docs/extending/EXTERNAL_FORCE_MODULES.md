@@ -218,19 +218,25 @@ do not set both `external_pto_file` and `external_pto:` together.
 
 ### Worked examples
 
-| Module | What it shows | Demo |
-|--------|---------------|------|
-| `linear_damper_pto.py` | Stateless `F = -c v` | `demos/.../external_pto/` |
-| `adaptive_damping_pto.py` | Adapting `c(t)` + saturation + `reset` | `demos/.../external_pto_adaptive/` |
-| `hydraulic_accumulator_pto.py` | Internal states + `commit`/`rollback` | `demos/.../external_pto_hydraulic/` |
+| Module | What it shows | TSDA (heave) | RSDA (pitch) |
+|--------|---------------|--------------|--------------|
+| `linear_damper_pto.py` | Stateless `F = -c v` / `τ = -c ω` | `rm3/external_pto/` | `oswec/external_pto/` |
+| `adaptive_damping_pto.py` | Adapting `c(t)` + saturation + `reset` | `rm3/external_pto_adaptive/` | `oswec/external_pto_adaptive/` |
+| `hydraulic_accumulator_pto.py` | Internal states + `commit`/`rollback` | `rm3/external_pto_hydraulic/` | `oswec/external_pto_hydraulic/` |
 
 Start with the linear damper, then open the adaptive file — it is the same
 skeleton with three small additions. The hydraulic demo is the advanced case.
+The same Python scripts attach to either link kind; only YAML `config` units
+change (N / m/s vs N·m / rad/s).
 
-The three RM3 demos share one irregular sea state (same JONSWAP Hs = 2 m,
-Tp = 8 s, seed = 42 as `rm3/irregular_waves`, but 600 s for PTO comparison)
-so absorbed power and controller behaviour can be compared. Use
-`examples/external_pto/run_visual_verification.py` for side-by-side plots.
+RM3 (TSDA) and OSWEC (RSDA) each share one irregular sea state within their
+trio (JONSWAP Hs = 2 m, Tp = 8 s, seed = 42, 600 s) so absorbed power and
+controller behaviour can be compared. Side-by-side plots:
+
+```bash
+python examples/external_pto/run_visual_verification.py              # RM3
+python examples/external_pto/run_visual_verification.py --platform oswec
+```
 
 ### Verifying a module without a full run
 

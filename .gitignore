@@ -10,10 +10,12 @@ results/
 data/demos/**/outputs/
 !data/demos/**/expected/
 data/demos/**/_visual_native_linpto/
+data/demos/**/_visual_native_rsda/
 data/demos/**/_regression_native_linpto/
 
 # External PTO visual verification artefacts (run_visual_verification.py)
 /external_pto_verification/
+/oswec_external_pto_verification/
 
 # MoorDyn runtime output (generated alongside .txt input files)
 data/demos/**/*.log

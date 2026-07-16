@@ -175,7 +175,9 @@ Full protocol, lifecycle, YAML keys, and language helpers are documented in
 **Examples (Python, by verification property):** `linear_damper_pto.py`
 (transport), `adaptive_damping_pto.py` (stateful PI control) and
 `hydraulic_accumulator_pto.py` (dynamic subsystem) under
-`data/demos/run_seastack/rm3/external_pto*`.
+`data/demos/run_seastack/rm3/external_pto*` (TSDA) and
+`data/demos/run_seastack/oswec/external_pto*` (RSDA; same scripts, rotational
+config).
 
 **Testing:** a three-level verification ladder (see
 `examples/external_pto/README.md`):

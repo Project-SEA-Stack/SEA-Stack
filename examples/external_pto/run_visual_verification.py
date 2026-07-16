@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-One-command visual verification / comparison workflow for the three RM3
-external-PTO demos under a shared irregular sea state.
+One-command visual verification / comparison workflow for the three
+external-PTO demos (RM3 TSDA or OSWEC RSDA) under a shared irregular sea state.
 
 1. Runs the three demos headlessly via run_seastack (same YAML configs as the
    automated regression tests: JONSWAP Hs=2 m, Tp=8 s, seed=42, 600 s).
-2. Runs a native Chrono LinearPTO twin of the linear case (reference force/heave).
+2. Runs a native Chrono damper twin of the linear case (reference motion /
+   actuator).
 3. Generates comparison / verification plots (PNG + multipage PDF) and a summary.
 4. Prints the PDF path (optionally opens it).
 
@@ -16,6 +17,9 @@ Usage:
   python examples/external_pto/run_visual_verification.py \\
       --run-seastack build/bin/Release/run_seastack.exe \\
       --output-dir external_pto_verification
+
+  python examples/external_pto/run_visual_verification.py --platform oswec \\
+      --output-dir oswec_external_pto_verification
 """
 
 from __future__ import annotations
@@ -29,17 +33,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from plot_verification import PLATFORMS, PlatformSpec
+
 
 _HERE = Path(__file__).resolve().parent
 _REPO = _HERE.parents[1]
-_RM3 = _REPO / "data" / "demos" / "run_seastack" / "rm3"
 _PLOT = _HERE / "plot_verification.py"
-
-CASES = (
-    ("linear", _RM3 / "external_pto"),
-    ("adaptive", _RM3 / "external_pto_adaptive"),
-    ("hydraulic", _RM3 / "external_pto_hydraulic"),
-)
 
 
 def _run_env() -> dict:
@@ -69,6 +68,15 @@ def default_exe() -> str:
     return names[0]
 
 
+def case_dirs(plat: PlatformSpec) -> tuple:
+    root = plat.demo_root
+    return (
+        ("linear", root / "external_pto"),
+        ("adaptive", root / "external_pto_adaptive"),
+        ("hydraulic", root / "external_pto_hydraulic"),
+    )
+
+
 def run_case(exe: str, case_dir: Path) -> Path:
     cmd = [exe, "--nogui", "--quiet", str(case_dir)]
     print(f"Running: {' '.join(cmd)}")
@@ -90,29 +98,34 @@ def find_results_h5(case_dir: Path) -> Path:
     return max(outs, key=lambda p: p.stat().st_mtime)
 
 
-def make_native_twin(damping: float) -> Path:
-    src = _RM3 / "external_pto"
-    twin = _RM3 / "_visual_native_linpto"
+def make_native_twin(plat: PlatformSpec, damping: float) -> Path:
+    """Ephemeral native-damper twin of the linear external case (no IPC)."""
+    src = plat.demo_root / "external_pto"
+    twin = plat.demo_root / plat.twin_dirname
     if twin.exists():
         shutil.rmtree(twin)
     twin.mkdir()
+    stem_src = plat.model_stem
+    stem_dst = (
+        "oswec_native_rsda" if plat.key == "oswec" else "rm3_native_linpto"
+    )
     for suffix in ("simulation", "hydro"):
         shutil.copy2(
-            src / f"rm3_external_pto.{suffix}.yaml",
-            twin / f"rm3_native_linpto.{suffix}.yaml",
+            src / f"{stem_src}.{suffix}.yaml",
+            twin / f"{stem_dst}.{suffix}.yaml",
         )
-    model = (src / "rm3_external_pto.model.yaml").read_text(encoding="utf-8")
+    model = (src / f"{stem_src}.model.yaml").read_text(encoding="utf-8")
     model = re.sub(
         r"damping_coefficient:\s*\S+.*",
         f"damping_coefficient: {damping:.1f}",
         model,
         count=1,
     )
-    (twin / "rm3_native_linpto.model.yaml").write_text(model, encoding="utf-8")
-    (twin / "rm3_native_linpto.setup.yaml").write_text(
-        "model_file: rm3_native_linpto.model.yaml\n"
-        "simulation_file: rm3_native_linpto.simulation.yaml\n"
-        "hydro_file: rm3_native_linpto.hydro.yaml\n"
+    (twin / f"{stem_dst}.model.yaml").write_text(model, encoding="utf-8")
+    (twin / f"{stem_dst}.setup.yaml").write_text(
+        f"model_file: {stem_dst}.model.yaml\n"
+        f"simulation_file: {stem_dst}.simulation.yaml\n"
+        f"hydro_file: {stem_dst}.hydro.yaml\n"
         "output_directory: outputs\n",
         encoding="utf-8",
     )
@@ -134,15 +147,17 @@ def try_open(path: Path) -> None:
 def main(argv: Optional[list] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--platform", choices=sorted(PLATFORMS), default="rm3",
+        help="Demo platform: rm3 (TSDA) or oswec (RSDA)",
+    )
+    parser.add_argument(
         "--run-seastack", default=default_exe(),
         help="Path to run_seastack executable",
     )
+    parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("external_pto_verification"),
-    )
-    parser.add_argument(
-        "--damping", type=float, default=1.2e6,
-        help="Native LinearPTO twin damping (must match linear demo config)",
+        "--damping", type=float, default=None,
+        help="Native damper twin coefficient (must match linear demo config)",
     )
     parser.add_argument(
         "--skip-run", action="store_true",
@@ -154,47 +169,60 @@ def main(argv: Optional[list] = None) -> int:
     )
     parser.add_argument(
         "--keep-twin", action="store_true",
-        help="Keep the ephemeral native LinearPTO twin directory",
+        help="Keep the ephemeral native damper twin directory",
     )
     args = parser.parse_args(argv)
+
+    plat = PLATFORMS[args.platform]
+    damping = (
+        float(args.damping) if args.damping is not None
+        else plat.default_damping
+    )
+    if args.output_dir is None:
+        args.output_dir = Path(
+            "oswec_external_pto_verification" if plat.key == "oswec"
+            else "external_pto_verification"
+        )
 
     exe = args.run_seastack
     if not args.skip_run and not Path(exe).exists():
         sys.stderr.write(f"run_seastack not found: {exe}\n")
         return 2
 
+    cases = case_dirs(plat)
     twin_dir: Optional[Path] = None
     try:
         results = {}
         if not args.skip_run:
-            for name, case_dir in CASES:
+            for name, case_dir in cases:
                 results[name] = run_case(exe, case_dir)
-            twin_dir = make_native_twin(args.damping)
+            twin_dir = make_native_twin(plat, damping)
             results["native"] = run_case(exe, twin_dir)
         else:
-            for name, case_dir in CASES:
+            for name, case_dir in cases:
                 results[name] = find_results_h5(case_dir)
-            twin_h5_dir = _RM3 / "_visual_native_linpto" / "outputs"
+            twin_h5_dir = plat.demo_root / plat.twin_dirname / "outputs"
             native_candidates = (
-                list(twin_h5_dir.glob("results.*.h5")) if twin_h5_dir.exists() else []
+                list(twin_h5_dir.glob("results.*.h5"))
+                if twin_h5_dir.exists() else []
             )
             if native_candidates:
                 results["native"] = max(
                     native_candidates, key=lambda p: p.stat().st_mtime
                 )
             elif Path(exe).exists():
-                # Replot without re-running the three demos, but rebuild the
-                # native twin so linear-vs-native is not left INCOMPLETE.
-                print("Native twin missing; running LinearPTO reference only…")
-                twin_dir = make_native_twin(args.damping)
+                print(f"Native twin missing; running {plat.native_label} "
+                      "reference only…")
+                twin_dir = make_native_twin(plat, damping)
                 results["native"] = run_case(exe, twin_dir)
             else:
-                print("WARNING: native LinearPTO twin H5 not found; "
+                print(f"WARNING: {plat.native_label} twin H5 not found; "
                       "linear verification will be INCOMPLETE")
                 results["native"] = None
 
         cmd = [
             sys.executable, str(_PLOT),
+            "--platform", plat.key,
             "--linear", str(results["linear"]),
             "--adaptive", str(results["adaptive"]),
             "--hydraulic", str(results["hydraulic"]),
@@ -207,14 +235,13 @@ def main(argv: Optional[list] = None) -> int:
         if proc.returncode != 0:
             return proc.returncode
 
-        pdf = Path(args.output_dir).resolve() / "external_pto_verification.pdf"
+        pdf = Path(args.output_dir).resolve() / plat.pdf_name
         print(f"\nVerification PDF: {pdf}")
         if args.open and pdf.is_file():
             try_open(pdf)
         return 0
     finally:
         if twin_dir is not None and twin_dir.exists() and not args.keep_twin:
-            # Keep H5 only if plot already consumed it; remove ephemeral twin.
             shutil.rmtree(twin_dir, ignore_errors=True)
 
 
