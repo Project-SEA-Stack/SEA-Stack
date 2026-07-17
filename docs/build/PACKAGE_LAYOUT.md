@@ -26,10 +26,19 @@ From the unzipped package root (Python 3 + `h5py`/`numpy`/`matplotlib` from
 `tests/requirements.txt`):
 
 ```text
+# Windows
 bin\run_seastack.exe --nogui demos\rm3\external_pto
 python examples\external_pto\run_visual_verification.py
 python examples\external_pto\run_visual_verification.py --platform oswec
+
+# macOS / Linux
+./bin/run_seastack --nogui demos/rm3/external_pto
+python3 examples/external_pto/run_visual_verification.py
+python3 examples/external_pto/run_visual_verification.py --platform oswec
 ```
+
+The demos launch `command: ["python", ...]`; on macOS/Linux the host falls back
+to `python3` when `python` is not on `PATH`.
 
 `run_visual_verification.py` finds `bin/run_seastack` and `demos/<platform>/`
 automatically when launched from the package tree.

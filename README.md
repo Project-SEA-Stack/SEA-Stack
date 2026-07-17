@@ -1,7 +1,7 @@
 # SEA-Stack
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-1.0.0--beta.2-orange)
+![Version](https://img.shields.io/badge/version-1.0.0--beta.3-orange)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
 
 Open-source simulation software for offshore and marine energy systems—built for innovating, fast design exploration and engineering workflows.
@@ -107,7 +107,7 @@ Detailed walkthroughs (toolchains, optional modules, packaging, troubleshooting,
 
 ## Project status
 
-SEA-Stack is under active development. The current release (v1.0.0-beta.2) provides a robust modular core, validated offshore simulation workflows, and a suite of representative demos and test cases. Packages are currently available for Windows and macOS. Linux packaging and CI/CD are planned. Multi-fidelity capabilities and integration with higher-fidelity methods are planned as the platform evolves.
+SEA-Stack is under active development. The current release (v1.0.0-beta.3) provides a robust modular core, validated offshore simulation workflows, and a suite of representative demos and test cases. Packages are currently available for Windows and macOS. Linux packaging and CI/CD are planned. Multi-fidelity capabilities and integration with higher-fidelity methods are planned as the platform evolves.
 
 ## License
 

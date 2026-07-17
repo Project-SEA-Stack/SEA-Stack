@@ -183,6 +183,11 @@ missing).
 
 Add `--nogui` to run without the 3D visualization window.
 
+The external-PTO demos (`demos/run_seastack/{rm3,oswec}/external_pto*`) spawn an
+out-of-process Python module. They need Python 3 on `PATH`; the demos use
+`command: ["python", ...]`, and the host falls back to `python3` on macOS/Linux,
+so a stock Homebrew Python 3 works without editing the case YAML.
+
 ## 7. Package (optional)
 
 `--package` is already included in the **Full, clean build & package generation**
@@ -193,6 +198,9 @@ configure.
 Output: `build/SEAStack-<version>-<platform>.zip` (CPack suffix is
 `darwin-arm64`, `darwin-x64`, or `linux-x64` depending on OS and architecture).
 See [PACKAGE_LAYOUT.md](PACKAGE_LAYOUT.md) for the archive layout.
+
+For a full cut (version bump → package → tests → GitHub assets), see
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md).
 
 ## 8. Troubleshooting
 

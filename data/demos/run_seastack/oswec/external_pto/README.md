@@ -16,7 +16,9 @@ tests.
 **Requirements**
 
 - SEA-Stack built with `-DSEASTACK_ENABLE_EXTERNAL=ON`
-- Python 3 on `PATH` (or set `command` to your interpreter)
+- Python 3 on `PATH`: `python` on Windows, `python` or `python3` on
+  macOS/Linux (the host falls back to `python3`). Or set `command` in the
+  `*.external_pto.yaml` to your interpreter.
 
 **Run**
 

@@ -216,6 +216,28 @@ struct ChildProcess {
 #endif
 };
 
+/// Non-blocking check: has the spawned child already exited? Used to turn a
+/// bare connect timeout into a clearer "launcher failed" diagnostic (e.g. no
+/// `python`/`python3` on PATH, where the child exits 127 before connecting).
+bool ChildAlreadyExited(ChildProcess& child) {
+#ifdef _WIN32
+    if (!child.running) {
+        return true;
+    }
+    DWORD code = 0;
+    if (GetExitCodeProcess(child.pi.hProcess, &code)) {
+        return code != STILL_ACTIVE;
+    }
+    return false;
+#else
+    if (child.pid <= 0) {
+        return true;
+    }
+    int status = 0;
+    return waitpid(child.pid, &status, WNOHANG) == child.pid;
+#endif
+}
+
 /// Ask the child to exit; escalate to kill if it ignores SIGTERM (POSIX).
 void TerminateChild(ChildProcess& child) {
 #ifdef _WIN32
@@ -306,6 +328,13 @@ ChildProcess SpawnChild(const std::vector<std::string>& command,
             }
         }
         execvp(argv[0], argv.data());
+        // Stock macOS / Homebrew ship only `python3`, not `python`. Demo YAML
+        // uses the Windows-friendly `python`; retry `python3` so the same case
+        // runs unmodified on POSIX. Only retry the bare `python` launcher.
+        if (std::strcmp(argv[0], "python") == 0) {
+            argv[0] = const_cast<char*>("python3");
+            execvp(argv[0], argv.data());
+        }
         _exit(127);
     }
     child.pid = pid;
@@ -437,7 +466,18 @@ ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
 
     // Wait for the child to connect, then run the initialize handshake.
     if (!WaitReadable(impl_->listen_sock, impl_->timeout_ms)) {
+        // If the launcher already exited it never connected: usually the
+        // interpreter is missing (no `python`/`python3` on PATH) or the script
+        // path is wrong. Surface that instead of only a generic timeout.
+        const bool launcher_gone = ChildAlreadyExited(impl_->child);
         TerminateChild(impl_->child);
+        if (launcher_gone && !options_.command.empty()) {
+            throw std::runtime_error(
+                "External force module '" + options_.command.front() +
+                "' exited before connecting: check that the interpreter is on "
+                "PATH (macOS/Linux need `python` or `python3`) and the script "
+                "path in the external_pto `command` is correct");
+        }
         throw std::runtime_error(
             "Timed out waiting for external force module to connect");
     }
