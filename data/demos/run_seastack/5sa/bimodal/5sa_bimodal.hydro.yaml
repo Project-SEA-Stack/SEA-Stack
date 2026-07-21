@@ -1,20 +1,31 @@
 hydrodynamics:
   bodies:
+    # Surge/sway/heave/roll/pitch/yaw damping mirrored from the spreading
+    # case. The bimodal swell + wind sea combination contains spectral
+    # energy near the chain's heave natural frequency, and with zero
+    # linear and quadratic damping in heave/pitch/yaw the rigid-body
+    # heave mode runs away after ~200 s of accumulation (body z-position
+    # exceeded 10 m above SWL by t=280 s in the previous configuration).
     - name: body1
       h5_file: ../assets/hydroData/5sa_directional.h5
-      linear_damping: [0, 100000, 0, 500000, 0, 0]
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
     - name: body2
       h5_file: ../assets/hydroData/5sa_directional.h5
-      linear_damping: [0, 100000, 0, 500000, 0, 0]
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
     - name: body3
       h5_file: ../assets/hydroData/5sa_directional.h5
-      linear_damping: [0, 100000, 0, 500000, 0, 0]
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
     - name: body4
       h5_file: ../assets/hydroData/5sa_directional.h5
-      linear_damping: [0, 100000, 0, 500000, 0, 0]
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
     - name: body5
       h5_file: ../assets/hydroData/5sa_directional.h5
-      linear_damping: [0, 100000, 0, 500000, 0, 0]
+      linear_damping:    [20000, 80000, 80000, 500000, 200000, 200000]
+      quadratic_damping: [10000, 40000, 40000, 250000, 100000, 100000]
 
   # Bimodal sea state: swell along +X, wind sea from beam (90 deg).
   waves:
@@ -41,6 +52,11 @@ hydrodynamics:
         spreading:
           type: cos2s
           s: 8
+
+  # Bimodal sea: swell and wind-sea have different headings, so excitation
+  # must be evaluated in the frequency domain (matches spreading case).
+  excitation:
+    method: frequency_domain
 
   radiation:
     method: rirf_convolution

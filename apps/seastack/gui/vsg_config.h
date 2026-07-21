@@ -25,7 +25,14 @@ inline constexpr int kColorVariationCycle = 8;
 inline constexpr float kWaterR = 0.01f;
 inline constexpr float kWaterG = 0.20f;
 inline constexpr float kWaterB = 0.35f;
-inline constexpr float kWaterOpacity = 0.55f;
+// NOTE: Material opacity must stay at 1.0 on Linux.
+// With opacity < 1.0, Chrono's wrapIfTransparent() wraps the runtime-added
+// water node in vsg::DepthSorted (bin 10), which crashes the VSG renderer
+// at vsg::Bin::add during the first record traversal. The animated water
+// surface is added to the scene after pVis->Initialize(), bypassing the
+// BindAll() compile path that built-in Chrono demos rely on.
+// TODO: enable proper translucency via a runtime compile traversal.
+inline constexpr float kWaterOpacity = 1.0f;
 inline constexpr float kWaterSpecular = 0.6f;
 inline constexpr float kWaterRoughness = 0.05f;
 inline constexpr float kWaterMetallic = 0.0f;
