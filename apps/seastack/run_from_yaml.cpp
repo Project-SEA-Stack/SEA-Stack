@@ -230,7 +230,12 @@ static void DisplaySimulationSummary(const std::string& input_directory,
     }
 
     if (setup_config.has_external_pto) {
-        if (setup_config.has_external_pto_file) {
+        if (setup_config.external_ptos.size() > 1) {
+            summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+                "🔌", "External PTO",
+                std::to_string(setup_config.external_ptos.size()) +
+                    " links (external_ptos)"));
+        } else if (setup_config.has_external_pto_file) {
             summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
                 "🔌", "External PTO",
                 std::filesystem::path(setup_config.external_pto_file)
@@ -442,6 +447,7 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.profile_mode = profile_mode;
         run_config.has_external_pto = setup_config.has_external_pto;
         run_config.external_pto = setup_config.external_pto;
+        run_config.external_ptos = setup_config.external_ptos;
 
         SingleRunResult result = RunSingleCase(run_config);
 

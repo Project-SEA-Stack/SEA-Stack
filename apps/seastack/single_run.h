@@ -62,9 +62,12 @@ struct SingleRunConfig {
     bool trace_mode     = false;
     bool profile_mode   = false;
 
-    /// Optional out-of-process PTO (populated from setup YAML when enabled).
+    /// Optional out-of-process PTO(s) (populated from setup YAML when enabled).
+    /// `external_ptos` holds one entry per attached link; `external_pto` mirrors
+    /// the first entry for backward compatibility.
     bool has_external_pto = false;
     seastack::infra::SetupConfig::ExternalPtoConfig external_pto;
+    std::vector<seastack::infra::SetupConfig::ExternalPtoConfig> external_ptos;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).

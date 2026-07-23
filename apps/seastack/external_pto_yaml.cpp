@@ -123,24 +123,35 @@ void ParseExternalPtoAttachNode(const YAML::Node& ep,
 
 }  // namespace
 
-/// Read setup YAML: prefer `external_pto_file`, else inline `external_pto:`.
+/// Read setup YAML. Exactly one of the following may be present:
+///   - `external_pto_file:`  single sidecar attach file
+///   - `external_pto:`       single inline attach map
+///   - `external_ptos:`      sequence of attaches (one child per entry); each
+///                           item is an inline attach map, or `{ file: path }`
+///                           pointing to a sidecar attach file.
+/// All parsed attaches are stored in `config.external_ptos`; the legacy scalar
+/// `config.external_pto` mirrors the first entry.
 void LoadExternalPtoFromSetupYaml(const std::filesystem::path& setup_path,
                                   seastack::infra::SetupConfig& config) {
     config.has_external_pto = false;
     config.has_external_pto_file = false;
     config.external_pto_file.clear();
+    config.external_ptos.clear();
     if (!std::filesystem::exists(setup_path)) {
         return;
     }
     YAML::Node root = YAML::LoadFile(setup_path.string());
     const bool has_file = static_cast<bool>(root["external_pto_file"]);
     const bool has_inline = static_cast<bool>(root["external_pto"]);
-    if (has_file && has_inline) {
+    const bool has_list = static_cast<bool>(root["external_ptos"]);
+    const int n_forms = static_cast<int>(has_file) + static_cast<int>(has_inline) +
+                        static_cast<int>(has_list);
+    if (n_forms > 1) {
         throw std::runtime_error(
-            "setup YAML may not set both 'external_pto_file' and inline "
-            "'external_pto:' — use one or the other");
+            "setup YAML may set only one of 'external_pto_file', inline "
+            "'external_pto:', or 'external_ptos:' — not more than one");
     }
-    if (!has_file && !has_inline) {
+    if (n_forms == 0) {
         return;
     }
 
@@ -150,6 +161,43 @@ void LoadExternalPtoFromSetupYaml(const std::filesystem::path& setup_path,
         setup_dir = setup_path.parent_path();
     }
 
+    // --- sequence form: one attach per entry -------------------------------
+    if (has_list) {
+        const YAML::Node seq = root["external_ptos"];
+        if (!seq.IsSequence() || seq.size() == 0) {
+            throw std::runtime_error(
+                "external_ptos must be a non-empty sequence of attach maps");
+        }
+        for (const YAML::Node& item : seq) {
+            YAML::Node node = item;
+            const char* label = "external_ptos entry";
+            // `{ file: path }` loads a sidecar attach file for this entry.
+            if (item.IsMap() && item["file"]) {
+                std::filesystem::path pto_path(item["file"].as<std::string>());
+                if (pto_path.is_relative()) {
+                    pto_path = setup_dir / pto_path;
+                }
+                if (!std::filesystem::exists(pto_path)) {
+                    throw std::runtime_error(
+                        "external_ptos file not found: " + pto_path.string());
+                }
+                node = YAML::LoadFile(pto_path.string());
+                if (!node || !node.IsMap()) {
+                    throw std::runtime_error(
+                        "external_ptos file must be a YAML map: " +
+                        pto_path.string());
+                }
+            }
+            seastack::infra::SetupConfig::ExternalPtoConfig cfg_i;
+            ParseExternalPtoAttachNode(node, cfg_i, setup_dir, label);
+            config.external_ptos.push_back(std::move(cfg_i));
+        }
+        config.external_pto = config.external_ptos.front();
+        config.has_external_pto = true;
+        return;
+    }
+
+    // --- single form (backward compatible) ---------------------------------
     YAML::Node ep;
     const char* source_label = "external_pto";
     if (has_file) {
@@ -175,6 +223,7 @@ void LoadExternalPtoFromSetupYaml(const std::filesystem::path& setup_path,
 
     ParseExternalPtoAttachNode(ep, config.external_pto, setup_dir, source_label);
     config.has_external_pto = true;
+    config.external_ptos.push_back(config.external_pto);
 }
 
 struct ExternalPtoAttachment::Impl {

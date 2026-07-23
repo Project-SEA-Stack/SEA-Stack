@@ -50,6 +50,11 @@ struct SetupConfig {
     };
     ExternalPtoConfig external_pto;
     bool has_external_pto = false;
+    /// All external PTO attachments. When `has_external_pto` is true this holds
+    /// one entry for a single inline `external_pto:` / `external_pto_file:`, or
+    /// one entry per link for an `external_ptos:` sequence. `external_pto` above
+    /// mirrors the first entry for backward compatibility.
+    std::vector<ExternalPtoConfig> external_ptos;
     /// Path as given in setup (`external_pto_file`), empty when inline `external_pto:`.
     std::string external_pto_file;
     bool has_external_pto_file = false;

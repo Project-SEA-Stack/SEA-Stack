@@ -34,6 +34,7 @@
 #include <chrono/core/ChRealtimeStep.h>
 #include <chrono/core/ChDataPath.h>
 #include <chrono/assets/ChColor.h>
+#include <chrono/assets/ChVisualMaterial.h>
 #include <chrono/assets/ChVisualShapeModelFile.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/core/ChFrame.h>
@@ -318,7 +319,17 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                         static_cast<bool>(vis_node["shape_location"]) &&
                         vis_node["shape_location"].IsSequence() &&
                         vis_node["shape_location"].size() >= 3;
-                    if (!has_color && !has_shape_location) {
+                    // Optional scalar opacity in [0,1]; <1 makes the mesh translucent
+                    // (e.g. a see-through hull). The VSG scene-paint step preserves
+                    // bodies whose material opacity is <1 (see guihelperVSG.cpp).
+                    const bool has_opacity = static_cast<bool>(vis_node["opacity"]);
+                    float opacity = 1.f;
+                    if (has_opacity) {
+                        opacity = vis_node["opacity"].as<float>();
+                        if (opacity < 0.f) opacity = 0.f;
+                        if (opacity > 1.f) opacity = 1.f;
+                    }
+                    if (!has_color && !has_shape_location && !has_opacity) {
                         continue;
                     }
                     float r = 1.f;
@@ -341,6 +352,22 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                     if (!vis) {
                         continue;
                     }
+                    // Apply YAML color and/or opacity to a rebuilt mesh shape. When an
+                    // opacity is given we attach an explicit ChVisualMaterial so the VSG
+                    // renderer alpha-blends the mesh (a plain SetColor keeps opacity 1).
+                    const auto apply_appearance =
+                        [&](const std::shared_ptr<::chrono::ChVisualShapeTriangleMesh>& tri) {
+                            if (has_opacity) {
+                                auto mat = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
+                                mat->SetDiffuseColor(has_color ? ::chrono::ChColor(r, g, b)
+                                                               : ::chrono::ChColor(0.7f, 0.7f, 0.75f));
+                                mat->SetOpacity(opacity);
+                                tri->GetMaterials().clear();
+                                tri->AddMaterial(mat);
+                            } else if (has_color) {
+                                tri->SetColor(::chrono::ChColor(r, g, b));
+                            }
+                        };
                     for (unsigned si = 0; si < vis->GetNumShapes(); ++si) {
                         auto shape = body->GetVisualShape(si);
                         auto existing_tri =
@@ -350,8 +377,8 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                             auto tri_shape =
                                 ::chrono_types::make_shared<::chrono::ChVisualShapeTriangleMesh>(mesh,
                                                                                                  false);
-                            if (has_color) {
-                                tri_shape->SetColor(::chrono::ChColor(r, g, b));
+                            if (has_color || has_opacity) {
+                                apply_appearance(tri_shape);
                             } else {
                                 for (unsigned mi = 0; mi < existing_tri->GetNumMaterials(); ++mi) {
                                     tri_shape->SetMaterial(mi, existing_tri->GetMaterial(mi));
@@ -376,9 +403,7 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                         }
                         auto tri_shape =
                             ::chrono_types::make_shared<::chrono::ChVisualShapeTriangleMesh>(trimesh, false);
-                        if (has_color) {
-                            tri_shape->SetColor(::chrono::ChColor(r, g, b));
-                        }
+                        apply_appearance(tri_shape);
                         body->GetVisualModel()->Clear();
                         body->AddVisualShape(tri_shape, ::chrono::ChFrame<>(shape_pos));
                         break;
@@ -463,11 +488,22 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
 #ifdef SEASTACK_HAVE_EXTERNAL
-        seastack::app::ExternalPtoAttachment external_pto_attachment;
+        // Keep every attachment alive for the whole run (RAII owns the child
+        // process + Chrono force functor). One attachment per external PTO link.
+        std::vector<seastack::app::ExternalPtoAttachment> external_pto_attachments;
         if (config.has_external_pto) {
             try {
-                external_pto_attachment = seastack::app::ExternalPtoAttachment::Attach(
-                    *system, config.external_pto, loop_dt);
+                if (!config.external_ptos.empty()) {
+                    for (const auto& ep_cfg : config.external_ptos) {
+                        external_pto_attachments.push_back(
+                            seastack::app::ExternalPtoAttachment::Attach(
+                                *system, ep_cfg, loop_dt));
+                    }
+                } else {
+                    external_pto_attachments.push_back(
+                        seastack::app::ExternalPtoAttachment::Attach(
+                            *system, config.external_pto, loop_dt));
+                }
             } catch (const std::exception& e) {
                 seastack::infra::cli::LogError(
                     std::string("external_pto attach failed: ") + e.what());
