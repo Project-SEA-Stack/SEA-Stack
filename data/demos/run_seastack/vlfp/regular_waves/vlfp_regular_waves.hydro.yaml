@@ -1,0 +1,48 @@
+# Coupled multibody BEMIO database: all six pontoons read from the same H5.
+# Linear/quadratic damping [surge, sway, heave, roll, pitch, yaw] per body from
+# the Strathclyde reference model (viscous correction on top of BEM).
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/vlfp.h5
+      linear_damping: [20000.0, 80000.0, 80000.0, 500000.0, 200000.0, 200000.0]
+      quadratic_damping: [10000.0, 40000.0, 40000.0, 250000.0, 100000.0, 100000.0]
+    - name: body2
+      h5_file: ../assets/hydroData/vlfp.h5
+      linear_damping: [20000.0, 80000.0, 80000.0, 500000.0, 200000.0, 200000.0]
+      quadratic_damping: [10000.0, 40000.0, 40000.0, 250000.0, 100000.0, 100000.0]
+    - name: body3
+      h5_file: ../assets/hydroData/vlfp.h5
+      linear_damping: [20000.0, 80000.0, 80000.0, 500000.0, 200000.0, 200000.0]
+      quadratic_damping: [10000.0, 40000.0, 40000.0, 250000.0, 100000.0, 100000.0]
+    - name: body4
+      h5_file: ../assets/hydroData/vlfp.h5
+      linear_damping: [20000.0, 80000.0, 80000.0, 500000.0, 200000.0, 200000.0]
+      quadratic_damping: [10000.0, 40000.0, 40000.0, 250000.0, 100000.0, 100000.0]
+    - name: body5
+      h5_file: ../assets/hydroData/vlfp.h5
+      linear_damping: [20000.0, 80000.0, 80000.0, 500000.0, 200000.0, 200000.0]
+      quadratic_damping: [10000.0, 40000.0, 40000.0, 250000.0, 100000.0, 100000.0]
+    - name: body6
+      h5_file: ../assets/hydroData/vlfp.h5
+      linear_damping: [20000.0, 80000.0, 80000.0, 500000.0, 200000.0, 200000.0]
+      quadratic_damping: [10000.0, 40000.0, 40000.0, 250000.0, 100000.0, 100000.0]
+
+  waves:
+    type: regular
+    depth: 1000.0
+    height: 1.0
+    period: 10.0
+    direction: 0.0
+    ramp_duration: 40.0
+    ramp_type: cosine
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.8
+      end_percent: 1.0
+      final_amplitude: 0.0

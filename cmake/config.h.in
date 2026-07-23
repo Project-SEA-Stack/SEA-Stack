@@ -10,6 +10,9 @@
 // If SEA-Stack was built with external force modules (IPC)
 @SEASTACK_HAS_EXTERNAL@
 
+// If SEA-Stack was built with Chrono::Vehicle support (vehicle demos)
+@SEASTACK_HAS_VEHICLE@
+
 // Path to SEA-Stack data directory (build-tree path for development).
 // At runtime the code prefers: (1) SEASTACK_DATA_DIR environment variable,
 // (2) exe-relative ../data (for packaged installs).  This hardcoded path is

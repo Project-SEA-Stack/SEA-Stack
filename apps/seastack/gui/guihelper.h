@@ -113,7 +113,10 @@ class GUI : public UI {
                                       double endpoint_radius_m,
                                       double node_marker_radius_m) override;
 
-  private:
+  protected:
+    /// For subclasses (e.g. the vehicle GUI) that supply their own implementation.
+    explicit GUI(std::shared_ptr<seastack::viz::GUIImpl> impl);
+
     std::shared_ptr<seastack::viz::GUIImpl> pImpl;
 };
 

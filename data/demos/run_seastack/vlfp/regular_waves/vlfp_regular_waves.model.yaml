@@ -1,0 +1,204 @@
+# VLFP: six pontoons, five pitch hinges (HINGED_6); RSDA k=c=0 kept for parity
+# with the Strathclyde reference model. Soft surge TSDA on body3 restrains drift.
+# Frame: z up, still-water level z = 0, platform axis +X. Pontoon CoG at z = 1.6 m.
+chrono-version: 10.0
+
+model:
+  name: vlfp_regular_waves_model
+  angle_degrees: false
+
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: body1
+      location: [14.5, 29.0, 1.6]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 1732460.0
+      fixed: false
+      inertia:
+        moments: [751780112.0, 194629819.0, 929312321.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: ../assets/geometry/pontoon_1.obj
+        color: [0.22, 0.30, 0.42]
+
+    - name: body2
+      location: [43.5, 29.0, 1.6]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 1732460.0
+      fixed: false
+      inertia:
+        moments: [751780112.0, 194629819.0, 929312321.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: ../assets/geometry/pontoon_2.obj
+        color: [0.30, 0.40, 0.52]
+
+    - name: body3
+      location: [72.5, 29.0, 1.6]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 1732460.0
+      fixed: false
+      inertia:
+        moments: [751780112.0, 194629819.0, 929312321.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: ../assets/geometry/pontoon_3.obj
+        color: [0.38, 0.48, 0.58]
+
+    - name: body4
+      location: [101.5, 29.0, 1.6]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 1732460.0
+      fixed: false
+      inertia:
+        moments: [751780112.0, 194629819.0, 929312321.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: ../assets/geometry/pontoon_4.obj
+        color: [0.46, 0.55, 0.64]
+
+    - name: body5
+      location: [130.5, 29.0, 1.6]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 1732460.0
+      fixed: false
+      inertia:
+        moments: [751780112.0, 194629819.0, 929312321.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: ../assets/geometry/pontoon_5.obj
+        color: [0.54, 0.62, 0.70]
+
+    - name: body6
+      location: [159.5, 29.0, 1.6]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 1732460.0
+      fixed: false
+      inertia:
+        moments: [751780112.0, 194629819.0, 929312321.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        model_file: ../assets/geometry/pontoon_6.obj
+        color: [0.62, 0.69, 0.76]
+
+    - name: ground
+      location: [0, 0, 0]
+      mass: 1.0
+      fixed: true
+      inertia:
+        moments: [1, 1, 1]
+        products: [0, 0, 0]
+      com:
+        location: [0, 0, 0]
+        orientation: [0, 0, 0]
+
+  joints:
+    - name: hinge_1_2
+      type: REVOLUTE
+      body1: body1
+      body2: body2
+      location: [29.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+    - name: hinge_2_3
+      type: REVOLUTE
+      body1: body2
+      body2: body3
+      location: [58.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+    - name: hinge_3_4
+      type: REVOLUTE
+      body1: body3
+      body2: body4
+      location: [87.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+    - name: hinge_4_5
+      type: REVOLUTE
+      body1: body4
+      body2: body5
+      location: [116.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+    - name: hinge_5_6
+      type: REVOLUTE
+      body1: body5
+      body2: body6
+      location: [145.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+
+  rsdas:
+    - name: damper_1_2
+      type: RSDA
+      body1: body1
+      body2: body2
+      location: [29.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+      spring_coefficient: 0
+      damping_coefficient: 0
+      free_angle: 0.0
+    - name: damper_2_3
+      type: RSDA
+      body1: body2
+      body2: body3
+      location: [58.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+      spring_coefficient: 0
+      damping_coefficient: 0
+      free_angle: 0.0
+    - name: damper_3_4
+      type: RSDA
+      body1: body3
+      body2: body4
+      location: [87.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+      spring_coefficient: 0
+      damping_coefficient: 0
+      free_angle: 0.0
+    - name: damper_4_5
+      type: RSDA
+      body1: body4
+      body2: body5
+      location: [116.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+      spring_coefficient: 0
+      damping_coefficient: 0
+      free_angle: 0.0
+    - name: damper_5_6
+      type: RSDA
+      body1: body5
+      body2: body6
+      location: [145.0, 29.0, 1.6]
+      axis: [0, 1, 0]
+      spring_coefficient: 0
+      damping_coefficient: 0
+      free_angle: 0.0
+
+  tsdas:
+    - name: surge_mooring
+      type: TSDA
+      body1: ground
+      body2: body3
+      point1: [72.5, 29.0, 1.6]
+      point2: [72.5, 29.0, 1.6]
+      spring_coefficient: 1000.0
+      damping_coefficient: 0.0
+      free_length: 0.0

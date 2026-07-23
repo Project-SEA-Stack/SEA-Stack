@@ -59,6 +59,12 @@ GUI::GUI() {
 #endif
 }
 
+GUI::GUI(std::shared_ptr<seastack::viz::GUIImpl> impl) : pImpl(std::move(impl)) {
+#if defined(SEASTACK_HAVE_VSG)
+    simulationStarted = false;  // VSG viewer provides Start button
+#endif
+}
+
 void GUI::Init(::chrono::ChSystem* system, const char* title) {
     UI::Init(system, title);
     pImpl->Init(*this, system, title);

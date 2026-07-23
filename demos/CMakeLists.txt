@@ -38,6 +38,15 @@ build_demo(trimaran  trimaran_hydro)
 build_demo(trimaran  trimaran_rigid)
 build_demo(trimaran  trimaran_fea)
 
+build_demo(vlfp      vlfp_reg_waves)
+
+# Interactive drive-on demo: needs Chrono::Vehicle and (for keyboard driving)
+# the VSG-based GUI.
+if(SEASTACK_ENABLE_VEHICLE AND TARGET Chrono::Chrono_vehicle
+   AND SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
+    build_demo(vlfp  vlfp_vehicle)
+endif()
+
 if(SEASTACK_ENABLE_MOORING)
     build_demo(rm3   rm3_irreg_mooring)
     build_demo(5sa   5sa_spreading)

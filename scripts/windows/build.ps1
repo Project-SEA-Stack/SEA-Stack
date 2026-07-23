@@ -48,6 +48,7 @@ param(
     [switch]$MoorDyn,
     [switch]$External,
     [switch]$VSG,
+    [switch]$Vehicle,
     [switch]$Demos,
     [switch]$NoTests,
     [switch]$NoApps,
@@ -506,6 +507,7 @@ if ($Help) {
     Write-Host "  -External          Enable out-of-process external force modules (Python PTO IPC)"
     Write-Host "                     (implied by -Package so RM3/OSWEC external_pto demos work in the ZIP)"
     Write-Host "  -VSG               Enable VSG visualization"
+    Write-Host "  -Vehicle           Enable Chrono::Vehicle support (Chrono must be built with CH_ENABLE_MODULE_VEHICLE)"
     Write-Host "  -Demos             Build C++ demo executables"
     Write-Host "  -NoTests           Skip tests"
     Write-Host "  -NoApps            Skip application executables"
@@ -837,6 +839,7 @@ if ($shouldConfigure) {
         # Release ZIP ships RM3/OSWEC external_pto demos; packaging implies External ON.
         "-DSEASTACK_ENABLE_EXTERNAL=$(if ($External -or $Package) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_VSG=$(if ($useVSG) { 'ON' } else { 'OFF' })",
+        "-DSEASTACK_ENABLE_VEHICLE=$(if ($Vehicle -and $useChrono) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_TESTS=$(if ($NoTests) { 'OFF' } else { 'ON' })",
         "-DSEASTACK_ENABLE_DEMOS=$(if ($Demos) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_APPS=$(if ($NoApps) { 'OFF' } else { 'ON' })"

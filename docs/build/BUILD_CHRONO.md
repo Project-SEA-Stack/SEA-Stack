@@ -21,6 +21,7 @@ From the SEA-Stack root `CMakeLists.txt`:
 |-------------|---------|
 | `find_package(Chrono … COMPONENTS Parsers)` | **Parsers** is **required** whenever Chrono is enabled. It supplies `Chrono::Chrono_parsers` (YAML-driven workflows in `run_seastack`). |
 | `COMPONENTS VSG` | Added only when `SEASTACK_ENABLE_VSG` is ON (e.g. `-VSG` on `build.ps1`). Your Chrono install must have been built with the **VSG module** enabled, or configure will fail. |
+| `COMPONENTS Vehicle` | Added only when `SEASTACK_ENABLE_VEHICLE` is ON (e.g. `-Vehicle` on `build.ps1`). Used by the drivable-vehicle demos (e.g. `demo_vlfp_vehicle`); your Chrono install must have been built with the **Vehicle module** enabled, or configure will fail. |
 
 The adapter and apps also link **`Chrono::Chrono_core`**, **OpenMP**, and **yaml-cpp** (often exposed as `Chrono::yaml-cpp` from Chrono’s package config).
 
@@ -36,12 +37,13 @@ Enable only what you need. For a typical **headless or default GUI-off** SEA-Sta
 | `CH_ENABLE_HDF5` | **ON** if you use SEA-Stack **HydroIO** | Keeps HDF5 usage consistent between Chrono and `SEAStack::HydroIO`. Use the same HDF5 install (e.g. same vcpkg triplet) for both Chrono and SEA-Stack when possible. |
 | `CH_ENABLE_OPENMP` | **ON** | SEA-Stack requires **OpenMP (C++)** when Chrono is enabled. |
 | `CH_ENABLE_MODULE_VSG` | **ON** only if you plan to use **`-VSG`** | Large dependency chain (Vulkan Scene Graph). Otherwise leave **OFF**. |
+| `CH_ENABLE_MODULE_VEHICLE` | **ON** only if you plan to use **`-Vehicle`** | Needed by the drivable-vehicle demos (`demo_vlfp_vehicle`). Also ship Chrono's `data/vehicle/` tree with the install (SEA-Stack stages the HMMWV subset it needs). Otherwise leave **OFF**. |
 | `BUILD_SHARED_LIBS` | **ON** (typical on Windows) | Matches common DLL-based deployments; SEA-Stack copies Chrono DLLs next to executables on Windows. |
 | `BUILD_TESTING` / `BUILD_DEMOS` | **OFF** | Optional; speeds up Chrono builds. |
 
-You do **not** need Irrlicht, Vehicle, Sensor, etc., for the stock SEA-Stack stack unless you extend it yourself.
+You do **not** need Irrlicht, Sensor, etc., for the stock SEA-Stack stack unless you extend it yourself. **Vehicle** is only needed for the optional drivable-vehicle demos (`-Vehicle`).
 
-The SEA-Stack Chrono adapter links to **`Chrono::Chrono_core`** and **`Chrono::Chrono_parsers`** (and **`Chrono::Chrono_vsg`** if you use `-VSG`).
+The SEA-Stack Chrono adapter links to **`Chrono::Chrono_core`** and **`Chrono::Chrono_parsers`** (plus **`Chrono::Chrono_vsg`** if you use `-VSG`, and **`Chrono::Chrono_vehicle`** / **`Chrono::Chrono_vehicle_vsg`** if you use `-Vehicle`).
 
 ---
 
@@ -122,5 +124,6 @@ Use **`-DCH_ENABLE_MODULE_VSG=ON`** only if you will build SEA-Stack with **`--v
 3. **OpenMP** available to the SEA-Stack configure (same compiler family as Chrono).
 4. If **HydroIO** is ON: HDF5 found for SEA-Stack (and compatible with Chrono if Chrono was built with HDF5).
 5. If **`-VSG`**: Chrono was built with **`CH_ENABLE_MODULE_VSG=ON`** and VSG dependencies are installed.
+6. If **`-Vehicle`**: Chrono was built with **`CH_ENABLE_MODULE_VEHICLE=ON`** and its `data/vehicle/` directory is present in the install.
 
 Run **`.\scripts\windows\build.ps1 -Doctor`** (or **`./scripts/unix/build.sh --doctor`**) to sanity-check paths before a full configure.

@@ -93,6 +93,10 @@ option(SEASTACK_ENABLE_MOORING   "Build MoorDyn mooring module"           OFF)
 # RM3/OSWEC external_pto demos and examples/external_pto plot scripts ship.
 option(SEASTACK_ENABLE_EXTERNAL  "Build external force module (IPC)"      OFF)
 option(SEASTACK_ENABLE_VSG       "Enable VSG visualization in seastack"   OFF)
+# Requires a Chrono install built with CH_ENABLE_MODULE_VEHICLE=ON; used by the
+# drivable-vehicle demos (e.g. demo_vlfp_vehicle). Interactive driving also
+# needs SEASTACK_ENABLE_VSG.
+option(SEASTACK_ENABLE_VEHICLE   "Enable Chrono::Vehicle support (vehicle demos)" OFF)
 option(SEASTACK_ENABLE_TESTS     "Build tests"                            ON)
 option(SEASTACK_ENABLE_DEMOS     "Build demo executables"                 OFF)
 option(SEASTACK_ENABLE_APPS      "Build application executables"          ON)
@@ -168,7 +172,17 @@ if(SEASTACK_ENABLE_CHRONO)
     if(SEASTACK_ENABLE_VSG)
         list(APPEND _chrono_components VSG)
     endif()
+    if(SEASTACK_ENABLE_VEHICLE)
+        list(APPEND _chrono_components Vehicle)
+    endif()
     find_package(Chrono CONFIG REQUIRED COMPONENTS ${_chrono_components})
+
+    if(SEASTACK_ENABLE_VEHICLE AND NOT TARGET Chrono::Chrono_vehicle)
+        message(FATAL_ERROR
+            "SEASTACK_ENABLE_VEHICLE is ON but the Chrono install at Chrono_DIR does not "
+            "provide the Vehicle module. Rebuild Chrono with CH_ENABLE_MODULE_VEHICLE=ON "
+            "(see docs/build/BUILD_CHRONO.md).")
+    endif()
 
     if(DEFINED Chrono_CONFIG)
         message(STATUS "Chrono package config file: ${Chrono_CONFIG}")
@@ -242,7 +256,15 @@ if(SEASTACK_ENABLE_CHRONO)
     # output bin directory at build time.  This uses the function exported
     # by chrono-config.cmake and works for both script and IDE builds.
     if(WIN32)
-        add_CHRONO_DLLS_copy_command()
+        # Chrono's package config omits Chrono_fsitdpf_vsg.dll from
+        # CHRONO_DLL_NAMES even though Chrono_parsers.dll links it; append it so
+        # build-tree executables run without the Chrono bin dir on PATH.
+        set(_seastack_chrono_dlls ${CHRONO_DLL_NAMES})
+        if(TARGET Chrono::Chrono_fsitdpf_vsg)
+            list(APPEND _seastack_chrono_dlls "Chrono_fsitdpf_vsg.dll")
+        endif()
+        add_CHRONO_DLLS_copy_command("${_seastack_chrono_dlls}")
+        unset(_seastack_chrono_dlls)
         include("${CMAKE_SOURCE_DIR}/cmake/SeaStackWindowsPythonRuntime.cmake")
     endif()
 endif()
@@ -291,6 +313,11 @@ file(COPY ${SEASTACK_BUILD_DATA}/demos/run_seastack/trimaran/assets/geometry
 file(COPY ${SEASTACK_BUILD_DATA}/demos/run_seastack/trimaran/assets/hydroData
      DESTINATION ${SEASTACK_BUILD_DATA}/demos/trimaran)
 
+file(COPY ${SEASTACK_BUILD_DATA}/demos/run_seastack/vlfp/assets/geometry
+     DESTINATION ${SEASTACK_BUILD_DATA}/demos/vlfp)
+file(COPY ${SEASTACK_BUILD_DATA}/demos/run_seastack/vlfp/assets/hydroData
+     DESTINATION ${SEASTACK_BUILD_DATA}/demos/vlfp)
+
 # Copy Chrono runtime data (skybox, colormaps, vsg, logo) into build tree so
 # SetInitialEnvironment() finds HC_DATA_DIR/chrono/ at runtime.
 if(SEASTACK_ENABLE_CHRONO AND EXISTS "${CHRONO_DATA_DIR}")
@@ -338,6 +365,15 @@ if(SEASTACK_ENABLE_CHRONO AND EXISTS "${CHRONO_DATA_DIR}")
     if(EXISTS "${CHRONO_DATA_DIR}/logo_chrono_alpha.png")
         file(COPY ${CHRONO_DATA_DIR}/logo_chrono_alpha.png DESTINATION ${SEASTACK_BUILD_DATA}/chrono)
     endif()
+    # HMMWV JSON specs + meshes for the vehicle demos. Staged under
+    # data/chrono/vehicle/ so packaged installs resolve them via
+    # GetChronoDataDir() + "vehicle/" (dev builds read the canonical Chrono
+    # data tree directly). POV-Ray exports are postprocessing-only (~27 MB).
+    if(SEASTACK_ENABLE_VEHICLE AND EXISTS "${CHRONO_DATA_DIR}/vehicle/hmmwv")
+        file(COPY "${CHRONO_DATA_DIR}/vehicle/hmmwv"
+             DESTINATION "${SEASTACK_BUILD_DATA}/chrono/vehicle"
+             PATTERN "POV-Ray" EXCLUDE)
+    endif()
 endif()
 
 # ── Generated config headers ─────────────────────────────────────────────────
@@ -355,6 +391,11 @@ if(SEASTACK_ENABLE_EXTERNAL)
     set(SEASTACK_HAS_EXTERNAL "#define SEASTACK_HAVE_EXTERNAL")
 else()
     set(SEASTACK_HAS_EXTERNAL "/* #undef SEASTACK_HAVE_EXTERNAL */")
+endif()
+if(SEASTACK_ENABLE_VEHICLE)
+    set(SEASTACK_HAS_VEHICLE "#define SEASTACK_HAVE_VEHICLE")
+else()
+    set(SEASTACK_HAS_VEHICLE "/* #undef SEASTACK_HAVE_VEHICLE */")
 endif()
 set(SEASTACK_DATA_DIR "#define SEASTACK_DATA_DIR_PATH \"${SEASTACK_BUILD_DATA}\"")
 if(SEASTACK_ENABLE_CHRONO AND DEFINED CHRONO_DATA_DIR)
@@ -678,6 +719,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
             list(FILTER _chrono_dlls EXCLUDE REGEX "hdf5[_a-z]*\\.dll$")
             # Drop Chrono modules not used by SEAStack
             list(FILTER _chrono_dlls EXCLUDE REGEX "ChronoModels_robot\\.dll$")
+            if(NOT SEASTACK_ENABLE_VEHICLE)
+                # Vehicle DLLs only ship when the vehicle demos are enabled.
+                list(FILTER _chrono_dlls EXCLUDE REGEX "Chrono_vehicle[_a-z]*\\.dll$")
+                list(FILTER _chrono_dlls EXCLUDE REGEX "ChronoModels_vehicle\\.dll$")
+            endif()
             foreach(_dll ${_chrono_dlls})
                 install(FILES "${_dll}" DESTINATION bin COMPONENT runtime)
             endforeach()

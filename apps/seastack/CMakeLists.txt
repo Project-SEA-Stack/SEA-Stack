@@ -16,6 +16,9 @@ if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
         gui/vsg_gui_component.cpp
         gui/vsg_radiation_surface.cpp
     )
+    if(SEASTACK_ENABLE_VEHICLE AND TARGET Chrono::Chrono_vehicle)
+        list(APPEND GUI_SOURCES gui/guihelper_vehicle.cpp)
+    endif()
 endif()
 
 # Runner library (not an executable itself)
@@ -64,6 +67,13 @@ endif()
 
 if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
     target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_vsg)
+endif()
+
+if(SEASTACK_ENABLE_VEHICLE AND TARGET Chrono::Chrono_vehicle)
+    target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_vehicle)
+    if(TARGET Chrono::Chrono_vehicle_vsg)
+        target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_vehicle_vsg)
+    endif()
 endif()
 
 target_compile_features(seastack_app_lib PUBLIC ${SEASTACK_CXX_STANDARD})

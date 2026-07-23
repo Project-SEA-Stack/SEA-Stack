@@ -31,5 +31,7 @@ usually goes under `GetDemoOutDir()` in a subfolder named after the demo group
 | [f3of](f3of/README.md) | `demo_f3of_irreg_waves` | Three-body flaps, surge TSDA restraint |
 | [5sa](5sa/README.md) | `demo_5sa_spreading`, `demo_5sa_bimodal`¹ | Articulated attenuator, directional / bimodal sea + mooring |
 | [trimaran](trimaran/README.md) | `demo_trimaran_hydro`, `demo_trimaran_rigid`, `demo_trimaran_fea` | Three-hull hydro → rigid arms → FEA arms |
+| [vlfp](vlfp/README.md) | `demo_vlfp_reg_waves`, `demo_vlfp_vehicle`² | Six hinged pontoons in regular waves; drivable HMMWV on deck |
 
 ¹ Built only when `SEASTACK_ENABLE_MOORING` is enabled.
+² Built only when `SEASTACK_ENABLE_VEHICLE` and `SEASTACK_ENABLE_VSG` are enabled.

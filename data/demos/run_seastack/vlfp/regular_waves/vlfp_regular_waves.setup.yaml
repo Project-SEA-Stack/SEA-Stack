@@ -1,0 +1,5 @@
+model_file: vlfp_regular_waves.model.yaml
+simulation_file: vlfp_regular_waves.simulation.yaml
+hydro_file: vlfp_regular_waves.hydro.yaml
+
+output_directory: outputs

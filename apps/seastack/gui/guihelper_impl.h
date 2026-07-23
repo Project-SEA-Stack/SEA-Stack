@@ -58,6 +58,10 @@ struct ViewerSettings;
 class GUIImplVSG : public GUIImpl {
   public:
     GUIImplVSG();
+    /// Construct around an externally created VSG visual system (e.g. a
+    /// Chrono::Vehicle ChVehicleVisualSystemVSG). The water surface, materials,
+    /// and ImGui overlay work on any ChVisualSystemVSG subclass.
+    explicit GUIImplVSG(std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSG> vis);
     ~GUIImplVSG();
     GUIImplVSG(const GUIImplVSG&)            = delete;
     GUIImplVSG& operator=(const GUIImplVSG&) = delete;
@@ -72,6 +76,14 @@ class GUIImplVSG : public GUIImpl {
                                             double endpoint_radius_m,
                                             double node_marker_radius_m) override;
 
+  protected:
+    std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSG> pVis;
+
+    /// Whether to apply the default SEA-Stack painted-metal look to `body`.
+    /// Vehicle GUIs override this so Chrono::Vehicle mesh materials/textures
+    /// are left alone.
+    virtual bool ShouldApplyScenePaint(const ::chrono::ChBody& body) const;
+
   private:
     /// Ensure water surface is created (animated if wave model set, static otherwise).
     void EnsureWaterSurface();
@@ -80,7 +92,6 @@ class GUIImplVSG : public GUIImpl {
     /// Iterates over all moving bodies and updates their radiation state.
     void UpdateRadiationSourceBody(double t);
 
-    std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSG> pVis;
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     ::chrono::ChSystem* system_ = nullptr;
     std::unique_ptr<AnimatedWaterSurface> animated_water_;

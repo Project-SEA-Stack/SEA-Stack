@@ -22,17 +22,48 @@ using namespace seastack::hydro;
 #include <stdexcept>
 
 #include <chrono/core/ChTypes.h>
+#include <chrono/assets/ChVisualMaterial.h>
+#include <chrono/assets/ChVisualModel.h>
+#include <chrono/physics/ChBody.h>
 
 namespace seastack::viz {
 
 using namespace vsg_config;
+
+namespace {
+// True if any visual shape on this body carries a translucent material (opacity
+// < 1). Such bodies (e.g. a see-through hull set via the YAML visualization
+// `opacity` field) are left untouched by the opaque scene-paint pass below.
+bool BodyHasTranslucentMaterial(const ::chrono::ChBody& body) {
+    auto model = body.GetVisualModel();
+    if (!model) {
+        return false;
+    }
+    for (unsigned int i = 0; i < model->GetNumShapes(); ++i) {
+        auto shape = model->GetShape(i);
+        if (!shape) {
+            continue;
+        }
+        for (unsigned int m = 0; m < shape->GetNumMaterials(); ++m) {
+            auto mat = shape->GetMaterial(m);
+            if (mat && mat->GetOpacity() < 0.999f) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+}  // namespace
 
 // =============================================================================
 // GUIImplVSG Implementation
 // =============================================================================
 
 GUIImplVSG::GUIImplVSG()
-    : pVis(::chrono_types::make_shared<::chrono::vsg3d::ChVisualSystemVSG>()),
+    : GUIImplVSG(::chrono_types::make_shared<::chrono::vsg3d::ChVisualSystemVSG>()) {}
+
+GUIImplVSG::GUIImplVSG(std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSG> vis)
+    : pVis(std::move(vis)),
       animated_water_(std::make_unique<AnimatedWaterSurface>()),
       viewer_settings_(std::make_unique<ViewerSettings>()) {}
 
@@ -83,17 +114,22 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     if (system) {
         int body_index = 0;
         for (auto& body : system->GetBodies()) {
-            if (body && body->GetName() != "water_surface" &&
-                body->GetName() != "animated_water_surface") {
-                const auto material = MakePaintedMetalVariant(body_index);
-                ApplyMaterialToAllVisualShapes(*body, material);
-                ++body_index;
+            if (!body || !ShouldApplyScenePaint(*body)) {
+                continue;
+            }
+            // Preserve a YAML-specified translucent hull (opacity < 1): the opaque
+            // painted-metal material would otherwise overwrite its transparency.
+            if (BodyHasTranslucentMaterial(*body)) {
+                continue;
+            }
+            const auto material = MakePaintedMetalVariant(body_index);
+            ApplyMaterialToAllVisualShapes(*body, material);
+            ++body_index;
 
-                if (kEnableWireframe) {
-                    auto model = body->GetVisualModel();
-                    if (model) {
-                        model->EnableWireframe(true);
-                    }
+            if (kEnableWireframe) {
+                auto model = body->GetVisualModel();
+                if (model) {
+                    model->EnableWireframe(true);
                 }
             }
         }
@@ -127,6 +163,11 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
 void GUIImplVSG::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {
     pVis->SetCameraPosition({x, y, z});
     pVis->SetCameraTarget({dirx, diry, dirz});
+}
+
+bool GUIImplVSG::ShouldApplyScenePaint(const ::chrono::ChBody& body) const {
+    const std::string& name = body.GetName();
+    return name != "water_surface" && name != "animated_water_surface";
 }
 
 void GUIImplVSG::SetWaveModel(std::shared_ptr<seastack::hydro::WaveBase> wave) {
