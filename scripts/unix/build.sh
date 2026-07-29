@@ -26,6 +26,7 @@ MOORDYN=0
 EXTERNAL=0
 VSG=0
 VEHICLE=0
+SPH=0
 DEMOS=0
 NO_TESTS=0
 NO_APPS=0
@@ -145,6 +146,7 @@ Options:
                         (implied by --package so RM3/OSWEC external_pto demos work in the ZIP)
   --vsg                 Enable VSG (requires Chrono with VSG)
   --vehicle             Enable Chrono::Vehicle support (requires Chrono with Vehicle module)
+  --sph                 Enable Chrono::FSI SPH simulations (requires Chrono with FSI_SPH module; needs CUDA)
   --demos               Build demo executables
   --no-tests            Skip tests target
   --no-apps             Skip application executables
@@ -161,7 +163,7 @@ EOF
 ALL_LONG_OPTS=(
   --build-type --clean --verbose --configure-only --reconfigure
   --no-configure --test --test-label --package --target --generator
-  --no-chrono --no-hydro-io --moordyn --external --vsg --vehicle --demos --no-tests
+  --no-chrono --no-hydro-io --moordyn --external --vsg --vehicle --sph --demos --no-tests
   --no-apps --config-path --doctor --help
 )
 
@@ -259,6 +261,7 @@ while [[ $# -gt 0 ]]; do
     --external) EXTERNAL=1; shift ;;
     --vsg) VSG=1; shift ;;
     --vehicle) VEHICLE=1; shift ;;
+    --sph) SPH=1; shift ;;
     --demos) DEMOS=1; shift ;;
     --no-tests) NO_TESTS=1; shift ;;
     --no-apps) NO_APPS=1; shift ;;
@@ -438,6 +441,8 @@ seastack_vsg=OFF
 [[ "${USE_VSG}" -eq 1 ]] && seastack_vsg=ON
 seastack_vehicle=OFF
 [[ "${VEHICLE}" -eq 1 && "${USE_CHRONO}" -eq 1 ]] && seastack_vehicle=ON
+seastack_sph=OFF
+[[ "${SPH}" -eq 1 && "${USE_CHRONO}" -eq 1 ]] && seastack_sph=ON
 seastack_tests=ON
 [[ "${NO_TESTS}" -eq 1 ]] && seastack_tests=OFF
 seastack_demos=OFF
@@ -459,6 +464,7 @@ if [[ "${should_configure}" -eq 1 ]]; then
     "-DSEASTACK_ENABLE_EXTERNAL=${seastack_external}"
     "-DSEASTACK_ENABLE_VSG=${seastack_vsg}"
     "-DSEASTACK_ENABLE_VEHICLE=${seastack_vehicle}"
+    "-DSEASTACK_ENABLE_SPH=${seastack_sph}"
     "-DSEASTACK_ENABLE_TESTS=${seastack_tests}"
     "-DSEASTACK_ENABLE_DEMOS=${seastack_demos}"
     "-DSEASTACK_ENABLE_APPS=${seastack_apps}"

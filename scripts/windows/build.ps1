@@ -49,6 +49,7 @@ param(
     [switch]$External,
     [switch]$VSG,
     [switch]$Vehicle,
+    [switch]$SPH,
     [switch]$Demos,
     [switch]$NoTests,
     [switch]$NoApps,
@@ -508,6 +509,7 @@ if ($Help) {
     Write-Host "                     (implied by -Package so RM3/OSWEC external_pto demos work in the ZIP)"
     Write-Host "  -VSG               Enable VSG visualization"
     Write-Host "  -Vehicle           Enable Chrono::Vehicle support (Chrono must be built with CH_ENABLE_MODULE_VEHICLE)"
+    Write-Host "  -SPH               Enable Chrono::FSI SPH simulations (Chrono must be built with CH_ENABLE_MODULE_FSI_SPH; needs CUDA)"
     Write-Host "  -Demos             Build C++ demo executables"
     Write-Host "  -NoTests           Skip tests"
     Write-Host "  -NoApps            Skip application executables"
@@ -840,6 +842,7 @@ if ($shouldConfigure) {
         "-DSEASTACK_ENABLE_EXTERNAL=$(if ($External -or $Package) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_VSG=$(if ($useVSG) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_VEHICLE=$(if ($Vehicle -and $useChrono) { 'ON' } else { 'OFF' })",
+        "-DSEASTACK_ENABLE_SPH=$(if ($SPH -and $useChrono) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_TESTS=$(if ($NoTests) { 'OFF' } else { 'ON' })",
         "-DSEASTACK_ENABLE_DEMOS=$(if ($Demos) { 'ON' } else { 'OFF' })",
         "-DSEASTACK_ENABLE_APPS=$(if ($NoApps) { 'OFF' } else { 'ON' })"
@@ -883,6 +886,7 @@ if ($shouldConfigure) {
     Write-Detail "HydroIO    : $(if ($NoHydroIO) { 'OFF' } else { 'ON' })"
     Write-Detail "Mooring    : $(if ($MoorDyn) { 'ON' } else { 'OFF' })"
     Write-Detail "VSG        : $(if ($useVSG) { 'ON' } else { 'OFF' })"
+    Write-Detail "SPH        : $(if ($SPH -and $useChrono) { 'ON' } else { 'OFF' })"
     Write-Detail "Tests      : $(if ($NoTests) { 'OFF' } else { 'ON' })"
     Write-Detail "Demos      : $(if ($Demos) { 'ON' } else { 'OFF' })"
     Write-Detail "Apps       : $(if ($NoApps) { 'OFF' } else { 'ON' })"

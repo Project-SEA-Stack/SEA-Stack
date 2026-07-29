@@ -22,6 +22,7 @@ From the SEA-Stack root `CMakeLists.txt`:
 | `find_package(Chrono … COMPONENTS Parsers)` | **Parsers** is **required** whenever Chrono is enabled. It supplies `Chrono::Chrono_parsers` (YAML-driven workflows in `run_seastack`). |
 | `COMPONENTS VSG` | Added only when `SEASTACK_ENABLE_VSG` is ON (e.g. `-VSG` on `build.ps1`). Your Chrono install must have been built with the **VSG module** enabled, or configure will fail. |
 | `COMPONENTS Vehicle` | Added only when `SEASTACK_ENABLE_VEHICLE` is ON (e.g. `-Vehicle` on `build.ps1`). Used by the drivable-vehicle demos (e.g. `demo_vlfp_vehicle`); your Chrono install must have been built with the **Vehicle module** enabled, or configure will fail. |
+| `COMPONENTS FSI FSI_SPH` | Added only when `SEASTACK_ENABLE_SPH` is ON. Enables SPH (smoothed-particle hydrodynamics) simulations in `run_seastack` via Chrono's FSI YAML parser. Your Chrono install must have been built with **`CH_ENABLE_MODULE_FSI_SPH=ON`** (which needs **CUDA**), or configure fails with a clear error. |
 
 The adapter and apps also link **`Chrono::Chrono_core`**, **OpenMP**, and **yaml-cpp** (often exposed as `Chrono::yaml-cpp` from Chrono’s package config).
 
@@ -38,6 +39,8 @@ Enable only what you need. For a typical **headless or default GUI-off** SEA-Sta
 | `CH_ENABLE_OPENMP` | **ON** | SEA-Stack requires **OpenMP (C++)** when Chrono is enabled. |
 | `CH_ENABLE_MODULE_VSG` | **ON** only if you plan to use **`-VSG`** | Large dependency chain (Vulkan Scene Graph). Otherwise leave **OFF**. |
 | `CH_ENABLE_MODULE_VEHICLE` | **ON** only if you plan to use **`-Vehicle`** | Needed by the drivable-vehicle demos (`demo_vlfp_vehicle`). Also ship Chrono's `data/vehicle/` tree with the install (SEA-Stack stages the HMMWV subset it needs). Otherwise leave **OFF**. |
+| `CH_ENABLE_MODULE_FSI` | **ON** only if you plan to use **SPH** | The FSI coupling layer; prerequisite for the SPH fluid solver. |
+| `CH_ENABLE_MODULE_FSI_SPH` | **ON** only if you plan to use **SPH** (`SEASTACK_ENABLE_SPH`) | GPU SPH fluid solver. **Requires CUDA** (NVIDIA GPU + toolkit); there is no CPU fallback. Enabling it also builds `Chrono_fsisph` / `Chrono_fsisph_vsg` and compiles the SPH YAML parser into `Chrono_parsers`. |
 | `BUILD_SHARED_LIBS` | **ON** (typical on Windows) | Matches common DLL-based deployments; SEA-Stack copies Chrono DLLs next to executables on Windows. |
 | `BUILD_TESTING` / `BUILD_DEMOS` | **OFF** | Optional; speeds up Chrono builds. |
 
@@ -117,6 +120,29 @@ Use **`-DCH_ENABLE_MODULE_VSG=ON`** only if you will build SEA-Stack with **`--v
 
 ---
 
+## SPH (Chrono::FSI) simulations
+
+SEA-Stack can run fully-resolved fluid simulations with Chrono's smoothed-particle hydrodynamics (SPH) solver, driven from Chrono's FSI YAML files. This is an alternative fidelity to the default linear potential-flow path.
+
+Requirements:
+
+- Chrono built with **`CH_ENABLE_MODULE_FSI=ON`** and **`CH_ENABLE_MODULE_FSI_SPH=ON`**.
+- A **CUDA** toolkit (the SPH solver is GPU-only; there is no CPU fallback). CUDA 12.6+/13.x additionally require Chrono to be compiled with the conformant MSVC preprocessor (`/Zc:preprocessor`) for the SPH sources on Windows.
+- SEA-Stack configured with **`-DSEASTACK_ENABLE_SPH=ON`** (add `-VSG` for run-time SPH visualization).
+
+Add to the Chrono configure command:
+
+```powershell
+  -DCH_ENABLE_MODULE_FSI=ON `
+  -DCH_ENABLE_MODULE_FSI_SPH=ON
+```
+
+At **run** time an NVIDIA GPU + driver is required. Packaged SEA-Stack builds bundle the CUDA runtime DLLs (`nvrtc`, `cublas`, `cusparse`) that `Chrono_fsisph.dll` depends on, but not the GPU driver itself.
+
+See `data/demos/run_seastack/objectdrop_sph/` for a pure SPH case. For a **coupled** potential-flow hull + SPH deck-sloshing tank (setup with both `hydro_file:` and a `tank:` block), see `data/demos/run_seastack/wigley/sloshing/` (source tree; requires the same SPH Chrono/SEA-Stack flags and GPU). Notes on flotation mass rebalancing and SPH cost are in that demo’s README and [../../data/demos/run_seastack/README.md](../../data/demos/run_seastack/README.md).
+
+---
+
 ## Checklist before configuring SEA-Stack
 
 1. `ChronoDir` points at the folder with **`ChronoConfig.cmake`**.
@@ -125,5 +151,6 @@ Use **`-DCH_ENABLE_MODULE_VSG=ON`** only if you will build SEA-Stack with **`--v
 4. If **HydroIO** is ON: HDF5 found for SEA-Stack (and compatible with Chrono if Chrono was built with HDF5).
 5. If **`-VSG`**: Chrono was built with **`CH_ENABLE_MODULE_VSG=ON`** and VSG dependencies are installed.
 6. If **`-Vehicle`**: Chrono was built with **`CH_ENABLE_MODULE_VEHICLE=ON`** and its `data/vehicle/` directory is present in the install.
+7. If **SPH** (`SEASTACK_ENABLE_SPH`): Chrono was built with **`CH_ENABLE_MODULE_FSI=ON`** and **`CH_ENABLE_MODULE_FSI_SPH=ON`**, a **CUDA** toolkit was found, and the `Chrono_fsisph` / `Chrono_fsisph_vsg` libraries are present. An NVIDIA GPU + driver is required at **run** time.
 
 Run **`.\scripts\windows\build.ps1 -Doctor`** (or **`./scripts/unix/build.sh --doctor`**) to sanity-check paths before a full configure.

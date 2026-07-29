@@ -37,6 +37,11 @@ if(SEASTACK_ENABLE_EXTERNAL)
     target_sources(seastack_app_lib PRIVATE external_pto_yaml.cpp)
 endif()
 
+# SPH (Chrono::FSI) runner: only compiled when SPH support is enabled.
+if(SEASTACK_ENABLE_SPH)
+    target_sources(seastack_app_lib PRIVATE sph_run.cpp coupled_run.cpp)
+endif()
+
 target_include_directories(seastack_app_lib
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/gui"
@@ -67,6 +72,22 @@ endif()
 
 if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
     target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_vsg)
+endif()
+
+# SPH (Chrono::FSI): link the FSI coupling layer and the GPU SPH fluid solver.
+# SEASTACK_HAVE_SPH gates the sph_run.cpp translation unit and the dispatch in
+# run_from_yaml.cpp.
+if(SEASTACK_ENABLE_SPH)
+    target_compile_definitions(seastack_app_lib PUBLIC SEASTACK_HAVE_SPH)
+    if(TARGET Chrono::Chrono_fsi)
+        target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_fsi)
+    endif()
+    if(TARGET Chrono::Chrono_fsisph)
+        target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_fsisph)
+    endif()
+    if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_fsisph_vsg)
+        target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_fsisph_vsg)
+    endif()
 endif()
 
 if(SEASTACK_ENABLE_VEHICLE AND TARGET Chrono::Chrono_vehicle)

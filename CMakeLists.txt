@@ -97,6 +97,9 @@ option(SEASTACK_ENABLE_VSG       "Enable VSG visualization in seastack"   OFF)
 # drivable-vehicle demos (e.g. demo_vlfp_vehicle). Interactive driving also
 # needs SEASTACK_ENABLE_VSG.
 option(SEASTACK_ENABLE_VEHICLE   "Enable Chrono::Vehicle support (vehicle demos)" OFF)
+# Requires a Chrono install built with CH_ENABLE_MODULE_FSI_SPH=ON (needs CUDA).
+# Exposes SPH (Chrono::FSI) simulations in run_seastack via a setup YAML fsi_file.
+option(SEASTACK_ENABLE_SPH       "Enable Chrono::FSI SPH simulations (requires CUDA)" OFF)
 option(SEASTACK_ENABLE_TESTS     "Build tests"                            ON)
 option(SEASTACK_ENABLE_DEMOS     "Build demo executables"                 OFF)
 option(SEASTACK_ENABLE_APPS      "Build application executables"          ON)
@@ -175,7 +178,31 @@ if(SEASTACK_ENABLE_CHRONO)
     if(SEASTACK_ENABLE_VEHICLE)
         list(APPEND _chrono_components Vehicle)
     endif()
+    if(SEASTACK_ENABLE_SPH)
+        # FSI is the coupling layer; FSI_SPH is the GPU SPH fluid solver.
+        list(APPEND _chrono_components FSI FSI_SPH)
+    endif()
     find_package(Chrono CONFIG REQUIRED COMPONENTS ${_chrono_components})
+
+    if(SEASTACK_ENABLE_SPH)
+        if(NOT Chrono_FSI_SPH_AVAILABLE)
+            message(FATAL_ERROR
+                "SEASTACK_ENABLE_SPH is ON but the Chrono install at Chrono_DIR does not "
+                "provide the FSI SPH module. Rebuild Chrono with CH_ENABLE_MODULE_FSI_SPH=ON "
+                "(CUDA required; see docs/build/BUILD_CHRONO.md).")
+        endif()
+        # Chrono's FSI YAML parser headers (ChParserFsiYAML.h -> ChParserCfdYAML.h)
+        # include chrono_vsg headers whenever the Chrono install was built with VSG
+        # (CHRONO_VSG defined). In that case SEA-Stack must also enable VSG so the
+        # VSG include directories are available to the SPH sources.
+        if(TARGET Chrono::Chrono_vsg AND NOT SEASTACK_ENABLE_VSG)
+            message(FATAL_ERROR
+                "SEASTACK_ENABLE_SPH requires SEASTACK_ENABLE_VSG=ON because the Chrono "
+                "install includes the VSG module and its FSI YAML parser headers depend on "
+                "the VSG headers. Reconfigure with -DSEASTACK_ENABLE_VSG=ON "
+                "(build.ps1 -VSG / build.sh --vsg).")
+        endif()
+    endif()
 
     if(SEASTACK_ENABLE_VEHICLE AND NOT TARGET Chrono::Chrono_vehicle)
         message(FATAL_ERROR
@@ -397,6 +424,11 @@ if(SEASTACK_ENABLE_VEHICLE)
 else()
     set(SEASTACK_HAS_VEHICLE "/* #undef SEASTACK_HAVE_VEHICLE */")
 endif()
+if(SEASTACK_ENABLE_SPH)
+    set(SEASTACK_HAS_SPH "#define SEASTACK_HAVE_SPH")
+else()
+    set(SEASTACK_HAS_SPH "/* #undef SEASTACK_HAVE_SPH */")
+endif()
 set(SEASTACK_DATA_DIR "#define SEASTACK_DATA_DIR_PATH \"${SEASTACK_BUILD_DATA}\"")
 if(SEASTACK_ENABLE_CHRONO AND DEFINED CHRONO_DATA_DIR)
     set(SEASTACK_CHRONO_DATA_DIR "#define SEASTACK_CHRONO_DATA_DIR_PATH \"${CHRONO_DATA_DIR}\"")
@@ -452,6 +484,9 @@ if(SEASTACK_ENABLE_HYDRO_IO)
 endif()
 if(SEASTACK_ENABLE_EXTERNAL)
     add_subdirectory(examples/external_pto)
+endif()
+if(SEASTACK_ENABLE_CHRONO AND SEASTACK_ENABLE_SPH)
+    add_subdirectory(examples/coupled_sloshing)
 endif()
 
 # ── Apply compile settings to all SEAStack targets ──────────────────────────
@@ -720,8 +755,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
             # Drop Chrono modules not used by SEAStack
             list(FILTER _chrono_dlls EXCLUDE REGEX "ChronoModels_robot\\.dll$")
             if(NOT SEASTACK_ENABLE_VEHICLE)
-                # Vehicle DLLs only ship when the vehicle demos are enabled.
-                list(FILTER _chrono_dlls EXCLUDE REGEX "Chrono_vehicle[_a-z]*\\.dll$")
+                # Vehicle *add-on* DLLs (visualization + demo models) only ship when
+                # the vehicle demos are enabled. The base Chrono_vehicle.dll is kept
+                # unconditionally: Chrono_parsers.dll (always shipped) links it when
+                # Chrono is built with the vehicle module, so excluding it would make
+                # run_seastack.exe fail to start (STATUS_DLL_NOT_FOUND). The regex
+                # below matches Chrono_vehicle_<suffix>.dll (e.g. _vsg) but not the
+                # base Chrono_vehicle.dll.
+                list(FILTER _chrono_dlls EXCLUDE REGEX "Chrono_vehicle_[a-z]+\\.dll$")
                 list(FILTER _chrono_dlls EXCLUDE REGEX "ChronoModels_vehicle\\.dll$")
             endif()
             foreach(_dll ${_chrono_dlls})
@@ -800,6 +841,54 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         endforeach()
         if(_vsg_dlls)
             install(FILES ${_vsg_dlls} DESTINATION bin COMPONENT runtime)
+        endif()
+    endif()
+
+    # CUDA runtime DLLs for SPH (Chrono::FSI). Chrono_fsisph.dll dynamically
+    # links nvRTC, cuBLAS, and cuSPARSE; these live in the CUDA Toolkit bin
+    # directory (not next to the Chrono DLLs), so ship them explicitly. The
+    # package still requires an NVIDIA GPU + driver at runtime (the CUDA driver
+    # library nvcuda.dll is installed with the GPU driver, not redistributable).
+    if(SEASTACK_ENABLE_SPH)
+        # CUDAToolkit was located by ChronoConfig (Chrono_FSI_SPH_REQUESTED path).
+        set(_seastack_cuda_bin "")
+        if(DEFINED CUDAToolkit_BIN_DIR AND EXISTS "${CUDAToolkit_BIN_DIR}")
+            set(_seastack_cuda_bin "${CUDAToolkit_BIN_DIR}")
+        elseif(DEFINED CUDAToolkit_DIR AND EXISTS "${CUDAToolkit_DIR}/bin")
+            set(_seastack_cuda_bin "${CUDAToolkit_DIR}/bin")
+        endif()
+        if(_seastack_cuda_bin STREQUAL "")
+            message(WARNING
+                "SEASTACK_ENABLE_SPH is ON but the CUDA Toolkit bin directory was not found; "
+                "nvrtc/cublas/cusparse DLLs will be missing from the package.")
+        else()
+            # CUDA 12 ships the redistributable DLLs directly in bin/; CUDA 13
+            # moved them into bin/x64/. Search both so the package works across
+            # toolkit versions.
+            set(_seastack_cuda_dirs "${_seastack_cuda_bin}")
+            if(EXISTS "${_seastack_cuda_bin}/x64")
+                list(APPEND _seastack_cuda_dirs "${_seastack_cuda_bin}/x64")
+            endif()
+            set(_seastack_cuda_dlls "")
+            foreach(_cuda_dir IN LISTS _seastack_cuda_dirs)
+                foreach(_cuda_glob
+                        "nvrtc64_*.dll" "nvrtc-builtins64_*.dll" "nvJitLink_*.dll" "nvJitLink64_*.dll"
+                        "cublas64_*.dll" "cublasLt64_*.dll" "cusparse64_*.dll" "cudart64_*.dll")
+                    file(GLOB _cuda_hits "${_cuda_dir}/${_cuda_glob}")
+                    list(APPEND _seastack_cuda_dlls ${_cuda_hits})
+                endforeach()
+            endforeach()
+            if(_seastack_cuda_dlls)
+                list(REMOVE_DUPLICATES _seastack_cuda_dlls)
+                install(FILES ${_seastack_cuda_dlls} DESTINATION bin COMPONENT runtime)
+            else()
+                message(WARNING
+                    "SEASTACK_ENABLE_SPH is ON but no CUDA runtime DLLs (nvrtc/cublas/cusparse/cudart) "
+                    "were found under '${_seastack_cuda_bin}' or its x64/ subdirectory; the package "
+                    "will require the CUDA Toolkit on PATH at runtime.")
+            endif()
+            unset(_seastack_cuda_dlls)
+            unset(_seastack_cuda_dirs)
         endif()
     endif()
 
