@@ -1,0 +1,11 @@
+# SEA-Stack SPH (Chrono::FSI) demo case.
+#
+# Instead of model_file/simulation_file/hydro_file (the linear potential-flow
+# path), an SPH case points at a single Chrono FSI YAML file. That file, in
+# turn, references its own multibody (mbs.yaml) and SPH fluid (sph.yaml) models.
+#
+# Requires a build of run_seastack with SPH support (SEASTACK_ENABLE_SPH=ON)
+# against a Chrono install built with CH_ENABLE_MODULE_FSI_SPH=ON. An NVIDIA
+# GPU + CUDA driver is required at runtime.
+fsi_file: fsi_objectdrop.yaml
+output_directory: outputs

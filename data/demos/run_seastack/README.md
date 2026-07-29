@@ -55,6 +55,12 @@ parameters**, and an **available cases** table (paths below are relative to
 | f3of | decay_dt3 | F3OF platform, DT3 flap pitch decay (base locked) | `f3of/decay_dt3/f3of_decay_dt3.setup.yaml` |
 | f3of | decay_dt1, decay_dt2 | *(source repo only; omitted from release ZIP)* | `f3of/decay_dt1/…`, `f3of/decay_dt2/…` |
 | trimaran | rigid | Three-hull trimaran with rigid cross-arms, irregular waves | `trimaran/model.setup.yaml` or `trimaran/rigid/trimaran_rigid.setup.yaml` |
+| objectdrop_sph | (SPH) | Rigid cylinder dropped into a water column, resolved with SPH (Chrono::FSI) | `objectdrop_sph/objectdrop_sph.setup.yaml` |
+| wigley | sloshing* | Potential-flow hull + SPH deck-sloshing tank (two-way coupled; source tree) | `wigley/sloshing/wigley_sloshing.setup.yaml` |
+
+**SPH cases** use fully-resolved fluid (smoothed-particle hydrodynamics) instead of linear potential flow. Their setup YAML uses a single `fsi_file:` key (a Chrono FSI YAML) rather than `model_file`/`simulation_file`/`hydro_file`. They require a build of `run_seastack` with SPH support (`SEASTACK_ENABLE_SPH=ON`) against a Chrono install built with `CH_ENABLE_MODULE_FSI_SPH=ON`, and an **NVIDIA GPU + CUDA driver at runtime**. See [../../../docs/build/BUILD_CHRONO.md](../../../docs/build/BUILD_CHRONO.md).
+
+**Coupled (potential flow + SPH tank) cases** carry both a `hydro_file:` (exterior BEM) and a `tank:` block in the setup YAML. The exterior ocean uses linear potential flow while the interior tank fluid uses Chrono::SPH, two-way coupled through the hull rigid body. Same SPH build/GPU requirements as above. The short `wigley/sloshing` demo runs in still water so the coarse SPH tank stays robust; see that case’s comments and the wigley README for flotation, cost, and wave-forced notes. *(Wigley demos remain in the source tree and are omitted from the release ZIP.)*
 
 **Note:** RM3 `irregular_waves` and OSWEC `irregular_waves` use **long-crested** seas with single-heading BEMIO data (`rm3.h5`, `oswec.h5`). For **bimodal** or **directional spreading** examples, see **5sa** `bimodal` / `spreading` and scripts under `5sa/assets/` and `wigley/assets/`.
 

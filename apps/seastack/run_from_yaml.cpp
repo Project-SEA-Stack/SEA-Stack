@@ -8,6 +8,11 @@
 #include "single_run.h"
 #include "app_init.h"
 
+#ifdef SEASTACK_HAVE_SPH
+#include "sph_run.h"
+#include "coupled_run.h"
+#endif
+
 #include <seastack/config.h>
 #include <seastack/version.h>
 #include <seastack/infra/config/yaml_discovery.h>
@@ -123,7 +128,17 @@ static bool ResolveInputFiles(const std::filesystem::path& input_dir,
             return false;
         }
 #endif
-        
+
+        // SPH (Chrono::FSI) cases are self-contained: the FSI YAML hierarchy
+        // carries the multibody model, solvers, and time step, so model/sim
+        // files are not required. Leave model_file/sim_file empty and defer to
+        // the SPH runner (dispatched in RunFromYAML on setup_config.has_fsi_file).
+        if (setup_config.has_fsi_file) {
+            seastack::infra::debug::LogDebug(
+                std::string("FSI (SPH) case; skipping model/simulation file resolution."));
+            return true;
+        }
+
         if (!model_file_arg.empty()) {
             model_file = model_file_arg;
             if (!std::filesystem::path(model_file).is_absolute()) {
@@ -393,6 +408,172 @@ int RunFromYAML(int argc, char* argv[]) {
             return 1;
         }
         seastack::infra::debug::LogDebug("[startup] Input files resolved");
+
+        // -----------------------------------------------------------------
+        // 5b. SPH (Chrono::FSI) dispatch
+        // -----------------------------------------------------------------
+        if (setup_config.has_fsi_file) {
+            std::string fsi_file = (std::filesystem::path(input_directory) / setup_config.fsi_file).generic_string();
+            std::string fsi_output_directory;
+            if (setup_config.has_output_directory && !setup_config.output_directory.empty()) {
+                fsi_output_directory =
+                    (std::filesystem::path(input_directory) / setup_config.output_directory).generic_string();
+            }
+
+#ifdef SEASTACK_HAVE_SPH
+            if (!quiet_mode) {
+                std::vector<std::string> fsi_summary;
+                fsi_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "📁", "Directory", seastack::infra::FormatCliPathForDisplay(input_directory)));
+                fsi_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "🌊", "Fidelity", "SPH (Chrono::FSI)"));
+                fsi_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "📄", "FSI file", std::filesystem::path(fsi_file).filename().string()));
+                fsi_summary.push_back(seastack::infra::cli::CreateAlignedLine("🖥️", "Mode", nogui ? "Headless" : "GUI"));
+                if (!fsi_output_directory.empty()) {
+                    fsi_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                        "📁", "Output", seastack::infra::FormatCliPathForDisplay(fsi_output_directory)));
+                }
+                seastack::infra::cli::ShowSectionBox("SEA-Stack Case", fsi_summary);
+                seastack::infra::cli::ShowEmptyLine();
+            }
+
+            SphRunConfig sph_config;
+            sph_config.fsi_file = fsi_file;
+            sph_config.output_directory = fsi_output_directory;
+            sph_config.cli_output_level = cli_output_level;
+            sph_config.nogui = nogui;
+            sph_config.debug_mode = debug_mode;
+            if (setup_config.has_output_config) {
+                const auto& oc = setup_config.output_config;
+                if (oc.level == "compact")       sph_config.export_config.level = seastack::chrono::ExportLevel::kCompact;
+                else if (oc.level == "detailed") sph_config.export_config.level = seastack::chrono::ExportLevel::kDetailed;
+                else                             sph_config.export_config.level = seastack::chrono::ExportLevel::kStandard;
+                sph_config.export_config.decimation  = oc.decimation;
+                sph_config.export_config.compression = oc.compression;
+                sph_config.export_config.use_float32 = (oc.precision == "float32");
+            }
+
+            SphRunResult sph_result = RunSphCase(sph_config);
+
+            if (quiet_mode && sph_result.exit_code == 0) {
+                std::cerr << "SEA-Stack: completed successfully";
+                if (!sph_result.primary_artifact_path.empty()) {
+                    std::cerr << "  Output: "
+                              << seastack::infra::FormatCliPathForDisplay(sph_result.primary_artifact_path);
+                } else if (!sph_result.artifact_note.empty()) {
+                    std::cerr << "  " << sph_result.artifact_note;
+                }
+                std::cerr << std::endl;
+            }
+            seastack::infra::Shutdown();
+            return sph_result.exit_code;
+#else
+            seastack::infra::cli::LogError(
+                "This case requests an SPH (Chrono::FSI) simulation (fsi_file), but this "
+                "build of run_seastack does not include SPH support.");
+            seastack::infra::cli::LogError(
+                "  - Rebuild SEA-Stack with -DSEASTACK_ENABLE_SPH=ON against a Chrono "
+                "install built with CH_ENABLE_MODULE_FSI_SPH=ON (CUDA GPU required).");
+            (void)fsi_file;
+            (void)fsi_output_directory;
+            seastack::infra::Shutdown();
+            return 1;
+#endif
+        }
+
+        // -----------------------------------------------------------------
+        // 5c. Coupled (potential-flow hull + SPH deck-sloshing tank) dispatch
+        //     Triggered when a setup carries BOTH an exterior hydro file AND a
+        //     `tank:` block. Requires an SPH-enabled build (GPU).
+        // -----------------------------------------------------------------
+        if (setup_config.has_hydro_file && setup_config.has_tank) {
+            std::string coupled_hydro_file =
+                (input_dir / setup_config.hydro_file).generic_string();
+            std::string coupled_output_directory;
+            if (setup_config.has_output_directory && !setup_config.output_directory.empty()) {
+                coupled_output_directory =
+                    (input_dir / setup_config.output_directory).generic_string();
+            }
+
+#ifdef SEASTACK_HAVE_SPH
+            if (!quiet_mode) {
+                const auto& tk = setup_config.tank;
+                std::vector<std::string> c_summary;
+                c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "📁", "Directory", seastack::infra::FormatCliPathForDisplay(input_directory)));
+                c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "🌊", "Fidelity", "Potential flow + SPH tank (two-way coupled)"));
+                c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "📄", "Model", std::filesystem::path(model_file).filename().string()));
+                c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "🌊", "Hydro", setup_config.hydro_file));
+                if (setup_config.has_sph_file) {
+                    c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                        "💧", "SPH", setup_config.sph_file));
+                }
+                c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "🛢️", "Tank",
+                    seastack::infra::FormatNumber(tk.length, 1) + " x " +
+                        seastack::infra::FormatNumber(tk.width, 1) + " x " +
+                        seastack::infra::FormatNumber(tk.height, 1) + " m, fill " +
+                        seastack::infra::FormatNumber(tk.fill_depth, 2) + " m @ deck z=" +
+                        seastack::infra::FormatNumber(tk.deck_z, 2) + " m"));
+                c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                    "🖥️", "Mode", nogui ? "Headless (GPU SPH)" : "GUI (GPU SPH)"));
+                if (!coupled_output_directory.empty()) {
+                    c_summary.push_back(seastack::infra::cli::CreateAlignedLine(
+                        "📁", "Output", seastack::infra::FormatCliPathForDisplay(coupled_output_directory)));
+                }
+                seastack::infra::cli::ShowSectionBox("SEA-Stack Case", c_summary);
+                seastack::infra::cli::ShowEmptyLine();
+            }
+
+            CoupledRunConfig cc;
+            cc.model_file = model_file;
+            cc.simulation_file = sim_file;
+            cc.hydro_file = coupled_hydro_file;
+            cc.output_directory = coupled_output_directory;
+            cc.tank = setup_config.tank;
+            cc.cli_output_level = cli_output_level;
+            cc.nogui = nogui;
+            cc.debug_mode = debug_mode;
+            if (setup_config.has_output_config) {
+                const auto& oc = setup_config.output_config;
+                if (oc.level == "compact")       cc.export_config.level = seastack::chrono::ExportLevel::kCompact;
+                else if (oc.level == "detailed") cc.export_config.level = seastack::chrono::ExportLevel::kDetailed;
+                else                             cc.export_config.level = seastack::chrono::ExportLevel::kStandard;
+                cc.export_config.decimation  = oc.decimation;
+                cc.export_config.compression = oc.compression;
+                cc.export_config.use_float32 = (oc.precision == "float32");
+            }
+
+            CoupledRunResult cr = RunCoupledCase(cc);
+            if (quiet_mode && cr.exit_code == 0) {
+                std::cerr << "SEA-Stack: completed successfully";
+                if (!cr.primary_artifact_path.empty()) {
+                    std::cerr << "  Output: "
+                              << seastack::infra::FormatCliPathForDisplay(cr.primary_artifact_path);
+                } else if (!cr.artifact_note.empty()) {
+                    std::cerr << "  " << cr.artifact_note;
+                }
+                std::cerr << std::endl;
+            }
+            seastack::infra::Shutdown();
+            return cr.exit_code;
+#else
+            seastack::infra::cli::LogError(
+                "This case requests a coupled potential-flow + SPH tank simulation "
+                "(hydro_file + tank), but this build of run_seastack does not include SPH support.");
+            seastack::infra::cli::LogError(
+                "  - Rebuild SEA-Stack with -DSEASTACK_ENABLE_SPH=ON against a Chrono install built "
+                "with CH_ENABLE_MODULE_FSI_SPH=ON (CUDA GPU required).");
+            (void)coupled_hydro_file;
+            (void)coupled_output_directory;
+            seastack::infra::Shutdown();
+            return 1;
+#endif
+        }
 
         // -----------------------------------------------------------------
         // 6. Display pre-run summary
