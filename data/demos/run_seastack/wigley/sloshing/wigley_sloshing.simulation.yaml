@@ -1,0 +1,31 @@
+chrono-version: 10.0
+
+# Debug-oriented coupled run: cheap MBS integrator (not production HHT).
+# The coupled runner advances with tank.mbd_step from the setup YAML.
+simulation:
+  contact_method: SMC
+
+  time_step: 0.01
+  end_time: 100.0
+  enforce_realtime: false
+  gravity: [0, 0, -9.81]
+
+  integrator:
+    type: EULER_IMPLICIT_LINEARIZED
+
+  solver:
+    type: BARZILAI_BORWEIN
+    max_iterations: 50
+    tolerance: 1e-6
+
+  visualization:
+    type: MODEL_FILE
+    render_fps: 30
+    enable_shadows: false
+    camera:
+      vertical: Z
+    # Free-surface viz grid (read by the coupled runner). Smaller extent on the
+    # 10 m hull keeps the mesh dense enough to see wave shape; resolution can
+    # still be raised live in the GUI (Water → Resolution).
+    water_grid_width: 30.0    # m, along ship-x
+    water_grid_length: 30.0   # m, along ship-y

@@ -1,0 +1,34 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets_small/hydroData/wigley_directional.h5
+
+  # Long-crested irregular BEAM sea (direction 90 deg = along ship-y) to roll the
+  # small hull and drive continuous, visible tank sloshing. Hs/Tp chosen for a
+  # steeper sea on the 10 m hull (more roll / more action than Hs=0.4, Tp=4).
+  waves:
+    type: irregular
+    spectrum: jonswap
+    height: 0.9          # significant wave height Hs (m) — raised for visible roll
+    period: 3.0          # peak period Tp (s) — shorter => steeper waves
+    direction: 90        # deg; 90 = beam sea -> roll excitation
+    gamma: 3.3
+    ramp_duration: 8.0   # s; shorter ramp so action starts sooner
+    discretization:
+      n_omega: 64
+    seed: 42
+
+  # REQUIRED for non-zero heading: auto IRF excitation SqueezeMid()'s the
+  # multi-heading H5 IRF to heading index 0 only (head seas → pitch). The free
+  # surface still uses direction:90, which looked like "beam waves but pitch
+  # motion". Frequency-domain excitation interpolates H(omega, beta) at 90 deg.
+  excitation:
+    method: frequency_domain
+
+  radiation:
+    method: rirf_convolution
+    # Longer memory than the short debug run for a realistic 100 s simulation;
+    # convolution stays cheap at the coupling step (mbd_step 0.005).
+    truncation_time: 18.0
+    smoothing:
+      type: none

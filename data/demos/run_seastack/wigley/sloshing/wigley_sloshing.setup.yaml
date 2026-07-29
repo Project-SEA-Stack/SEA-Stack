@@ -1,0 +1,13 @@
+model_file: wigley_sloshing.model.yaml
+simulation_file: wigley_sloshing.simulation.yaml
+
+# Fluid fidelity is chosen by which file(s) are referenced here:
+#   hydro_file: potential-flow (BEM) exterior ocean
+#   sph_file:   Chrono::SPH fluid (here: a deck-sloshing tank)
+# Both present => COUPLED (potential-flow hull + SPH tank, two-way coupled).
+# The same model can be run potential-flow-only (drop sph_file) or with a
+# different SPH fluid (swap sph_file) without touching the model/simulation.
+hydro_file: wigley_sloshing.hydro.yaml
+sph_file: wigley_sloshing.sph.yaml
+
+output_directory: outputs

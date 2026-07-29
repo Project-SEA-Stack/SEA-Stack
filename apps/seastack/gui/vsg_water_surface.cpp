@@ -6,6 +6,7 @@
 #include "vsg_materials.h"
 #include "vsg_radiation_surface.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -455,7 +456,11 @@ void AnimatedWaterSurface::InitializeWireframe() {
     const double half_size_y = grid_size_y / 2.0;
     const double spacing_x = grid_size_x / (n - 1);
     const double spacing_y = grid_size_y / (n - 1);
-    const double line_half_width = 0.05;
+    // Scale ribbon width with cell size so smaller extents (e.g. 30 m) do not
+    // look like thick bars. Clamp keeps large grids from vanishing / tiny
+    // grids from disappearing.
+    const double line_half_width =
+        std::clamp(0.025 * std::min(spacing_x, spacing_y), 0.005, 0.05);
 
     std::vector<::chrono::ChVector3d>& verts = wireframe_mesh->m_vertices;
     std::vector<::chrono::ChVector3i>& faces = wireframe_mesh->m_face_v_indices;
@@ -580,7 +585,8 @@ void AnimatedWaterSurface::UpdateWireframe() {
     const double half_size_y = grid_size_y / 2.0;
     const double spacing_x = grid_size_x / (n - 1);
     const double spacing_y = grid_size_y / (n - 1);
-    const double line_half_width = 0.05;
+    const double line_half_width =
+        std::clamp(0.025 * std::min(spacing_x, spacing_y), 0.005, 0.05);
     const float z_offset = 0.02f;
 
     size_t soup_idx = 0;

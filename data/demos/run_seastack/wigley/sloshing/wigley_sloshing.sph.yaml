@@ -1,0 +1,38 @@
+# SEA-Stack SPH fluid definition (Chrono::SPH).
+#
+# This is a role-based fidelity file, analogous to a `*.hydro.yaml` for
+# potential flow: it describes the SPH fluid acting on the model. A setup YAML
+# selects it with `sph_file:`. When a setup carries BOTH a `hydro_file:` and an
+# `sph_file:`, the case is COUPLED (potential-flow exterior + SPH interior); an
+# `sph_file:` alone describes an SPH-only fluid for the same model.
+#
+# Here the SPH fluid is a deck-mounted sloshing tank carried by the hull body.
+# All lengths are metres. The deck position is in the hull reference frame
+# (origin at the still-water line, midship; z up); the small wigley deck is z = +0.7 m.
+#
+# Public-demo settings: deeper fill, finer particles, lower artificial viscosity,
+# and taller walls so beam-sea sloshing looks water-like with few escapes.
+tank:
+  length: 1.5            # tank interior size along ship x (fore-aft)
+  width: 1.5             # tank interior size along ship y (transverse)
+  height: 1.5            # taller walls to reduce open-top overtopping
+  fill_depth: 0.35       # ~12 layers at spacing 0.03; readable free surface
+  deck_x: 0.0            # tank floor centre, hull-local x (midship)
+  deck_y: 0.0            # tank floor centre, hull-local y (centreline)
+  deck_z: 0.7            # tank floor height above the waterline (small-hull deck = freeboard)
+
+  spacing: 0.03          # ~25-30k fluid particles after fit_inside
+  num_bce_layers: 4      # thicker wall BCE for containment under roll
+  artificial_viscosity: 0.08   # water-like mobility (was 0.25 / syrupy)
+  max_velocity: 5.0      # expected max fluid speed (sets EOS sound speed)
+  fluid_density: 1000.0  # fresh ballast water
+  fluid_viscosity: 0.001 # water dynamic viscosity [Pa·s]
+  cfd_step: 0.00005      # SPH sub-step (s); CFL for spacing 0.03
+  mbd_step: 0.002        # FSI coupling / hydro step (s)
+
+  # Roll-decay excitation knob: release the hull from this roll rate (rad/s about
+  # ship-x) at t=0. 0 = no kick; here the irregular beam sea does the exciting.
+  roll_rate: 0.0
+
+  hull_body: body1       # body that carries the tank
+  rebalance_mass: true   # reduce hull mass by tank fluid mass (flotation)
