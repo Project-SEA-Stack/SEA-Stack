@@ -88,5 +88,46 @@ void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVi
     }
 }
 
+void ApplyMaterialToOpaqueVisualShapes(::chrono::ChBody& body,
+                                       const ::chrono::ChVisualMaterial& mat) {
+    auto model = body.GetVisualModel();
+    if (!model) {
+        return;
+    }
+
+    auto mat_ptr = ::chrono_types::make_shared<::chrono::ChVisualMaterial>(mat);
+
+    const unsigned int num_shapes = model->GetNumShapes();
+    for (unsigned int i = 0; i < num_shapes; ++i) {
+        auto shape = model->GetShape(i);
+        if (!shape) {
+            continue;
+        }
+
+        // Leave translucent shapes alone (e.g. a glass tank on the same body).
+        bool translucent = false;
+        const unsigned int num_materials = shape->GetNumMaterials();
+        for (unsigned int m = 0; m < num_materials; ++m) {
+            auto existing = shape->GetMaterial(m);
+            if (existing && existing->GetOpacity() < 0.999f) {
+                translucent = true;
+                break;
+            }
+        }
+        if (translucent) {
+            continue;
+        }
+
+        if (num_materials == 0) {
+            shape->AddMaterial(mat_ptr);
+            continue;
+        }
+
+        for (unsigned int m = 0; m < num_materials; ++m) {
+            shape->SetMaterial(m, mat_ptr);
+        }
+    }
+}
+
 }  // namespace seastack::viz
 

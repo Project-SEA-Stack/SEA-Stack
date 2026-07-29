@@ -31,5 +31,11 @@ namespace seastack::viz {
 /// @param mat The material to apply.
 void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVisualMaterial& mat);
 
+/// Like ApplyMaterialToAllVisualShapes, but skips shapes that already carry a
+/// translucent material (opacity < 1). Used so mixed bodies (e.g. opaque hull +
+/// glass tank) still get industrial paint without losing transparency.
+void ApplyMaterialToOpaqueVisualShapes(::chrono::ChBody& body,
+                                       const ::chrono::ChVisualMaterial& mat);
+
 }  // namespace seastack::viz
 

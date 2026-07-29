@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include <seastack/config.h>
 #include <gui/guihelper.h>
@@ -47,6 +48,10 @@ class GUIImpl {
     virtual void SetMooringVisualizationRadii(double /*line_radius_m*/,
                                               double /*endpoint_radius_m*/,
                                               double /*node_marker_radius_m*/) {}
+#ifdef SEASTACK_HAVE_VSG
+    virtual void AttachVisualPlugin(
+        std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin> /*plugin*/) {}
+#endif
 };
 
 #ifdef SEASTACK_HAVE_VSG
@@ -75,6 +80,8 @@ class GUIImplVSG : public GUIImpl {
     virtual void SetMooringVisualizationRadii(double line_radius_m,
                                             double endpoint_radius_m,
                                             double node_marker_radius_m) override;
+    void AttachVisualPlugin(
+        std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin> plugin) override;
 
   protected:
     std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSG> pVis;
@@ -104,6 +111,9 @@ class GUIImplVSG : public GUIImpl {
     double mooring_viz_line_radius_request_ = -1.0;
     double mooring_viz_endpoint_radius_request_ = -1.0;
     double mooring_viz_node_marker_radius_request_ = -1.0;
+
+    /// Plugins queued via AttachVisualPlugin(); applied in Init() before Initialize().
+    std::vector<std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin>> pending_plugins_;
 };
 #endif
 

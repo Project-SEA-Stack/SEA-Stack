@@ -1,5 +1,6 @@
 #pragma once
 
+#include <seastack/config.h>
 #include <seastack/core/mooring_viz_data.h>
 
 #include <memory>
@@ -7,6 +8,14 @@
 namespace chrono {
 class ChSystem;
 }
+
+#ifdef SEASTACK_HAVE_VSG
+namespace chrono {
+namespace vsg3d {
+class ChVisualSystemVSGPlugin;
+}
+}  // namespace chrono
+#endif
 
 namespace seastack::hydro { class WaveBase; }
 
@@ -79,6 +88,16 @@ class UI {
                                               double endpoint_radius_m,
                                               double node_marker_radius_m);
 
+#ifdef SEASTACK_HAVE_VSG
+    /**@brief Attach a Chrono VSG plugin before Init() (e.g. SPH particle viz).
+     *
+     * Must be called before Init(). No-op for the headless UI. Plugins are
+     * handed to ChVisualSystemVSG::AttachPlugin prior to Initialize().
+     */
+    virtual void AttachVisualPlugin(
+        std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin> plugin);
+#endif
+
     /**@brief return the internal system.
      *
      * Should be called after init.
@@ -112,6 +131,10 @@ class GUI : public UI {
     void SetMooringVisualizationRadii(double line_radius_m,
                                       double endpoint_radius_m,
                                       double node_marker_radius_m) override;
+#ifdef SEASTACK_HAVE_VSG
+    void AttachVisualPlugin(
+        std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin> plugin) override;
+#endif
 
   protected:
     /// For subclasses (e.g. the vehicle GUI) that supply their own implementation.

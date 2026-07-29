@@ -20,6 +20,7 @@ using namespace seastack::hydro;
 #include <iostream>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 #include <chrono/core/ChTypes.h>
 #include <chrono/assets/ChVisualMaterial.h>
@@ -29,31 +30,6 @@ using namespace seastack::hydro;
 namespace seastack::viz {
 
 using namespace vsg_config;
-
-namespace {
-// True if any visual shape on this body carries a translucent material (opacity
-// < 1). Such bodies (e.g. a see-through hull set via the YAML visualization
-// `opacity` field) are left untouched by the opaque scene-paint pass below.
-bool BodyHasTranslucentMaterial(const ::chrono::ChBody& body) {
-    auto model = body.GetVisualModel();
-    if (!model) {
-        return false;
-    }
-    for (unsigned int i = 0; i < model->GetNumShapes(); ++i) {
-        auto shape = model->GetShape(i);
-        if (!shape) {
-            continue;
-        }
-        for (unsigned int m = 0; m < shape->GetNumMaterials(); ++m) {
-            auto mat = shape->GetMaterial(m);
-            if (mat && mat->GetOpacity() < 0.999f) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-}  // namespace
 
 // =============================================================================
 // GUIImplVSG Implementation
@@ -117,13 +93,10 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
             if (!body || !ShouldApplyScenePaint(*body)) {
                 continue;
             }
-            // Preserve a YAML-specified translucent hull (opacity < 1): the opaque
-            // painted-metal material would otherwise overwrite its transparency.
-            if (BodyHasTranslucentMaterial(*body)) {
-                continue;
-            }
+            // Paint opaque shapes only: a translucent glass tank on the same
+            // body must not block industrial yellow on the hull mesh.
             const auto material = MakePaintedMetalVariant(body_index);
-            ApplyMaterialToAllVisualShapes(*body, material);
+            ApplyMaterialToOpaqueVisualShapes(*body, material);
             ++body_index;
 
             if (kEnableWireframe) {
@@ -137,6 +110,13 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
 
     if (!mooring_viz_)
         mooring_viz_ = std::make_unique<MooringLinesViz>();
+
+    for (auto& plugin : pending_plugins_) {
+        if (plugin) {
+            pVis->AttachPlugin(plugin);
+        }
+    }
+    pending_plugins_.clear();
 
     pVis->AddGuiComponent(std::make_shared<SeastackGuiComponent>(
         pVis.get(), ui.simulationStarted, viewer_settings_.get(),
@@ -202,6 +182,13 @@ void GUIImplVSG::SetMooringVisualizationRadii(double line_radius_m,
     mooring_viz_node_marker_radius_request_ = node_marker_radius_m;
     if (mooring_viz_) {
         mooring_viz_->SetVisualizationRadii(line_radius_m, endpoint_radius_m, node_marker_radius_m);
+    }
+}
+
+void GUIImplVSG::AttachVisualPlugin(
+    std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin> plugin) {
+    if (plugin) {
+        pending_plugins_.push_back(std::move(plugin));
     }
 }
 

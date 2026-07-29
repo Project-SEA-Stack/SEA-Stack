@@ -48,6 +48,13 @@ void UI::SetMooringVisualizationRadii(double /*line_radius_m*/,
     // Default (headless) UI does not render mooring lines.
 }
 
+#ifdef SEASTACK_HAVE_VSG
+void UI::AttachVisualPlugin(
+    std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin> /*plugin*/) {
+    // Default (headless) UI has no VSG visual system.
+}
+#endif
+
 // -----------------------------------------------------------------------------
 
 GUI::GUI() {
@@ -95,3 +102,10 @@ void GUI::SetMooringVisualizationRadii(double line_radius_m,
                                       double node_marker_radius_m) {
     pImpl->SetMooringVisualizationRadii(line_radius_m, endpoint_radius_m, node_marker_radius_m);
 }
+
+#ifdef SEASTACK_HAVE_VSG
+void GUI::AttachVisualPlugin(
+    std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSGPlugin> plugin) {
+    pImpl->AttachVisualPlugin(std::move(plugin));
+}
+#endif
