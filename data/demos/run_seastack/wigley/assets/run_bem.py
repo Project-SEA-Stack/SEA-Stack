@@ -54,8 +54,14 @@ WATER_DEPTH = 250.0
 # Body loading
 # ---------------------------------------------------------------------------
 
-def load_body(meshes_dir: Path) -> cpt.FloatingBody:
-    """Load the Nemoh mesh and configure the floating body."""
+def load_body(meshes_dir: Path, cog_z: float = COG_Z) -> cpt.FloatingBody:
+    """Load the Nemoh mesh and configure the floating body.
+
+    ``cog_z`` is the vertical centre-of-gravity (m, waterline at z=0). It sets
+    the reference about which Capytaine computes the roll/pitch restoring
+    stiffness, so it MUST match the model YAML ``com.location`` for a
+    consistent hydrostatic equilibrium. Defaults to the shared 50 m hull value.
+    """
     mesh_path = meshes_dir / "wigley.nemoh"
     if not mesh_path.exists():
         raise FileNotFoundError(
@@ -65,7 +71,7 @@ def load_body(meshes_dir: Path) -> cpt.FloatingBody:
 
     mesh = cpt.load_mesh(str(mesh_path), file_format="nemoh")
     body = cpt.FloatingBody(mesh=mesh)
-    body.center_of_mass = np.array([0.0, 0.0, COG_Z])
+    body.center_of_mass = np.array([0.0, 0.0, cog_z])
     body.rotation_center = np.array([0.0, 0.0, 0.0])
     body.add_all_rigid_body_dofs()
     body.keep_immersed_part()
@@ -81,9 +87,10 @@ def compute_body_hydrostatics(body: cpt.FloatingBody) -> dict:
     C = np.array(hs["hydrostatic_stiffness"])
     dv = float(hs["disp_volume"])
     cb = np.array(hs["center_of_buoyancy"]).flatten()[:3]
-    print(f"  {body.name}: V_disp={dv:.1f} m^3, cb_z={cb[2]:.3f} m, "
+    cg = np.asarray(body.center_of_mass, dtype=float).flatten()[:3]
+    print(f"  {body.name}: V_disp={dv:.1f} m^3, cb_z={cb[2]:.3f} m, cg_z={cg[2]:.3f} m, "
           f"C33={C[2,2]:.0f} N/m, C44={C[3,3]:.0f} N-m/rad, C55={C[4,4]:.0f} N-m/rad")
-    return {"stiffness": C, "disp_vol": dv, "cb": cb}
+    return {"stiffness": C, "disp_vol": dv, "cb": cb, "cg": cg}
 
 
 # ---------------------------------------------------------------------------
@@ -263,12 +270,14 @@ def write_bemio_h5(
             disp_vol = bhs["disp_vol"]
             cb = bhs["cb"]
             C_body = bhs["stiffness"] / (rho * g)
+            # Prefer the CoG actually used for the hydrostatics computation so
+            # the written cg is consistent with the restoring stiffness.
+            cg = bhs.get("cg", [0.0, 0.0, COG_Z])
         else:
             disp_vol = 4.0 * LENGTH * BEAM * DRAFT / 9.0
             cb = np.array([0.0, 0.0, -3.0 * DRAFT / 8.0])
             C_body = np.zeros((n_dof, n_dof))
-
-        cg = [0.0, 0.0, COG_Z]
+            cg = [0.0, 0.0, COG_Z]
 
         props.create_dataset("disp_vol", data=_scalar(disp_vol))
         props.create_dataset("cg", data=_col(cg))

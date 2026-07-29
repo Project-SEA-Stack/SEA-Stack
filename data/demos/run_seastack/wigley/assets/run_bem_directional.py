@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 
 from run_bem import (
+    COG_Z,
     load_body,
     compute_body_hydrostatics,
     solve_bem,
@@ -63,6 +64,9 @@ def main() -> None:
                     help="Output H5 file path")
     ap.add_argument("--meshes-dir", type=Path, default=None,
                     help="Directory containing .nemoh mesh")
+    ap.add_argument("--cog-z", type=float, default=None,
+                    help="Vertical CoG [m], waterline at z=0 (must match model com; "
+                         "default: shared 50 m hull value)")
     ap.add_argument("--jobs", "-j", type=int, default=-1,
                     help="Parallel workers for BEM solve (-1 = all cores)")
     ap.add_argument("--from-nc", type=Path, default=None,
@@ -80,7 +84,8 @@ def main() -> None:
     print("=" * 60)
 
     print("\nLoading mesh...")
-    body = load_body(meshes_dir)
+    cog_z = args.cog_z if args.cog_z is not None else COG_Z
+    body = load_body(meshes_dir, cog_z=cog_z)
 
     print("\nComputing hydrostatics from mesh...")
     body_hydrostatics = compute_body_hydrostatics(body)

@@ -26,8 +26,31 @@ Below the waterline the half-beam follows the Wigley formula
 |------|-------------|------------|
 | spreading | JONSWAP irregular (Hs = 3 m, Tp = 10 s), cos²s spreading (s = 12), 600 s | `spreading/wigley_spreading.setup.yaml` |
 | damping | Same sea as spreading + linear damping (sway, roll) and quadratic damping (surge, sway, heave, roll, pitch) | `damping/wigley_damping.setup.yaml` |
+| sloshing | Coupled: exterior potential flow + SPH deck tank (still water, short run; GPU) | `sloshing/wigley_sloshing.setup.yaml` |
 
 The spreading case expects directional BEM data (`run_bem_directional.py`).
+
+### Coupled sloshing (`sloshing`)
+
+Two-way coupled demonstrator: the same BEM hull as `spreading`, plus an open-top
+deck tank whose interior fluid is Chrono::SPH. Setup YAML carries both
+`hydro_file:` and a `tank:` block. Requires an SPH-enabled `run_seastack` build
+and an **NVIDIA GPU** at runtime.
+
+**Flotation:** by default `tank.rebalance_mass: true` reduces hull structural mass
+by the tank fluid mass so total weight matches the BEM equilibrium displacement
+(waterline stays near z = 0). Hull inertia is left unchanged (small approximation).
+
+**Cost:** SPH coupling uses `tank.mbd_step` ≈ 1 ms and `tank.cfd_step` ≈ 0.1 ms with
+~10⁴ particles at `spacing` 0.10 m — keep `end_time` short (a few seconds). Finer
+spacing and wave-forced seas increase cost and can stress SPH robustness; wave
+experiments are easier from `examples/coupled_sloshing/wigley_tank_sloshing`.
+
+```text
+build_sph\bin\Release\run_seastack.exe data\demos\run_seastack\wigley\sloshing --nogui
+```
+
+This is a method demonstrator, not a validated sloshing solver.
 
 ## Assets
 
