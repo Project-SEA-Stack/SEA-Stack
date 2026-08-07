@@ -536,6 +536,23 @@ static bool IsLikelyMoorDynCapturedOutput(const std::string& buffer) {
     return false;
 }
 
+// Chrono::Vehicle prints straight to stdout while it walks a vehicle JSON tree
+// (one line per sub-spec, plus a tire force-scale echo). A tracked vehicle emits
+// several of these before anything SEA-Stack owns appears, so route them to
+// debug: they matter when diagnosing a bad spec path, not on a normal run.
+static bool IsChronoVehicleSetupChatter(const std::string& buffer) {
+    static constexpr const char* kMarkers[] = {
+        "loaded json",
+        "force scale",
+    };
+    for (const char* m : kMarkers) {
+        if (ContainsIgnoreCaseAscii(buffer, m)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Skip leading whitespace and SGR ANSI sequences (\033[ ... m) so we can detect
 // bracket-led lines reliably.
 static size_t SkipLeadingWhitespaceAndAnsi(const std::string& b) {
@@ -698,6 +715,9 @@ static bool IsSeaStackBracketPassthroughLine(const std::string& b) {
                 }
                 if (StartsWith(buffer_, "File: ")) {
                     // Treat noisy OBJ path echoes as debug-only
+                    seastack::infra::debug::LogDebug(buffer_);
+                } else if (IsChronoVehicleSetupChatter(buffer_)) {
+                    // Chrono::Vehicle JSON-tree chatter: debug / file only
                     seastack::infra::debug::LogDebug(buffer_);
                 } else if (buffer_.find("Cannot open colormap data file") != std::string::npos) {
                     // Collect for Warnings section only; avoid inline duplication
