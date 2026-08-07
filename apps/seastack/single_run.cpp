@@ -13,6 +13,7 @@
  *********************************************************************/
 
 #include "single_run.h"
+#include "model_yaml_postprocess.h"
 
 #include <seastack/config.h>
 #include <seastack/version.h>
@@ -23,6 +24,10 @@
 #include <seastack/adapters/chrono/simulation_export.h>
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
+
+#ifdef SEASTACK_HAVE_HYDRO_IO
+#include <seastack/hydro_io/h5_reader.h>
+#endif
 
 #ifdef SEASTACK_HAVE_EXTERNAL
 #include "external_pto_yaml.h"
@@ -41,10 +46,12 @@
 #include <chrono/geometry/ChTriangleMeshConnected.h>
 #include <chrono/physics/ChLinkLock.h>
 #include <chrono/physics/ChLinkMate.h>
+#include <chrono/solver/ChDirectSolverLS.h>
 #include <chrono/timestepper/ChAssemblyAnalysis.h>
 #include <yaml-cpp/yaml.h>
 
 #include "gui/guihelper.h"
+#include "setup_checks.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -119,6 +126,88 @@ static std::string ReadEntireFileUtf8(const std::string& path) {
     std::ostringstream ss;
     ss << in.rdbuf();
     return ss.str();
+}
+
+/// Read the `WtrDpth` option out of a MoorDyn input file.
+/// Returns a negative value if the option is absent or file cannot be read.
+static double ReadMoorDynWaterDepth(const std::string& file) {
+    std::ifstream in(file);
+    if (!in.is_open()) {
+        return -1.0;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.find("WtrDpth") == std::string::npos) {
+            continue;
+        }
+        std::istringstream ss(line);
+        double value = 0.0;
+        if (ss >> value) {
+            return value;
+        }
+    }
+    return -1.0;
+}
+
+/// Validate water depth consistency across hydro H5, waves YAML, and MoorDyn.
+/// Returns true if all present depths agree within tolerance, false otherwise.
+static bool CheckWaterDepthConsistency(const YAMLHydroData& hydro_data,
+                                       double tolerance_m) {
+    std::vector<std::pair<std::string, double>> depths;
+
+    // H5 water depth (when available)
+#ifdef SEASTACK_HAVE_HYDRO_IO
+    if (!hydro_data.bodies.empty() && !hydro_data.bodies[0].h5_file.empty()) {
+        try {
+            auto h5_info = seastack::hydro_io::H5FileInfo(hydro_data.bodies[0].h5_file, 1);
+            double h5_depth = h5_info.ReadH5Data().GetSimulationInfo().water_depth;
+            if (h5_depth > 0.0 && !std::isinf(h5_depth)) {
+                depths.emplace_back("H5 file", h5_depth);
+            }
+        } catch (...) {
+            seastack::infra::debug::LogDebug("Could not read H5 water depth for consistency check.");
+        }
+    }
+#endif
+
+    // Waves depth from hydro YAML
+    if (hydro_data.waves.depth > 0.0 && !std::isinf(hydro_data.waves.depth)) {
+        depths.emplace_back("hydro YAML waves.depth", hydro_data.waves.depth);
+    }
+
+    // MoorDyn WtrDpth
+    if (hydro_data.moordyn_enabled && !hydro_data.moordyn_input_file.empty()) {
+        double md_depth = ReadMoorDynWaterDepth(hydro_data.moordyn_input_file);
+        if (md_depth > 0.0) {
+            depths.emplace_back("MoorDyn WtrDpth", md_depth);
+        }
+    }
+
+    if (depths.size() < 2) {
+        return true;  // Nothing to compare
+    }
+
+    // Check all pairs
+    bool all_ok = true;
+    const double ref = depths[0].second;
+    seastack::infra::cli::LogInfo("--- Water depth consistency check ---");
+    for (const auto& [name, depth] : depths) {
+        seastack::infra::cli::LogInfo("  " + name + ": " + std::to_string(depth) + " m");
+    }
+
+    for (size_t i = 1; i < depths.size(); ++i) {
+        if (std::abs(depths[i].second - ref) > tolerance_m) {
+            seastack::infra::cli::LogError(
+                "Water depth mismatch: " + depths[0].first + " = " + std::to_string(ref) +
+                " m vs " + depths[i].first + " = " + std::to_string(depths[i].second) +
+                " m (tolerance: " + std::to_string(tolerance_m) + " m)");
+            all_ok = false;
+        }
+    }
+    if (all_ok) {
+        seastack::infra::cli::LogInfo("  All depths agree within tolerance.");
+    }
+    return all_ok;
 }
 
 // Thin subclass of ChParserMbsYAML that exposes the protected
@@ -257,6 +346,26 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
         seastack::infra::debug::LogDebug("Creating system");
         auto system = parser.CreateSystem();
 
+        // SEA-Stack extension: Chrono's solver schema does not expose
+        // LockSparsityPattern.  When true, a direct LS solver reuses its
+        // symbolic analysis across steps.  Safe when the KKT pattern is
+        // constant (body/link counts fixed; SMC contacts enter as penalty
+        // forces, not constraints).  Worth roughly a factor of two on
+        // tracked-vehicle cases, where contact pairs dominate the step cost.
+        if (sim_node && sim_node["solver"] && sim_node["solver"]["lock_sparsity_pattern"] &&
+            sim_node["solver"]["lock_sparsity_pattern"].as<bool>()) {
+            if (auto solver =
+                    std::dynamic_pointer_cast<::chrono::ChDirectSolverLS>(system->GetSolver())) {
+                solver->LockSparsityPattern(true);
+                seastack::infra::debug::LogDebug(
+                    "SPARSE direct solver: LockSparsityPattern(true) enabled from simulation YAML");
+            } else {
+                seastack::infra::cli::LogWarning(
+                    "simulation.solver.lock_sparsity_pattern is set but the active solver is "
+                    "not a ChDirectSolverLS; ignoring.");
+            }
+        }
+
         seastack::infra::debug::LogDebug(std::string("Loading model file: ") + model_file);
         auto model_yaml = YAML::LoadFile(model_file);
         parser.LoadModelData(model_yaml);
@@ -270,127 +379,9 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
 
         RetargetTrimaranRigidArmJointsIfPresent(*system);
 
-        // Apply per-body visualization from model YAML (match Chrono bodies by name).
-        // Chrono 10 MBS YAML loads model_file via ChBodyGeometry as ChVisualShapeTriangleMesh at identity
-        // frame; it does not read shape_location. Older paths used ChVisualShapeModelFile. Apply YAML
-        // shape_location and/or diffuse color here so hull meshes align with CoG like the C++ demos.
-        try {
-            auto model_node = model_yaml["model"];
-            if (model_node && model_node["bodies"]) {
-                std::unordered_map<std::string, YAML::Node> vis_by_name;
-                for (const auto& entry : model_node["bodies"]) {
-                    if (!entry["name"]) {
-                        continue;
-                    }
-                    const std::string nm = entry["name"].as<std::string>();
-                    vis_by_name.emplace(nm, entry["visualization"]);
-                }
-
-                auto resolve_mesh_path = [&](const std::string& path_str) -> std::string {
-                    std::filesystem::path p(path_str);
-                    if (p.is_relative()) {
-                        p = model_dir / p;
-                    }
-                    std::error_code ec;
-                    std::filesystem::path c = std::filesystem::weakly_canonical(p, ec);
-                    if (!ec) {
-                        return c.generic_string();
-                    }
-                    return p.lexically_normal().generic_string();
-                };
-
-                for (const auto& body : system->GetBodies()) {
-                    if (!body) {
-                        continue;
-                    }
-                    auto vit = vis_by_name.find(body->GetName());
-                    if (vit == vis_by_name.end()) {
-                        continue;
-                    }
-                    const YAML::Node& vis_node = vit->second;
-                    if (!vis_node) {
-                        continue;
-                    }
-                    const bool has_color =
-                        static_cast<bool>(vis_node["color"]) && vis_node["color"].IsSequence() &&
-                        vis_node["color"].size() >= 3;
-                    const bool has_shape_location =
-                        static_cast<bool>(vis_node["shape_location"]) &&
-                        vis_node["shape_location"].IsSequence() &&
-                        vis_node["shape_location"].size() >= 3;
-                    if (!has_color && !has_shape_location) {
-                        continue;
-                    }
-                    float r = 1.f;
-                    float g = 1.f;
-                    float b = 1.f;
-                    if (has_color) {
-                        auto c = vis_node["color"];
-                        r = c[0].as<float>();
-                        g = c[1].as<float>();
-                        b = c[2].as<float>();
-                    }
-                    ::chrono::ChVector3d shape_pos(0, 0, 0);
-                    if (has_shape_location) {
-                        auto sl = vis_node["shape_location"];
-                        shape_pos.x() = sl[0].as<double>();
-                        shape_pos.y() = sl[1].as<double>();
-                        shape_pos.z() = sl[2].as<double>();
-                    }
-                    auto vis = body->GetVisualModel();
-                    if (!vis) {
-                        continue;
-                    }
-                    for (unsigned si = 0; si < vis->GetNumShapes(); ++si) {
-                        auto shape = body->GetVisualShape(si);
-                        auto existing_tri =
-                            std::dynamic_pointer_cast<::chrono::ChVisualShapeTriangleMesh>(shape);
-                        if (existing_tri && existing_tri->GetMesh()) {
-                            auto mesh = existing_tri->GetMesh();
-                            auto tri_shape =
-                                ::chrono_types::make_shared<::chrono::ChVisualShapeTriangleMesh>(mesh,
-                                                                                                 false);
-                            if (has_color) {
-                                tri_shape->SetColor(::chrono::ChColor(r, g, b));
-                            } else {
-                                for (unsigned mi = 0; mi < existing_tri->GetNumMaterials(); ++mi) {
-                                    tri_shape->SetMaterial(mi, existing_tri->GetMaterial(mi));
-                                }
-                            }
-                            body->GetVisualModel()->Clear();
-                            body->AddVisualShape(tri_shape, ::chrono::ChFrame<>(shape_pos));
-                            break;
-                        }
-                        auto mf = std::dynamic_pointer_cast<::chrono::ChVisualShapeModelFile>(shape);
-                        if (!mf) {
-                            continue;
-                        }
-                        std::string obj_path = resolve_mesh_path(mf->GetFilename());
-                        auto trimesh =
-                            ::chrono::ChTriangleMeshConnected::CreateFromWavefrontFile(obj_path, true, false);
-                        if (!trimesh) {
-                            seastack::infra::debug::LogDebug(
-                                std::string("CreateFromWavefrontFile failed for body ") + body->GetName() +
-                                ": " + obj_path);
-                            continue;
-                        }
-                        auto tri_shape =
-                            ::chrono_types::make_shared<::chrono::ChVisualShapeTriangleMesh>(trimesh, false);
-                        if (has_color) {
-                            tri_shape->SetColor(::chrono::ChColor(r, g, b));
-                        }
-                        body->GetVisualModel()->Clear();
-                        body->AddVisualShape(tri_shape, ::chrono::ChFrame<>(shape_pos));
-                        break;
-                    }
-                }
-            }
-        } catch (const std::exception& e) {
-            seastack::infra::debug::LogDebug(std::string("Body visualization YAML application failed: ") +
-                                             e.what());
-        } catch (...) {
-            seastack::infra::debug::LogDebug("Body visualization YAML application failed (unknown error)");
-        }
+        // Chrono 10 does not honour visualization.color / shape_location on
+        // triangle meshes, and does not parse collision_family. Apply both here.
+        ApplyModelYamlPostProcess(*system, model_yaml, model_dir.generic_string());
 
         return system;
     } catch (const std::exception& e) {
@@ -476,6 +467,20 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             }
         }
 #endif
+
+        // -----------------------------------------------------------------
+        // 2a. Attach optional scenario subsystems (vehicle, terrain, FEA, ...)
+        //
+        // Done BEFORE hydro setup so that bodies created here (e.g. a vehicle
+        // chassis) already exist when MoorDyn resolves its coupled body names.
+        // This lets the hydro YAML couple a non-hydro body through HydroSystem.
+        // Subsystem Attach() does not depend on the hydro model.
+        // -----------------------------------------------------------------
+        for (const auto& subsystem : config.subsystems) {
+            if (subsystem) {
+                subsystem->Attach(*system);
+            }
+        }
 
         std::string hydro_file_path;  // non-empty only when source is a file
         bool hydro_data_ready = false;
@@ -608,14 +613,50 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
         // -----------------------------------------------------------------
+        // 2b. Run declarative checks (from setup YAML checks: block)
+        // -----------------------------------------------------------------
+        for (const auto& check : config.checks) {
+            if (check.type == "water_depth_consistency") {
+                if (hydro_data_ready && !CheckWaterDepthConsistency(hydro_data, check.tolerance_m)) {
+                    seastack::infra::cli::LogError(
+                        "water_depth_consistency check FAILED — inconsistent depths across "
+                        "H5, hydro YAML, or MoorDyn.");
+                    result.error_message = "water_depth_consistency check failed.";
+                    result.exit_code = 5;
+                    return result;
+                }
+            }
+            // Note: bridge_static_load_path is handled post-loop via StructureSubsystem.
+        }
+
+        // -----------------------------------------------------------------
         // 3. Setup visualization
         // -----------------------------------------------------------------
         startup_line("[startup] Visualization init...");
 
+        // Prefer an explicit ui_kind override; otherwise take the strongest
+        // preference among subsystems (Tracked > Wheeled > Standard).
+        seastack::viz::UiKind ui_kind = config.ui_kind;
+        if (ui_kind == seastack::viz::UiKind::Standard) {
+            for (const auto& subsystem : config.subsystems) {
+                if (!subsystem) {
+                    continue;
+                }
+                const auto pref = subsystem->PreferredUiKind();
+                if (pref == seastack::viz::UiKind::TrackedVehicle) {
+                    ui_kind = pref;
+                    break;
+                }
+                if (pref == seastack::viz::UiKind::WheeledVehicle) {
+                    ui_kind = pref;
+                }
+            }
+        }
+
         std::shared_ptr<seastack::viz::UI> pui;
         bool gui_init_ok = false;
         try {
-            pui = seastack::viz::CreateUI(!nogui);
+            pui = seastack::viz::CreateUI(!nogui, ui_kind);
         } catch (const std::exception& e) {
             seastack::infra::cli::LogWarning(std::string("[viz] CreateUI failed: ") + e.what());
         } catch (...) {
@@ -624,6 +665,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 
         if (pui && !nogui) {
             try {
+                for (const auto& subsystem : config.subsystems) {
+                    if (subsystem) {
+                        subsystem->PreInitUI(*pui);
+                    }
+                }
                 pui->Init(system.get(), "SEA-Stack YAML");
                 gui_init_ok = true;
             } catch (const std::exception& e) {
@@ -902,7 +948,17 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 double current_time = system->GetChTime();
                 try {
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
+                    for (const auto& subsystem : config.subsystems) {
+                        if (subsystem) {
+                            subsystem->OnBeforeStep(current_time, loop_dt);
+                        }
+                    }
                     system->DoStepDynamics(loop_dt);
+                    for (const auto& subsystem : config.subsystems) {
+                        if (subsystem) {
+                            subsystem->OnAfterStep(system->GetChTime(), loop_dt);
+                        }
+                    }
                     if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     step_count++;
                     if (exporter) {
@@ -980,7 +1036,17 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 
                 try {
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
+                    for (const auto& subsystem : config.subsystems) {
+                        if (subsystem) {
+                            subsystem->OnBeforeStep(current_time, loop_dt);
+                        }
+                    }
                     system->DoStepDynamics(loop_dt);
+                    for (const auto& subsystem : config.subsystems) {
+                        if (subsystem) {
+                            subsystem->OnAfterStep(system->GetChTime(), loop_dt);
+                        }
+                    }
                     if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     step_count++;
                     if (exporter) {
@@ -1077,6 +1143,14 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             exporter->Finalize();
         }
 
+        // The exporter is reset when HDF5 setup throws (see the warning above).
+        // Reporting the path we would have written is misleading, so replace it
+        // with the reason there is no file.
+        if (!exporter && !persisted_hdf5_path.empty()) {
+            persisted_hdf5_path.clear();
+            artifact_note_text = "HDF5 export failed — no results file written (see warning above).";
+        }
+
         result.primary_artifact_path = persisted_hdf5_path;
         result.artifact_note = artifact_note_text;
 
@@ -1121,8 +1195,12 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                                                         config.cli_log_file_path);
         }
 
+        // Post-simulation declarative checks (see setup_checks.h).
+        const bool checks_passed =
+            EvaluatePostRunChecks(config.checks, config.subsystems, system->GetChTime());
+
         // Populate result
-        result.exit_code = diverged ? 2 : 0;
+        result.exit_code = diverged ? 2 : (checks_passed ? 0 : 6);
         result.wall_time_s = wall_s;
         result.sim_time_final = system->GetChTime();
         result.diverged = diverged;

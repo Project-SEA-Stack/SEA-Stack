@@ -25,11 +25,17 @@ endif()
 add_library(seastack_app_lib STATIC
     run_from_yaml.cpp
     single_run.cpp
+    model_yaml_postprocess.cpp
+    setup_checks.cpp
     campaign_runner.cpp
     cell_io.cpp
     app_init.cpp
     misc_options.cpp
     doctor.cpp
+    # Declarative Chrono::FEA structure scenario (parsed with yaml-cpp). FEA is
+    # part of core Chrono, so this compiles unconditionally (no vehicle gate).
+    structure_config.cpp
+    structure_subsystem.cpp
     ${GUI_SOURCES}
 )
 
@@ -48,6 +54,15 @@ target_link_libraries(seastack_app_lib
         SEAStack::ChronoAdapter
         Chrono::Chrono_parsers
 )
+
+# structure_config.cpp / setup_checks.cpp / single_run.cpp use yaml-cpp directly and are compiled
+# unconditionally, so ensure the yaml-cpp link is present regardless of the
+# optional EXTERNAL / VEHICLE features below.
+if(TARGET yaml-cpp::yaml-cpp)
+    target_link_libraries(seastack_app_lib PRIVATE yaml-cpp::yaml-cpp)
+elseif(TARGET Chrono::yaml-cpp)
+    target_link_libraries(seastack_app_lib PRIVATE Chrono::yaml-cpp)
+endif()
 
 if(SEASTACK_ENABLE_EXTERNAL AND TARGET seastack_external)
     target_link_libraries(seastack_app_lib PUBLIC SEAStack::External)
@@ -73,6 +88,16 @@ if(SEASTACK_ENABLE_VEHICLE AND TARGET Chrono::Chrono_vehicle)
     target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_vehicle)
     if(TARGET Chrono::Chrono_vehicle_vsg)
         target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_vehicle_vsg)
+    endif()
+
+    # Declarative vehicle + terrain scenario (parsed with yaml-cpp).
+    target_sources(seastack_app_lib PRIVATE vehicle_config.cpp vehicle_subsystem.cpp)
+    # vehicle_config.cpp needs yaml-cpp; it is otherwise only linked under
+    # SEASTACK_ENABLE_EXTERNAL, so link it here too when vehicle is on.
+    if(TARGET yaml-cpp::yaml-cpp)
+        target_link_libraries(seastack_app_lib PRIVATE yaml-cpp::yaml-cpp)
+    elseif(TARGET Chrono::yaml-cpp)
+        target_link_libraries(seastack_app_lib PRIVATE Chrono::yaml-cpp)
     endif()
 endif()
 

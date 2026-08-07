@@ -15,6 +15,10 @@
 #include <seastack/adapters/chrono/simulation_export.h>
 #include <seastack/infra/config/yaml_discovery.h>
 
+#include "scenario_subsystem.h"
+#include "setup_checks.h"
+
+#include <memory>
 #include <string>
 #include <variant>
 #include <vector>
@@ -65,6 +69,17 @@ struct SingleRunConfig {
     /// Optional out-of-process PTO (populated from setup YAML when enabled).
     bool has_external_pto = false;
     seastack::infra::SetupConfig::ExternalPtoConfig external_pto;
+
+    /// Optional scenario subsystems (vehicle, terrain, FEA structure, ...).
+    /// Empty keeps RunSingleCase behaviour identical to the pre-subsystem path.
+    std::vector<std::shared_ptr<IScenarioSubsystem>> subsystems;
+
+    /// UI kind override.  When Standard, the runner picks the strongest
+    /// PreferredUiKind() among subsystems.
+    seastack::viz::UiKind ui_kind = seastack::viz::UiKind::Standard;
+
+    /// Validation checks to run (from setup YAML `checks:` block).
+    std::vector<CheckConfig> checks;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).
