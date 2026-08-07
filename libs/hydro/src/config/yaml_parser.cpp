@@ -175,6 +175,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
     bool in_body_hydrostatics = false;
     bool body_had_hydrostatics_block = false;
     bool in_moordyn = false;
+    bool in_divergence = false;             // divergence: section
     HydroBody current_body;
     int line_number = 0;
 
@@ -257,6 +258,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             in_radiation_state_space = false;
             in_radiation_smoothing = in_radiation_taper = in_radiation_diagnostics = false;
             in_moordyn = false;
+            in_divergence = false;
             continue;
         }
         
@@ -274,6 +276,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             in_radiation_state_space = false;
             in_radiation_smoothing = in_radiation_taper = in_radiation_diagnostics = false;
             in_moordyn = false;
+            in_divergence = false;
             continue;
         }
         
@@ -290,6 +293,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             in_radiation_state_space = false;
             in_radiation_smoothing = in_radiation_taper = in_radiation_diagnostics = false;
             in_moordyn = false;
+            in_divergence = false;
             continue;
         }
 
@@ -306,6 +310,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             in_waves = false;
             in_body = false;
             in_moordyn = false;
+            in_divergence = false;
             continue;
         }
 
@@ -322,6 +327,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             in_waves = false;
             in_body = false;
             in_moordyn = false;
+            in_divergence = false;
             continue;
         }
 
@@ -338,6 +344,25 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             in_radiation_state_space = false;
             in_radiation_smoothing = in_radiation_taper = in_radiation_diagnostics = false;
             in_body = false;
+            in_divergence = false;
+            continue;
+        }
+
+        if (indent == 2 && trimmed == "divergence:") {
+            if (in_body && !current_body.name.empty()) {
+                data.bodies.push_back(current_body);
+                explicit_hydrostatics_flags.push_back(body_had_hydrostatics_block);
+            }
+            in_divergence = true;
+            data.divergence.has_any = true;
+            in_bodies = false;
+            in_waves = false;
+            in_excitation = false;
+            in_radiation = false;
+            in_radiation_state_space = false;
+            in_radiation_smoothing = in_radiation_taper = in_radiation_diagnostics = false;
+            in_body = false;
+            in_moordyn = false;
             continue;
         }
         
@@ -399,7 +424,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             std::string key;
             std::string value;
             bool should_parse = (
-                (!in_bodies && !in_waves && in_hydrodynamics && !in_excitation && !in_radiation && !in_moordyn && indent == 2) ||
+                (!in_bodies && !in_waves && in_hydrodynamics && !in_excitation && !in_radiation && !in_moordyn && !in_divergence && indent == 2) ||
                 (in_excitation && indent == 4) ||
                 (in_radiation && indent == 4) ||
                 (in_radiation_state_space && indent == 6) ||
@@ -409,7 +434,8 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                 (in_body && indent == 6) ||
                 (in_body_hydrostatics && indent == 8) ||
                 (in_waves && (indent == 4 || (in_period_block && indent >= period_block_indent + 2) || ((in_waves_spreading || in_waves_discretization) && indent == 6) || (in_waves_partition_item && indent == 8) || (in_waves_partition_spreading && indent == 10))) ||
-                (in_moordyn && indent == 4)
+                (in_moordyn && indent == 4) ||
+                (in_divergence && indent == 4)
             );
             if (should_parse && ParseYAMLLine(line, key, value)) {
                 // ─────────────────────────────────────────────────────────────
@@ -502,7 +528,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                                         << value << "\"; using default");
                         }
                     }
-                } else if (!in_bodies && !in_waves && in_hydrodynamics && !in_excitation && !in_radiation && !in_moordyn && indent == 2) {
+                } else if (!in_bodies && !in_waves && in_hydrodynamics && !in_excitation && !in_radiation && !in_moordyn && !in_divergence && indent == 2) {
                     // Global hydrodynamics properties at top level
                     if (key == "radiation_method") {
                         data.radiation_method = value;
@@ -871,6 +897,28 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         data.moordyn_visualization_endpoint_radius = ParseDouble(value, -1.0);
                     } else if (key_lower == "visualization_node_marker_radius") {
                         data.moordyn_visualization_node_marker_radius = ParseDouble(value, -1.0);
+                    }
+                } else if (in_divergence) {
+                    std::string key_lower = key;
+                    std::transform(key_lower.begin(), key_lower.end(), key_lower.begin(), ::tolower);
+                    if (key_lower == "enabled") {
+                        data.divergence.enabled = ParseBool(value, true);
+                        data.divergence.has_enabled = true;
+                    } else if (key_lower == "max_roll_pitch") {
+                        data.divergence.max_roll_pitch_deg = ParseDouble(value, 90.0);
+                        data.divergence.has_max_roll_pitch = true;
+                    } else if (key_lower == "max_position") {
+                        data.divergence.max_position = ParseDouble(value, 200.0);
+                        data.divergence.has_max_position = true;
+                    } else if (key_lower == "max_velocity") {
+                        data.divergence.max_velocity = ParseDouble(value, 20.0);
+                        data.divergence.has_max_velocity = true;
+                    } else if (key_lower == "max_angular_velocity") {
+                        data.divergence.max_angular_velocity = ParseDouble(value, 5.0);
+                        data.divergence.has_max_angular_velocity = true;
+                    } else if (key_lower == "max_force") {
+                        data.divergence.max_force = ParseDouble(value, 1.0e10);
+                        data.divergence.has_max_force = true;
                     }
                 }
             }

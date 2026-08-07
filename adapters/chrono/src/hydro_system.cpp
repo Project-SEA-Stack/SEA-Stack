@@ -74,7 +74,8 @@ HydroSystem::HydroSystem(std::vector<std::shared_ptr<ChBody>> user_bodies,
         return EvaluateForces(time);
     };
     force_attacher_ = std::make_unique<ChronoForceAttacher>(
-        bodies_, std::move(evaluator), coupling.attach_hydro_force_callbacks);
+        bodies_, std::move(evaluator), coupling.attach_hydro_force_callbacks,
+        coupling.divergence);
 
     // Apply infinite-frequency added mass via Chrono's built-in ChLoadHydrodynamics.
     if (num_bodies_ > 0) {

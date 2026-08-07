@@ -104,12 +104,14 @@ int ChronoForceAttacher::ParseBodyNumber(const std::string& body_name) {
 ChronoForceAttacher::ChronoForceAttacher(
     std::vector<std::shared_ptr<::chrono::ChBody>> bodies,
     ForceEvaluator evaluator,
-    bool attach_forces_to_bodies)
+    bool attach_forces_to_bodies,
+    DivergenceLimits limits)
     : bodies_(std::move(bodies)),
       num_bodies_(static_cast<int>(bodies_.size())),
       force_evaluator_(std::move(evaluator)),
       prev_time_(-1),
-      attach_forces_to_bodies_(attach_forces_to_bodies) {
+      attach_forces_to_bodies_(attach_forces_to_bodies),
+      limits_(limits) {
 
     int total_dofs = kDofPerBody * num_bodies_;
     total_force_.assign(total_dofs, 0.0);
@@ -160,13 +162,28 @@ void ChronoForceAttacher::CheckBodyStateDivergence() {
         const double roll  = std::abs(bs.orientation_rpy[0]);
         const double pitch = std::abs(bs.orientation_rpy[1]);
 
-        bool bad = !std::isfinite(pos_mag) || !std::isfinite(vel_mag)
-                || !std::isfinite(angvel_mag) || !std::isfinite(roll) || !std::isfinite(pitch)
-                || pos_mag > kMaxPosition_m || vel_mag > kMaxVelocity_ms
-                || angvel_mag > kMaxAngVel_rads
-                || roll > kMaxRollPitch_rad || pitch > kMaxRollPitch_rad;
+        // Non-finite values always trip; magnitude caps only when enabled.
+        const bool non_finite = !std::isfinite(pos_mag) || !std::isfinite(vel_mag)
+                || !std::isfinite(angvel_mag) || !std::isfinite(roll) || !std::isfinite(pitch);
+        bool magnitude_bad = false;
+        if (limits_.enabled) {
+            if (limits_.max_position_m > 0.0 && pos_mag > limits_.max_position_m) {
+                magnitude_bad = true;
+            }
+            if (limits_.max_velocity_ms > 0.0 && vel_mag > limits_.max_velocity_ms) {
+                magnitude_bad = true;
+            }
+            if (limits_.max_ang_vel_rads > 0.0 && angvel_mag > limits_.max_ang_vel_rads) {
+                magnitude_bad = true;
+            }
+            if (limits_.max_roll_pitch_rad > 0.0
+                    && (roll > limits_.max_roll_pitch_rad
+                        || pitch > limits_.max_roll_pitch_rad)) {
+                magnitude_bad = true;
+            }
+        }
 
-        if (bad && !diverged_) {
+        if ((non_finite || magnitude_bad) && !diverged_) {
             diverged_ = true;
             if (!divergence_logged_) {
                 divergence_logged_ = true;
@@ -176,9 +193,12 @@ void ChronoForceAttacher::CheckBodyStateDivergence() {
                     << " m/s, ang_vel=" << angvel_mag << " rad/s"
                     << ", roll=" << (roll * kRadToDeg) << " deg"
                     << ", pitch=" << (pitch * kRadToDeg) << " deg"
-                    << " (limits: " << kMaxPosition_m << " m, "
-                    << kMaxVelocity_ms << " m/s, " << kMaxAngVel_rads << " rad/s, "
-                    << (kMaxRollPitch_rad * kRadToDeg) << " deg roll/pitch)");
+                    << " (limits enabled=" << (limits_.enabled ? "true" : "false")
+                    << ", max_pos=" << limits_.max_position_m << " m"
+                    << ", max_vel=" << limits_.max_velocity_ms << " m/s"
+                    << ", max_ang_vel=" << limits_.max_ang_vel_rads << " rad/s"
+                    << ", max_roll_pitch="
+                    << (limits_.max_roll_pitch_rad * kRadToDeg) << " deg)");
             }
             return;
         }
@@ -188,7 +208,11 @@ void ChronoForceAttacher::CheckBodyStateDivergence() {
 void ChronoForceAttacher::CheckForceValidity() {
     const int total_dofs = kDofPerBody * num_bodies_;
     for (int i = 0; i < total_dofs; ++i) {
-        if (!std::isfinite(total_force_[i]) || std::abs(total_force_[i]) > kMaxForceMagnitude) {
+        const bool non_finite = !std::isfinite(total_force_[i]);
+        const bool magnitude_bad = limits_.enabled
+                && limits_.max_force_magnitude > 0.0
+                && std::abs(total_force_[i]) > limits_.max_force_magnitude;
+        if (non_finite || magnitude_bad) {
             const int body_idx = i / kDofPerBody;
             const int dof = i % kDofPerBody;
             if (!divergence_logged_) {
@@ -196,7 +220,8 @@ void ChronoForceAttacher::CheckForceValidity() {
                 LOG_ERROR("Invalid force detected at t=" << prev_time_
                     << " s on body" << (body_idx + 1) << " DOF " << dof
                     << " value=" << total_force_[i]
-                    << " (limit: " << kMaxForceMagnitude << ")"
+                    << " (limits enabled=" << (limits_.enabled ? "true" : "false")
+                    << ", max_force=" << limits_.max_force_magnitude << ")"
                     << " — zeroing all forces");
             }
             diverged_ = true;

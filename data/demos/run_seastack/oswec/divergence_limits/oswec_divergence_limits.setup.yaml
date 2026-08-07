@@ -1,0 +1,5 @@
+model_file: oswec_divergence_limits.model.yaml
+simulation_file: oswec_divergence_limits.simulation.yaml
+hydro_file: oswec_divergence_limits.hydro.yaml
+
+output_directory: outputs

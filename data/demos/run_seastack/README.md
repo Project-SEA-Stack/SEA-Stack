@@ -49,6 +49,7 @@ parameters**, and an **available cases** table (paths below are relative to
 | iea_sphere | decay_lin_5m | IEA sphere, linear hydrostatics, 5 m drop | `iea_sphere/decay_lin_5m/iea_sphere_decay_lin_5m.setup.yaml` |
 | oswec | regular_waves | OSWEC flap, regular waves | `oswec/regular_waves/oswec_regular_waves.setup.yaml` |
 | oswec | irregular_waves | OSWEC flap, JONSWAP irregular sea | `oswec/irregular_waves/oswec_irregular_waves.setup.yaml` |
+| oswec | divergence_limits | Free flap + configurable hydro `divergence:` limits (raised roll/pitch) | `oswec/divergence_limits/oswec_divergence_limits.setup.yaml` |
 | oswec | external_pto* | Irregular waves + out-of-process Python PTO on RSDA (linear / adaptive / hydraulic) | `oswec/external_pto*/` |
 | oswec | decay | OSWEC flap free decay in still water (minimal) | `oswec/decay/oswec_decay.setup.yaml` |
 | f3of | irregular_waves | F3OF platform, JONSWAP irregular sea, surge restraint | `f3of/irregular_waves/f3of_irregular_waves.setup.yaml` |

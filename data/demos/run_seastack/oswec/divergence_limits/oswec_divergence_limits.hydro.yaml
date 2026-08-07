@@ -1,0 +1,43 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/oswec.h5
+    - name: body2
+      h5_file: ../assets/hydroData/oswec.h5
+
+  waves:
+    type: irregular
+    depth: 50.0
+    # Slightly larger sea than irregular_waves so the free flap is more
+    # likely to approach large pitch angles.
+    height: 3.5
+    period: 8.0
+    direction: 0
+    spectrum: jonswap
+    gamma: 3.3
+    ramp_duration: 40.0
+    seed: 42
+
+  radiation:
+    method: rirf_convolution
+    smoothing:
+      type: sg
+      window_length: 5
+    taper:
+      start_percent: 0.85
+      end_percent: 1.0
+      final_amplitude: 0.0
+
+  # Blow-up detector on ChronoForceAttacher (not a joint stop).
+  # Defaults when this block is omitted: enabled, 90 deg roll/pitch, 200 m, …
+  # Pure Chrono runs with no hydro YAML never hit this guard.
+  divergence:
+    enabled: true
+    max_roll_pitch: 180.0   # deg (default is 90); 0 = unlimited for this entry
+    # max_position: 200.0
+    # max_velocity: 20.0
+    # max_angular_velocity: 5.0
+    # max_force: 1.0e10
+    #
+    # Alternative — skip all magnitude checks (NaN/Inf still abort):
+    # enabled: false
