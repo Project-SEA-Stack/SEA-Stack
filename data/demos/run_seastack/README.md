@@ -55,6 +55,9 @@ parameters**, and an **available cases** table (paths below are relative to
 | f3of | decay_dt3 | F3OF platform, DT3 flap pitch decay (base locked) | `f3of/decay_dt3/f3of_decay_dt3.setup.yaml` |
 | f3of | decay_dt1, decay_dt2 | *(source repo only; omitted from release ZIP)* | `f3of/decay_dt1/…`, `f3of/decay_dt2/…` |
 | trimaran | rigid | Three-hull trimaran with rigid cross-arms, irregular waves | `trimaran/model.setup.yaml` or `trimaran/rigid/trimaran_rigid.setup.yaml` |
+| ship2ship | transfer_hulls | Two coupled Wigley hulls, beam seas (hydro-only precursor) | `ship2ship/transfer_hulls/ship2ship_transfer_hulls.setup.yaml` |
+| ship2ship | transfer | Two coupled hulls, FEA linkspan bridge, HMMWV crossing in beam seas | `ship2ship/transfer/ship2ship_transfer.setup.yaml` |
+| rov | crawler_drive | Support vessel + tracked crawler on lazy-wave MoorDyn umbilical | `rov/crawler_drive/crawler_drive.setup.yaml` |
 
 **Note:** RM3 `irregular_waves` and OSWEC `irregular_waves` use **long-crested** seas with single-heading BEMIO data (`rm3.h5`, `oswec.h5`). For **bimodal** or **directional spreading** examples, see **5sa** `bimodal` / `spreading` and scripts under `5sa/assets/` and `wigley/assets/`.
 

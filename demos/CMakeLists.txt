@@ -40,11 +40,13 @@ build_demo(trimaran  trimaran_fea)
 
 build_demo(vlfp      vlfp_reg_waves)
 
-# Interactive drive-on demo: needs Chrono::Vehicle and (for keyboard driving)
+# Interactive drive-on demos: need Chrono::Vehicle and (for keyboard driving)
 # the VSG-based GUI.
 if(SEASTACK_ENABLE_VEHICLE AND TARGET Chrono::Chrono_vehicle
    AND SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
-    build_demo(vlfp  vlfp_vehicle)
+    build_demo(vlfp       vlfp_vehicle)
+    # ship2ship_transfer and rov_umbilical migrated to YAML cases under
+    # data/demos/run_seastack/ship2ship/ and data/demos/run_seastack/rov/
 endif()
 
 if(SEASTACK_ENABLE_MOORING)

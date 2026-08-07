@@ -35,3 +35,13 @@ usually goes under `GetDemoOutDir()` in a subfolder named after the demo group
 
 ¹ Built only when `SEASTACK_ENABLE_MOORING` is enabled.
 ² Built only when `SEASTACK_ENABLE_VEHICLE` and `SEASTACK_ENABLE_VSG` are enabled.
+
+## Migrated to YAML (run via run_seastack)
+
+The following demos have been migrated to YAML-driven cases and are no longer
+built as standalone C++ executables. Run them via `run_seastack`:
+
+| YAML Case | Description |
+|-----------|-------------|
+| [`data/demos/run_seastack/ship2ship/transfer/`](../data/demos/run_seastack/ship2ship/transfer/README.md) | Two coupled hulls, FEA linkspan bridge, HMMWV crossing in beam seas |
+| [`data/demos/run_seastack/rov/crawler_drive/`](../data/demos/run_seastack/rov/crawler_drive/README.md) | Support vessel and tracked seabed crawler on a lazy-wave MoorDyn umbilical |
