@@ -362,9 +362,17 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                     const auto apply_appearance =
                         [&](const std::shared_ptr<::chrono::ChVisualShapeTriangleMesh>& tri) {
                             if (has_opacity) {
+                                // Fill a complete PBR material: Chrono VSG enables alpha
+                                // blending when opacity < 1, and a default-constructed
+                                // material (roughness/metallic = 0) can crash the Vulkan
+                                // pipeline once the viewer starts stepping/rendering.
                                 auto mat = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
                                 mat->SetDiffuseColor(has_color ? ::chrono::ChColor(r, g, b)
                                                                : ::chrono::ChColor(0.7f, 0.7f, 0.75f));
+                                mat->SetSpecularColor(::chrono::ChColor(0.25f, 0.25f, 0.25f));
+                                mat->SetSpecularExponent(64.0f);
+                                mat->SetRoughness(0.45f);
+                                mat->SetMetallic(0.05f);
                                 mat->SetOpacity(opacity);
                                 tri->GetMaterials().clear();
                                 tri->AddMaterial(mat);

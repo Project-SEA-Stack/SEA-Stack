@@ -82,18 +82,28 @@ void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVi
             continue;
         }
 
-        // Shapes that already carry a translucent material came from model YAML
-        // (bodies[].visualization.opacity < 1). Leave them alone so the scene
-        // paint does not force them opaque.
+        // Translucent shapes come from model YAML opacity < 1. Keep that alpha
+        // (and the YAML diffuse colour) but still apply painted-metal PBR fields
+        // so Chrono VSG gets a complete material for the blend pipeline.
+        float preserved_opacity = 1.0f;
+        ::chrono::ChColor preserved_diffuse = mat.GetDiffuseColor();
         bool has_translucent = false;
         for (unsigned int m = 0; m < num_materials; ++m) {
             const auto& existing = shape->GetMaterial(m);
             if (existing && existing->GetOpacity() < 1.0f) {
                 has_translucent = true;
+                preserved_opacity = existing->GetOpacity();
+                preserved_diffuse = existing->GetDiffuseColor();
                 break;
             }
         }
         if (has_translucent) {
+            auto merged = ::chrono_types::make_shared<::chrono::ChVisualMaterial>(mat);
+            merged->SetDiffuseColor(preserved_diffuse);
+            merged->SetOpacity(preserved_opacity);
+            for (unsigned int m = 0; m < num_materials; ++m) {
+                shape->SetMaterial(m, merged);
+            }
             continue;
         }
 
