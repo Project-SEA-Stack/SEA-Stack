@@ -17,7 +17,8 @@ hydrodynamics:
     gamma: 3.3
     ramp_duration: 40.0
     seed: 42
-
+    discretization:
+      n_omega: 512
   radiation:
     method: rirf_convolution
     smoothing:
@@ -29,7 +30,7 @@ hydrodynamics:
       final_amplitude: 0.0
 
   # Blow-up detector on ChronoForceAttacher (not a joint stop).
-  # Defaults when this block is omitted: enabled, 90 deg roll/pitch, 200 m, …
+  # Defaults when this block is omitted: enabled, 90 deg roll/pitch, 200 m, â€¦
   # Pure Chrono runs with no hydro YAML never hit this guard.
   divergence:
     enabled: true
@@ -39,5 +40,5 @@ hydrodynamics:
     # max_angular_velocity: 5.0
     # max_force: 1.0e10
     #
-    # Alternative — skip all magnitude checks (NaN/Inf still abort):
+    # Alternative â€” skip all magnitude checks (NaN/Inf still abort):
     # enabled: false

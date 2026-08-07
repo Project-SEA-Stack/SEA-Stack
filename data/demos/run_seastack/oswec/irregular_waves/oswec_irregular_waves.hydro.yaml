@@ -15,7 +15,8 @@ hydrodynamics:
     gamma: 3.3
     ramp_duration: 60.0
     seed: 42
-
+    discretization:
+      n_omega: 512
   radiation:
     method: rirf_convolution
     smoothing:

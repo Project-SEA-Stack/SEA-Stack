@@ -79,7 +79,7 @@ struct SeaStateDefinition {
     std::string eta_file_path;
 
     // --- Discretization ---
-    int n_omega     = 256;  ///< Number of frequency bins (matches kDefaultWaveSpectralNOmega for YAML defaults)
+    int n_omega     = 512;  ///< Number of frequency bins (matches kDefaultWaveSpectralNOmega for YAML defaults)
     int n_theta     = 1;    ///< Number of directional bins (1 = long-crested)
     double omega_min = 0.0; ///< Minimum angular frequency [rad/s] (0 = auto)
     double omega_max = 0.0; ///< Maximum angular frequency [rad/s] (0 = auto)
