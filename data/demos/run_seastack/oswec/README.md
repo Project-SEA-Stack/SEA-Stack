@@ -19,6 +19,7 @@ axis, representative of a classical oscillating-surge converter geometry.
 |------|-------------|------------|
 | regular_waves | Regular wave excitation | `regular_waves/oswec_regular_waves.setup.yaml` |
 | irregular_waves | JONSWAP irregular sea (long-crested with single-heading `oswec.h5`) | `irregular_waves/oswec_irregular_waves.setup.yaml` |
+| divergence_limits | Free flap + raised roll/pitch blow-up threshold (`divergence:` in hydro YAML) | `divergence_limits/oswec_divergence_limits.setup.yaml` |
 | decay | Free decay in still water | `decay/oswec_decay.setup.yaml` |
 | external_pto | Irregular waves + out-of-process linear damper on RSDA `PTO` | `external_pto/oswec_external_pto.setup.yaml` |
 | external_pto_adaptive | Same sea / RSDA; PI-adapted `c(t)` + torque saturation | `external_pto_adaptive/oswec_external_pto_adaptive.setup.yaml` |
