@@ -915,9 +915,10 @@ The adapter calls **Hydro** with a `SystemState` from Chrono bodies and applies 
 
 `opacity` applies to **mesh** visuals (`model_file` / triangle mesh) only.
 Chrono primitive `shapes:` (cylinder, sphere, …) are not rewritten by this
-post-pass. Opaque bodies still receive the VSG painted-metal appearance;
-shapes whose material already has opacity `< 1` are left alone so the YAML
-alpha survives into the GUI. See `oswec/translucent_hull`.
+post-pass. Opaque bodies receive the VSG painted-metal appearance. Shapes with opacity
+`< 1` keep the YAML alpha and diffuse colour, merged onto painted-metal PBR
+fields so Chrono VSG’s translucent blend path gets a complete material. See
+`oswec/translucent_hull`.
 
 ### F.2 Core data types (C++)
 
