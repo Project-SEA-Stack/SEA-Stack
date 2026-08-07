@@ -318,6 +318,18 @@ file(COPY ${SEASTACK_BUILD_DATA}/demos/run_seastack/vlfp/assets/geometry
 file(COPY ${SEASTACK_BUILD_DATA}/demos/run_seastack/vlfp/assets/hydroData
      DESTINATION ${SEASTACK_BUILD_DATA}/demos/vlfp)
 
+# ship2ship and rov hydroData is produced by their assets/run_bem.py. Guard the
+# copies so a tree without generated BEM data still configures; the demos then
+# fail at runtime with a clear "run run_bem.py first" message.
+foreach(_veh_case ship2ship rov)
+    foreach(_veh_asset geometry hydroData mooring)
+        if(EXISTS ${SEASTACK_BUILD_DATA}/demos/run_seastack/${_veh_case}/assets/${_veh_asset})
+            file(COPY ${SEASTACK_BUILD_DATA}/demos/run_seastack/${_veh_case}/assets/${_veh_asset}
+                 DESTINATION ${SEASTACK_BUILD_DATA}/demos/${_veh_case})
+        endif()
+    endforeach()
+endforeach()
+
 # Copy Chrono runtime data (skybox, colormaps, vsg, logo) into build tree so
 # SetInitialEnvironment() finds HC_DATA_DIR/chrono/ at runtime.
 if(SEASTACK_ENABLE_CHRONO AND EXISTS "${CHRONO_DATA_DIR}")
@@ -365,14 +377,34 @@ if(SEASTACK_ENABLE_CHRONO AND EXISTS "${CHRONO_DATA_DIR}")
     if(EXISTS "${CHRONO_DATA_DIR}/logo_chrono_alpha.png")
         file(COPY ${CHRONO_DATA_DIR}/logo_chrono_alpha.png DESTINATION ${SEASTACK_BUILD_DATA}/chrono)
     endif()
-    # HMMWV JSON specs + meshes for the vehicle demos. Staged under
+    # Vehicle JSON specs + meshes for the vehicle demos. Staged under
     # data/chrono/vehicle/ so packaged installs resolve them via
     # GetChronoDataDir() + "vehicle/" (dev builds read the canonical Chrono
     # data tree directly). POV-Ray exports are postprocessing-only (~27 MB).
-    if(SEASTACK_ENABLE_VEHICLE AND EXISTS "${CHRONO_DATA_DIR}/vehicle/hmmwv")
-        file(COPY "${CHRONO_DATA_DIR}/vehicle/hmmwv"
-             DESTINATION "${SEASTACK_BUILD_DATA}/chrono/vehicle"
-             PATTERN "POV-Ray" EXCLUDE)
+    #   hmmwv - wheeled (vlfp_vehicle demo, ship2ship/transfer case)
+    #   M113  - tracked (rov/crawler_drive case)
+    if(SEASTACK_ENABLE_VEHICLE)
+        foreach(_veh_model hmmwv M113)
+            if(EXISTS "${CHRONO_DATA_DIR}/vehicle/${_veh_model}")
+                file(COPY "${CHRONO_DATA_DIR}/vehicle/${_veh_model}"
+                     DESTINATION "${SEASTACK_BUILD_DATA}/chrono/vehicle"
+                     PATTERN "POV-Ray" EXCLUDE)
+            endif()
+        endforeach()
+        # Height maps and ground textures for RigidTerrain patches (the
+        # rov/crawler_drive seabed uses terrain/height_maps/bump64.bmp).
+        if(EXISTS "${CHRONO_DATA_DIR}/vehicle/terrain/height_maps")
+            file(COPY "${CHRONO_DATA_DIR}/vehicle/terrain/height_maps"
+                 DESTINATION "${SEASTACK_BUILD_DATA}/chrono/vehicle/terrain")
+        endif()
+        # Only the loose texture files; the per-material subdirectories are
+        # multi-megabyte PBR sets that no SEA-Stack demo uses.
+        file(GLOB _terrain_textures "${CHRONO_DATA_DIR}/vehicle/terrain/textures/*.jpg"
+                                    "${CHRONO_DATA_DIR}/vehicle/terrain/textures/*.png")
+        foreach(_f ${_terrain_textures})
+            file(COPY "${_f}"
+                 DESTINATION "${SEASTACK_BUILD_DATA}/chrono/vehicle/terrain/textures")
+        endforeach()
     endif()
 endif()
 
@@ -832,6 +864,12 @@ install(DIRECTORY ${SEASTACK_BUILD_DATA}/chrono/ DESTINATION data/chrono COMPONE
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/demos/run_seastack/
         DESTINATION demos COMPONENT runtime
         REGEX "^wigley"              EXCLUDE
+        # Vehicle cases need SEASTACK_ENABLE_VEHICLE, which release builds do not
+        # set, so the packaged binary cannot run them. Keeping them out also keeps
+        # ~19 MB of BEM data out of the ZIP. Drop these two lines once vehicle
+        # builds are released.
+        REGEX "^rov"                 EXCLUDE
+        REGEX "^ship2ship"           EXCLUDE
         # Omit redundant cases from the release ZIP (full tree remains in the source repo).
         REGEX "rm3/regular_waves"    EXCLUDE
         REGEX "f3of/decay_dt1"     EXCLUDE

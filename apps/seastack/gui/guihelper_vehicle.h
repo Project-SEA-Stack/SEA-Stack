@@ -3,6 +3,11 @@
 // Vehicle-aware SEA-Stack GUI (only built when SEASTACK_ENABLE_VEHICLE and
 // SEASTACK_ENABLE_VSG are both ON).
 //
+// Two variants, differing only in which Chrono::Vehicle visual system they wrap:
+//   VehicleGUI         -- ChWheeledVehicleVisualSystemVSG (HMMWV and similar)
+//   TrackedVehicleGUI  -- ChTrackedVehicleVisualSystemVSG (M113 and similar)
+// Both share the same camera behaviour and the same public API.
+//
 // VehicleGUI renders the scene through Chrono::Vehicle's
 // ChWheeledVehicleVisualSystemVSG instead of the plain ChVisualSystemVSG, which
 // adds (on top of the standard SEA-Stack water surface and ImGui overlay):
@@ -38,9 +43,10 @@ class ChVehicle;
 
 namespace seastack::viz {
 
-class GUIImplVehicleVSG;
+/// Non-template access to whichever Chrono vehicle visual system the impl wraps.
+class VehicleVisAccess;
 
-/// SEA-Stack GUI variant for interactive Chrono::Vehicle demos.
+/// SEA-Stack GUI variant for interactive Chrono::Vehicle demos (wheeled).
 class VehicleGUI : public GUI {
   public:
     VehicleGUI();
@@ -60,8 +66,22 @@ class VehicleGUI : public GUI {
     /// Advance the chase-camera dynamics by `step` seconds.
     void AdvanceVehicleVis(double step);
 
+  protected:
+    /// For the tracked variant, which only swaps the visual system type.
+    explicit VehicleGUI(std::shared_ptr<seastack::viz::GUIImpl> impl);
+
   private:
-    GUIImplVehicleVSG* VehicleImpl() const;
+    VehicleVisAccess* VehicleImpl() const;
+};
+
+/// SEA-Stack GUI variant for tracked Chrono::Vehicle demos (M113 and similar).
+///
+/// Identical API and camera behaviour to VehicleGUI; only the underlying Chrono
+/// visual system differs, so the track shoes, sprockets and road wheels are
+/// rendered and the vehicle ImGui panel shows tracked-vehicle statistics.
+class TrackedVehicleGUI : public VehicleGUI {
+  public:
+    TrackedVehicleGUI();
 };
 
 }  // namespace seastack::viz
