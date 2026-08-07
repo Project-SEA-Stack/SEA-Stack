@@ -121,8 +121,19 @@ SetupConfig ParseSetupFile(const std::filesystem::path& setup_path) {
         } else if (key == "output_directory") {
             config.output_directory = value;
             config.has_output_directory = true;
+        } else if (key == "vehicle_file") {
+            config.vehicle_file = value;
+            config.has_vehicle_file = true;
+            seastack::infra::debug::LogDebug(std::string("Vehicle file: ") + value);
+        } else if (key == "structure_file") {
+            config.structure_file = value;
+            config.has_structure_file = true;
+            seastack::infra::debug::LogDebug(std::string("Structure file: ") + value);
         }
     }
+
+    // Nested `checks:` is loaded by the app layer (yaml-cpp). Infra stays
+    // stdlib-only; see LoadChecksFromSetupYaml in apps/seastack.
     
     return config;
 }

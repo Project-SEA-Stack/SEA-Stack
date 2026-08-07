@@ -53,6 +53,20 @@ struct SetupConfig {
     /// Path as given in setup (`external_pto_file`), empty when inline `external_pto:`.
     std::string external_pto_file;
     bool has_external_pto_file = false;
+
+    /// Optional scenario extension files.  Parsed here as plain paths relative
+    /// to the case directory; the runner resolves and loads them only when the
+    /// corresponding SEA-Stack feature is compiled in.
+    /// Vehicle + terrain scenario (requires SEASTACK_ENABLE_VEHICLE).
+    std::string vehicle_file;
+    bool has_vehicle_file = false;
+    /// FEA structure scenario (Euler-beam mesh, mates, rigid attachments).
+    std::string structure_file;
+    bool has_structure_file = false;
+
+    // Note: the nested `checks:` block is not represented here.  ParseSetupFile
+    // is a flat line scanner with no YAML library, so nested schemas are parsed
+    // and evaluated in the app layer (apps/seastack/setup_checks.h).
 };
 
 /// Parse a model.setup.yaml file and return configuration
