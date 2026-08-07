@@ -497,12 +497,13 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     for (const auto& ep_cfg : config.external_ptos) {
                         external_pto_attachments.push_back(
                             seastack::app::ExternalPtoAttachment::Attach(
-                                *system, ep_cfg, loop_dt));
+                                *system, ep_cfg, loop_dt, config.model_file));
                     }
                 } else {
                     external_pto_attachments.push_back(
                         seastack::app::ExternalPtoAttachment::Attach(
-                            *system, config.external_pto, loop_dt));
+                            *system, config.external_pto, loop_dt,
+                            config.model_file));
                 }
             } catch (const std::exception& e) {
                 seastack::infra::cli::LogError(

@@ -27,13 +27,28 @@
 namespace seastack {
 namespace chrono {
 
+/// Optional Chrono LinearSpringDamperForce term layered on a PTO functor.
+/// Sign convention matches Chrono utils::LinearSpringDamperForce:
+///   F_native = preload - k * displacement - c * velocity
+/// Default zeros are an exact no-op.
+struct NativeSpringDamper {
+    double k = 0.0;
+    double c = 0.0;
+    double preload = 0.0;
+
+    double Evaluate(double displacement, double velocity) const {
+        return preload - k * displacement - c * velocity;
+    }
+};
+
 /// ChLinkTSDA::ForceFunctor that delegates to an IPTOModel.
 ///
 /// Displacement is (length - rest_length); velocity sign follows Chrono
 /// (positive = extending).
 class PTOForceFunctor : public ::chrono::ChLinkTSDA::ForceFunctor {
   public:
-    explicit PTOForceFunctor(std::shared_ptr<seastack::pto::IPTOModel> model);
+    explicit PTOForceFunctor(std::shared_ptr<seastack::pto::IPTOModel> model,
+                             NativeSpringDamper native = {});
 
     double evaluate(double time,
                     double rest_length,
@@ -43,6 +58,7 @@ class PTOForceFunctor : public ::chrono::ChLinkTSDA::ForceFunctor {
 
   private:
     std::shared_ptr<seastack::pto::IPTOModel> model_;
+    NativeSpringDamper native_;
 };
 
 /// ChLinkRSDA::TorqueFunctor that delegates to an IPTOModel.
@@ -51,7 +67,8 @@ class PTOForceFunctor : public ::chrono::ChLinkTSDA::ForceFunctor {
 /// return value is torque [N·m].
 class PTOTorqueFunctor : public ::chrono::ChLinkRSDA::TorqueFunctor {
   public:
-    explicit PTOTorqueFunctor(std::shared_ptr<seastack::pto::IPTOModel> model);
+    explicit PTOTorqueFunctor(std::shared_ptr<seastack::pto::IPTOModel> model,
+                              NativeSpringDamper native = {});
 
     double evaluate(double time,
                     double rest_angle,
@@ -61,6 +78,7 @@ class PTOTorqueFunctor : public ::chrono::ChLinkRSDA::TorqueFunctor {
 
   private:
     std::shared_ptr<seastack::pto::IPTOModel> model_;
+    NativeSpringDamper native_;
 };
 
 #ifdef SEASTACK_HAVE_EXTERNAL
@@ -69,7 +87,8 @@ class PTOTorqueFunctor : public ::chrono::ChLinkRSDA::TorqueFunctor {
 class ExternalPtoForceFunctor : public ::chrono::ChLinkTSDA::ForceFunctor {
   public:
     explicit ExternalPtoForceFunctor(
-        std::shared_ptr<seastack::external::ExternalPtoModel> model);
+        std::shared_ptr<seastack::external::ExternalPtoModel> model,
+        NativeSpringDamper native = {});
 
     double evaluate(double time,
                     double rest_length,
@@ -79,13 +98,15 @@ class ExternalPtoForceFunctor : public ::chrono::ChLinkTSDA::ForceFunctor {
 
   private:
     std::shared_ptr<seastack::external::ExternalPtoModel> model_;
+    NativeSpringDamper native_;
 };
 
 /// Rich RSDA functor: packs link + body kinematics into ExternalPtoState.
 class ExternalPtoTorqueFunctor : public ::chrono::ChLinkRSDA::TorqueFunctor {
   public:
     explicit ExternalPtoTorqueFunctor(
-        std::shared_ptr<seastack::external::ExternalPtoModel> model);
+        std::shared_ptr<seastack::external::ExternalPtoModel> model,
+        NativeSpringDamper native = {});
 
     double evaluate(double time,
                     double rest_angle,
@@ -95,6 +116,7 @@ class ExternalPtoTorqueFunctor : public ::chrono::ChLinkRSDA::TorqueFunctor {
 
   private:
     std::shared_ptr<seastack::external::ExternalPtoModel> model_;
+    NativeSpringDamper native_;
 };
 
 #endif  // SEASTACK_HAVE_EXTERNAL

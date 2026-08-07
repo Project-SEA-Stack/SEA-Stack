@@ -4,8 +4,9 @@
 
 namespace seastack::chrono {
 
-PTOForceFunctor::PTOForceFunctor(std::shared_ptr<seastack::pto::IPTOModel> model)
-    : model_(std::move(model)) {
+PTOForceFunctor::PTOForceFunctor(std::shared_ptr<seastack::pto::IPTOModel> model,
+                                 NativeSpringDamper native)
+    : model_(std::move(model)), native_(native) {
     if (!model_) {
         throw std::invalid_argument(
             "PTOForceFunctor requires a non-null IPTOModel");
@@ -18,12 +19,14 @@ double PTOForceFunctor::evaluate(double time,
                                  double length,
                                  double vel,
                                  const ::chrono::ChLinkTSDA& /*link*/) {
-    double displacement = length - rest_length;
-    return model_->ComputeForce(displacement, vel, time);
+    const double displacement = length - rest_length;
+    return model_->ComputeForce(displacement, vel, time)
+           + native_.Evaluate(displacement, vel);
 }
 
-PTOTorqueFunctor::PTOTorqueFunctor(std::shared_ptr<seastack::pto::IPTOModel> model)
-    : model_(std::move(model)) {
+PTOTorqueFunctor::PTOTorqueFunctor(std::shared_ptr<seastack::pto::IPTOModel> model,
+                                   NativeSpringDamper native)
+    : model_(std::move(model)), native_(native) {
     if (!model_) {
         throw std::invalid_argument(
             "PTOTorqueFunctor requires a non-null IPTOModel");
@@ -37,7 +40,8 @@ double PTOTorqueFunctor::evaluate(double time,
                                   double vel,
                                   const ::chrono::ChLinkRSDA& /*link*/) {
     const double displacement = angle - rest_angle;
-    return model_->ComputeForce(displacement, vel, time);
+    return model_->ComputeForce(displacement, vel, time)
+           + native_.Evaluate(displacement, vel);
 }
 
 #ifdef SEASTACK_HAVE_EXTERNAL
@@ -73,8 +77,9 @@ void FillBodyKinematics(::chrono::ChBodyFrame* body1,
 }  // namespace
 
 ExternalPtoForceFunctor::ExternalPtoForceFunctor(
-    std::shared_ptr<seastack::external::ExternalPtoModel> model)
-    : model_(std::move(model)) {
+    std::shared_ptr<seastack::external::ExternalPtoModel> model,
+    NativeSpringDamper native)
+    : model_(std::move(model)), native_(native) {
     if (!model_) {
         throw std::invalid_argument(
             "ExternalPtoForceFunctor requires a non-null ExternalPtoModel");
@@ -94,12 +99,13 @@ double ExternalPtoForceFunctor::evaluate(double time,
     s.displacement = length - rest_length;
     s.velocity = vel;
     FillBodyKinematics(link.GetBody1(), link.GetBody2(), s);
-    return model_->ComputeForce(s);
+    return model_->ComputeForce(s) + native_.Evaluate(s.displacement, vel);
 }
 
 ExternalPtoTorqueFunctor::ExternalPtoTorqueFunctor(
-    std::shared_ptr<seastack::external::ExternalPtoModel> model)
-    : model_(std::move(model)) {
+    std::shared_ptr<seastack::external::ExternalPtoModel> model,
+    NativeSpringDamper native)
+    : model_(std::move(model)), native_(native) {
     if (!model_) {
         throw std::invalid_argument(
             "ExternalPtoTorqueFunctor requires a non-null ExternalPtoModel");
@@ -119,7 +125,7 @@ double ExternalPtoTorqueFunctor::evaluate(double time,
     s.displacement = angle - rest_angle;
     s.velocity = vel;
     FillBodyKinematics(link.GetBody1(), link.GetBody2(), s);
-    return model_->ComputeForce(s);
+    return model_->ComputeForce(s) + native_.Evaluate(s.displacement, vel);
 }
 
 #endif  // SEASTACK_HAVE_EXTERNAL

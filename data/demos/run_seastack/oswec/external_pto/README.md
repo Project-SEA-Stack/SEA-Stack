@@ -26,8 +26,12 @@ tests.
 run_seastack --nogui data/demos/run_seastack/oswec/external_pto
 ```
 
-Uses `linear_damper_pto.py` (`τ = -c ω`). Sibling cases (same sea state /
-RSDA wiring; only the PTO physics differ):
+Uses `linear_damper_pto.py` (`τ = -c ω`). Model YAML spring/damping stay
+at zero so the Python module alone owns the torque; set
+`combine_native: true` on the attach YAML to layer model YAML `k`/`c` on
+top (see [EXTERNAL_FORCE_MODULES.md](../../../../docs/extending/EXTERNAL_FORCE_MODULES.md)).
+
+Sibling cases (same sea state / RSDA wiring; only the PTO physics differ):
 
 - [`../external_pto_adaptive/`](../external_pto_adaptive/) — adapting `c(t)`,
   torque saturation, and `reset()`.
