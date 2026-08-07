@@ -20,6 +20,43 @@ namespace seastack::mooring {
 using seastack::hydro::BodyState;
 using seastack::hydro::kDofPerBody;
 
+namespace {
+
+/**
+ * @brief Convert a SEA-Stack body orientation into MoorDyn's Euler convention.
+ *
+ * The two codes use different Tait-Bryan conventions for the same physical
+ * orientation, and they only agree for small angles or single-axis rotations:
+ *
+ *   SEA-Stack `BodyState::orientation_rpy` (from Chrono `GetCardanAnglesXYZ`)
+ *       intrinsic ZYX / extrinsic XYZ  ->  R = Rz(yaw) * Ry(pitch) * Rx(roll)
+ *   MoorDyn coupled-body input (`Euler2Quat`, MoorDyn `Misc.hpp`)
+ *       intrinsic XYZ                  ->  R = Rx(a) * Ry(b) * Rz(c)
+ *
+ * Passing the angles through unconverted misplaces body-attached fairleads by
+ * up to twice their offset once the body tilts appreciably. Rebuild the
+ * rotation matrix and re-extract it in MoorDyn's convention so that MoorDyn
+ * reconstructs exactly the orientation Chrono holds.
+ *
+ * @param rpy Orientation as [roll, pitch, yaw] in the SEA-Stack convention [rad].
+ * @return Angles [a, b, c] such that MoorDyn's Rx(a)*Ry(b)*Rz(c) equals the
+ *         input orientation [rad].
+ */
+Eigen::Vector3d ToMoorDynEulerXYZ(const Eigen::Vector3d& rpy) {
+    const Eigen::Matrix3d rotation =
+        (Eigen::AngleAxisd(rpy[2], Eigen::Vector3d::UnitZ()) *
+         Eigen::AngleAxisd(rpy[1], Eigen::Vector3d::UnitY()) *
+         Eigen::AngleAxisd(rpy[0], Eigen::Vector3d::UnitX()))
+            .toRotationMatrix();
+
+    // Eigen's eulerAngles(0, 1, 2) is the Rx*Ry*Rz decomposition MoorDyn uses.
+    // Any valid triple is acceptable: Euler2Quat maps it back to `rotation`
+    // exactly, including at the b = +/-90 deg degenerate attitude.
+    return rotation.eulerAngles(0, 1, 2);
+}
+
+}  // namespace
+
 MoorDynWrapper::MoorDynWrapper(const std::string& input_file,
                                const std::vector<int>& coupled_body_indices)
     : input_file_(input_file),
@@ -240,13 +277,14 @@ void MoorDynWrapper::PackState(const SystemState& state,
 
         const size_t offset = ci * kDofPerBody;
 
-        // Position: [x, y, z, roll, pitch, yaw]
+        // Position: [x, y, z] then orientation in MoorDyn's Euler convention.
+        const Eigen::Vector3d md_angles = ToMoorDynEulerXYZ(bs.orientation_rpy);
         x[offset + 0] = bs.position[0];
         x[offset + 1] = bs.position[1];
         x[offset + 2] = bs.position[2];
-        x[offset + 3] = bs.orientation_rpy[0];
-        x[offset + 4] = bs.orientation_rpy[1];
-        x[offset + 5] = bs.orientation_rpy[2];
+        x[offset + 3] = md_angles[0];
+        x[offset + 4] = md_angles[1];
+        x[offset + 5] = md_angles[2];
 
         // Velocity: [vx, vy, vz, wx, wy, wz]
         xd[offset + 0] = bs.linear_velocity[0];
