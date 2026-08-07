@@ -120,9 +120,21 @@ class GUI : public UI {
     std::shared_ptr<seastack::viz::GUIImpl> pImpl;
 };
 
+/// Which concrete UI implementation CreateUI should return.
+/// Vehicle kinds require SEASTACK_HAVE_VEHICLE + SEASTACK_HAVE_VSG; otherwise
+/// CreateUI falls back to Standard with a warning.
+enum class UiKind {
+    Standard = 0,
+    WheeledVehicle,
+    TrackedVehicle,
+};
+
 /**@brief Factory to create UI or GUI
  *
+ * @param visualizationOn  false → headless UI stub
+ * @param kind             Standard GUI, or a vehicle-aware GUI when built
  */
-std::shared_ptr<seastack::viz::UI> CreateUI(bool visualizationOn = true);
+std::shared_ptr<seastack::viz::UI> CreateUI(bool visualizationOn = true,
+                                           UiKind kind = UiKind::Standard);
 
 }  // namespace seastack::viz

@@ -5,14 +5,33 @@
 
 #include "guihelper_impl.h"
 
+#if defined(SEASTACK_HAVE_VEHICLE) && defined(SEASTACK_HAVE_VSG)
+#include "guihelper_vehicle.h"
+#endif
+
 using namespace seastack::viz;
 
-std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn) {
-    if (visualizationOn) {
-        return std::make_shared<seastack::viz::GUI>();
-    } else {
+std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn, UiKind kind) {
+    if (!visualizationOn) {
         return std::make_shared<seastack::viz::UI>();
     }
+
+#if defined(SEASTACK_HAVE_VEHICLE) && defined(SEASTACK_HAVE_VSG)
+    if (kind == UiKind::WheeledVehicle) {
+        return std::make_shared<seastack::viz::VehicleGUI>();
+    }
+    if (kind == UiKind::TrackedVehicle) {
+        return std::make_shared<seastack::viz::TrackedVehicleGUI>();
+    }
+#else
+    if (kind == UiKind::WheeledVehicle || kind == UiKind::TrackedVehicle) {
+        seastack::infra::cli::LogWarning(
+            "Vehicle GUI requested but SEASTACK_ENABLE_VEHICLE/VSG is off; "
+            "falling back to the standard GUI.");
+    }
+#endif
+
+    return std::make_shared<seastack::viz::GUI>();
 }
 
 // -----------------------------------------------------------------------------
