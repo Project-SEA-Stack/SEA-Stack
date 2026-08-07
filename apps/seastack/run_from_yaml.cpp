@@ -7,6 +7,7 @@
 #include "run_from_yaml.h"
 #include "single_run.h"
 #include "app_init.h"
+#include "setup_checks.h"
 
 #include <seastack/config.h>
 #include <seastack/version.h>
@@ -16,6 +17,17 @@
 #ifdef SEASTACK_HAVE_EXTERNAL
 #include "external_pto_yaml.h"
 #endif
+
+#if defined(SEASTACK_HAVE_VEHICLE)
+#include "vehicle_config.h"
+#include "vehicle_subsystem.h"
+#include <seastack/adapters/chrono/helper.h>
+#include <chrono_vehicle/ChVehicleDataPath.h>
+#endif
+
+// FEA structure scenario (Chrono::FEA is core Chrono; always available).
+#include "structure_config.h"
+#include "structure_subsystem.h"
 
 #include <algorithm>
 #include <chrono>
@@ -98,12 +110,15 @@ static bool TryFindYamlDouble(const std::string& yaml_path, const std::string& k
 }
 
 // Helper: resolve model/sim/hydro paths from setup file + CLI overrides.
+// `checks` receives the setup YAML `checks:` block, which infra's flat parser
+// cannot read (see setup_checks.h).
 static bool ResolveInputFiles(const std::filesystem::path& input_dir, 
                       const std::string& model_file_arg, 
                       const std::string& sim_file_arg,
                       std::string& model_file, 
                       std::string& sim_file, 
-                      SetupConfig& setup_config) {
+                      SetupConfig& setup_config,
+                      std::vector<CheckConfig>& checks) {
     
     seastack::infra::debug::LogDebug("Checking for setup file...");
     auto setup_file_path = FindSetupFile(input_dir);
@@ -113,6 +128,7 @@ static bool ResolveInputFiles(const std::filesystem::path& input_dir,
         seastack::infra::debug::LogDebug(std::string("Setup file found: ") + setup_file_path.generic_string());
         using_setup_file = true;
         setup_config = ParseSetupFile(setup_file_path);
+        checks = LoadChecksFromSetupYaml(setup_file_path);
         seastack::infra::debug::LogDebug("Setup file loaded");
 #ifdef SEASTACK_HAVE_EXTERNAL
         try {
@@ -198,6 +214,7 @@ static void DisplaySimulationSummary(const std::string& input_directory,
                              const std::string& model_file,
                              const std::string& sim_file,
                              const SetupConfig& setup_config,
+                             const std::vector<CheckConfig>& checks,
                              bool nogui,
                              const std::string& resolved_output_directory) {
     
@@ -227,6 +244,32 @@ static void DisplaySimulationSummary(const std::string& input_directory,
         summary_content.push_back(seastack::infra::cli::CreateAlignedLine("🌊", "Hydro", setup_config.hydro_file));
     } else {
         summary_content.push_back(seastack::infra::cli::CreateAlignedLine("🌊", "Hydro", "None (no forces)"));
+    }
+
+    // Scenario extensions: show them so the box describes what actually runs,
+    // not just the hydro half of the case.
+    if (setup_config.has_structure_file) {
+        summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+            "🌉", "Structure",
+            std::filesystem::path(setup_config.structure_file).filename().string()));
+    }
+
+    if (setup_config.has_vehicle_file) {
+        summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+            "🚗", "Vehicle",
+            std::filesystem::path(setup_config.vehicle_file).filename().string()));
+    }
+
+    if (!checks.empty()) {
+        std::string check_names;
+        for (const auto& check : checks) {
+            if (!check_names.empty()) {
+                check_names += ", ";
+            }
+            check_names += check.type;
+        }
+        summary_content.push_back(
+            seastack::infra::cli::CreateAlignedLine("✅", "Checks", check_names));
     }
 
     if (setup_config.has_external_pto) {
@@ -386,8 +429,10 @@ int RunFromYAML(int argc, char* argv[]) {
         std::string model_file;
         std::string sim_file;
         SetupConfig setup_config;
-        
-        if (!ResolveInputFiles(input_dir, model_file_arg, sim_file_arg, model_file, sim_file, setup_config)) {
+        std::vector<CheckConfig> setup_checks;
+
+        if (!ResolveInputFiles(input_dir, model_file_arg, sim_file_arg, model_file, sim_file,
+                               setup_config, setup_checks)) {
             seastack::infra::cli::LogError("[startup] Input file resolution failed. Check that the input directory contains valid YAML files.");
             seastack::infra::Shutdown();
             return 1;
@@ -403,8 +448,8 @@ int RunFromYAML(int argc, char* argv[]) {
                 (std::filesystem::path(input_directory) / setup_config.output_directory).generic_string();
         }
         if (!quiet_mode) {
-            DisplaySimulationSummary(input_directory, model_file, sim_file, setup_config, nogui,
-                                     resolved_output_directory);
+            DisplaySimulationSummary(input_directory, model_file, sim_file, setup_config,
+                                     setup_checks, nogui, resolved_output_directory);
         }
 
         // -----------------------------------------------------------------
@@ -442,6 +487,102 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.profile_mode = profile_mode;
         run_config.has_external_pto = setup_config.has_external_pto;
         run_config.external_pto = setup_config.external_pto;
+
+        // Pass declarative checks through to the single-run config
+        run_config.checks = setup_checks;
+
+        // -----------------------------------------------------------------
+        // 7b. Optional vehicle + terrain scenario subsystems
+        // -----------------------------------------------------------------
+#if defined(SEASTACK_HAVE_VEHICLE)
+        if (setup_config.has_vehicle_file) {
+            std::filesystem::path vehicle_path = setup_config.vehicle_file;
+            if (!vehicle_path.is_absolute()) {
+                vehicle_path = std::filesystem::path(input_directory) / setup_config.vehicle_file;
+            }
+            if (!std::filesystem::exists(vehicle_path)) {
+                seastack::infra::cli::LogError(
+                    std::string("Vehicle file does not exist: ") + vehicle_path.generic_string());
+                seastack::infra::Shutdown();
+                return 1;
+            }
+
+            // Chrono::Vehicle JSON specs and terrain height maps resolve against
+            // Chrono's vehicle data root (SetVehicleDataPath).
+            const std::string chrono_data_dir = seastack::chrono::GetChronoDataDir();
+            if (chrono_data_dir.empty()) {
+                seastack::infra::cli::LogError(
+                    "Chrono data directory not resolved; vehicle JSON specs unavailable.");
+                seastack::infra::Shutdown();
+                return 1;
+            }
+            ::chrono::vehicle::SetVehicleDataPath(chrono_data_dir + "vehicle/");
+
+            try {
+                VehicleScenarioConfig scenario =
+                    LoadVehicleConfigFromYaml(vehicle_path.generic_string());
+                // Terrain must be attached before the vehicle so the spawn
+                // height can be queried; push it onto the subsystem list first.
+                std::shared_ptr<TerrainSubsystem> terrain;
+                if (scenario.has_terrain && !scenario.terrain.patches.empty()) {
+                    terrain = std::make_shared<TerrainSubsystem>(scenario.terrain);
+                    run_config.subsystems.push_back(terrain);
+                }
+                run_config.subsystems.push_back(
+                    std::make_shared<VehicleSubsystem>(scenario.vehicle, terrain.get()));
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(
+                    std::string("Failed to load vehicle scenario: ") + e.what());
+                seastack::infra::Shutdown();
+                return 1;
+            }
+        }
+#else
+        if (setup_config.has_vehicle_file) {
+            seastack::infra::cli::LogError(
+                "This case specifies vehicle_file but run_seastack was built without "
+                "SEASTACK_ENABLE_VEHICLE. Reconfigure with -DSEASTACK_ENABLE_VEHICLE=ON.");
+            seastack::infra::Shutdown();
+            return 1;
+        }
+#endif
+
+        // -----------------------------------------------------------------
+        // 7c. Optional FEA structure scenario subsystem (Euler-beam frame)
+        //
+        // Pushed after the vehicle so its mates resolve against model bodies
+        // (body1/body2) that always exist post-Populate. Chrono::FEA is core
+        // Chrono, so there is no build gate here.
+        // -----------------------------------------------------------------
+        if (setup_config.has_structure_file) {
+            std::filesystem::path structure_path = setup_config.structure_file;
+            if (!structure_path.is_absolute()) {
+                structure_path = std::filesystem::path(input_directory) / setup_config.structure_file;
+            }
+            if (!std::filesystem::exists(structure_path)) {
+                seastack::infra::cli::LogError(
+                    std::string("Structure file does not exist: ") + structure_path.generic_string());
+                seastack::infra::Shutdown();
+                return 1;
+            }
+            try {
+                StructureConfig structure =
+                    LoadStructureConfigFromYaml(structure_path.generic_string());
+                // The static load-path check and the subsystem that samples it
+                // share one settle time, taken from the check when requested.
+                const CheckConfig* static_check =
+                    FindCheck(setup_checks, "bridge_static_load_path");
+                const double settle_time_s =
+                    static_check != nullptr ? static_check->time_s : CheckConfig{}.time_s;
+                run_config.subsystems.push_back(
+                    std::make_shared<StructureSubsystem>(std::move(structure), settle_time_s));
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(
+                    std::string("Failed to load structure scenario: ") + e.what());
+                seastack::infra::Shutdown();
+                return 1;
+            }
+        }
 
         SingleRunResult result = RunSingleCase(run_config);
 
