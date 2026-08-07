@@ -82,6 +82,21 @@ void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVi
             continue;
         }
 
+        // Shapes that already carry a translucent material came from model YAML
+        // (bodies[].visualization.opacity < 1). Leave them alone so the scene
+        // paint does not force them opaque.
+        bool has_translucent = false;
+        for (unsigned int m = 0; m < num_materials; ++m) {
+            const auto& existing = shape->GetMaterial(m);
+            if (existing && existing->GetOpacity() < 1.0f) {
+                has_translucent = true;
+                break;
+            }
+        }
+        if (has_translucent) {
+            continue;
+        }
+
         for (unsigned int m = 0; m < num_materials; ++m) {
             shape->SetMaterial(m, mat_ptr);
         }

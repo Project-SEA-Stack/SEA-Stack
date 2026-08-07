@@ -319,9 +319,13 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                         static_cast<bool>(vis_node["shape_location"]) &&
                         vis_node["shape_location"].IsSequence() &&
                         vis_node["shape_location"].size() >= 3;
-                    // Optional scalar opacity in [0,1]; <1 makes the mesh translucent
-                    // (e.g. a see-through hull). The VSG scene-paint step preserves
-                    // bodies whose material opacity is <1 (see guihelperVSG.cpp).
+                    // Optional scalar opacity in [0,1]; <1 makes a mesh visual
+                    // translucent (e.g. a see-through hull). Applies to mesh
+                    // shapes (model_file / triangle mesh) only; Chrono primitive
+                    // shapes under visualization.shapes: are left alone.
+                    // ApplyMaterialToAllVisualShapes skips materials with
+                    // opacity < 1 so the VSG painted-metal pass does not
+                    // overwrite them.
                     const bool has_opacity = static_cast<bool>(vis_node["opacity"]);
                     float opacity = 1.f;
                     if (has_opacity) {

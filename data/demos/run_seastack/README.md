@@ -50,6 +50,7 @@ parameters**, and an **available cases** table (paths below are relative to
 | oswec | regular_waves | OSWEC flap, regular waves | `oswec/regular_waves/oswec_regular_waves.setup.yaml` |
 | oswec | irregular_waves | OSWEC flap, JONSWAP irregular sea | `oswec/irregular_waves/oswec_irregular_waves.setup.yaml` |
 | oswec | divergence_limits | Free flap + configurable hydro `divergence:` limits (raised roll/pitch) | `oswec/divergence_limits/oswec_divergence_limits.setup.yaml` |
+| oswec | translucent_hull | Free flap with mesh `opacity` (see-through flap in VSG) | `oswec/translucent_hull/oswec_translucent_hull.setup.yaml` |
 | oswec | external_pto* | Irregular waves + out-of-process Python PTO on RSDA (linear / adaptive / hydraulic) | `oswec/external_pto*/` |
 | oswec | decay | OSWEC flap free decay in still water (minimal) | `oswec/decay/oswec_decay.setup.yaml` |
 | f3of | irregular_waves | F3OF platform, JONSWAP irregular sea, surge restraint | `f3of/irregular_waves/f3of_irregular_waves.setup.yaml` |

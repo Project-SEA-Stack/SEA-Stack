@@ -27,6 +27,8 @@ namespace seastack::viz {
 
 /// Applies a material to all visual shapes attached to a body.
 /// Replaces existing materials or adds the material if none exist.
+/// Skips shapes that already have a material with opacity < 1 so that
+/// model YAML `bodies[].visualization.opacity` survives into the VSG GUI.
 /// @param body The body whose visual shapes will receive the material.
 /// @param mat The material to apply.
 void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVisualMaterial& mat);
