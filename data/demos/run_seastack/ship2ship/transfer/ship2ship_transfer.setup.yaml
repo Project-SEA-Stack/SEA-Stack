@@ -1,0 +1,21 @@
+# Full ship-to-ship transfer: two coupled Wigley hulls in beam seas, a flexible
+# aluminium linkspan bridge (FEA StructureSubsystem) spanning the gap on four
+# pinned bearings, and an HMMWV parked on the starboard deck. Headless runs lock
+# the interactive driver on the brakes, so this is a settling / assembly smoke
+# test; drive across it in the GUI build with WASD.
+model_file: ship2ship_transfer.model.yaml
+simulation_file: ship2ship_transfer.simulation.yaml
+hydro_file: ship2ship_transfer.hydro.yaml
+structure_file: ship2ship_transfer.structure.yaml
+vehicle_file: ship2ship_transfer.vehicle.yaml
+output_directory: outputs
+
+# 20 Hz: fast enough for hull motion, bridge bearing reactions and the HMMWV,
+# without writing every 1e-3 s step for the whole vehicle body tree.
+output:
+  decimation: 50
+
+checks:
+  - type: bridge_static_load_path
+    time_s: 2.0
+    tolerance_percent: 10.0

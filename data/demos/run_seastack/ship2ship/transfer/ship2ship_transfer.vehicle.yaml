@@ -1,0 +1,37 @@
+# HMMWV on the starboard hull deck, facing +y (towards the bridge), driven
+# with the interactive (WASD) driver. Headless runs have no keyboard input, so
+# VehicleSubsystem locks the pedals to the brake automatically.
+#
+# JSON spec paths are relative to Chrono's vehicle data root, the same
+# convention as vehicle::GetVehicleDataFile().
+vehicle:
+  # Optional; cross-checked against the "Template" field of vehicle_json, which
+  # is what actually selects wheeled vs tracked.
+  type: WHEELED
+  vehicle_json: hmmwv/vehicle/HMMWV_Vehicle.json
+  engine_json: hmmwv/powertrain/HMMWV_EngineShafts.json
+  transmission_json: hmmwv/powertrain/HMMWV_AutomaticTransmissionShafts.json
+  tire_json: hmmwv/tire/HMMWV_RigidTire.json
+
+  # Starboard deck (spans y in [-16, -4]), near midship. z is an explicit world
+  # height: kDeckTopZ (3.5) + 0.6 m ride settle = 4.1 m.
+  initial_position: [0.0, -13.0, 4.1]
+  initial_yaw: 1.5707963267948966   # rad, +pi/2: facing +y across the bridge
+
+  visualization:
+    chassis: MESH
+    suspension: PRIMITIVES
+    wheel: MESH
+    tire: MESH
+
+  driver:
+    type: INTERACTIVE
+    interactive_deltas:
+      steering: 0.02
+      throttle: 0.02
+      braking: 0.06
+
+  chase_camera:
+    point: [0.0, 0.0, 1.75]
+    distance: 10.0
+    height: 1.0

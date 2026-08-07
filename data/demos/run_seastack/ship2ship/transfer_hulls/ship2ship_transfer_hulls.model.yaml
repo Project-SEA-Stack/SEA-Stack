@@ -1,0 +1,112 @@
+# Two 50 m Wigley hulls abeam at y = +/-10 m (8 m clear gap).
+# Mass / inertia / CoG z match assets/hydroData/ship2ship.h5.
+# Deck collision boxes (family 7) are present so a later vehicle case can land
+# on them; this hulls-only case never contacts them.
+chrono-version: 10.0
+
+model:
+  name: ship2ship_transfer_hulls
+  angle_degrees: false
+
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: ground
+      location: [0.0, 0.0, 0.0]
+      fixed: true
+
+    - name: body1
+      location: [0.0, -10.0, -1.75]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 956667.0
+      fixed: false
+      inertia:
+        moments: [16875600.0, 149479167.0, 149479167.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      contact:
+        materials:
+          - name: deck_material
+            coefficient_of_friction: 0.9
+            coefficient_of_restitution: 0.01
+            physical_properties:
+              Young_modulus: 2.0e7
+              Poisson_ratio: 0.3
+            coefficients:
+              normal_stiffness: 2.0e5
+              normal_damping: 40.0
+              tangential_stiffness: 2.0e5
+              tangential_damping: 20.0
+        shapes:
+          # Full hull extent; top face is the deck at z = +3.5 m world
+          # (box centre at body-local z = +1.75 m).
+          - type: BOX
+            material: deck_material
+            dimensions: [50.0, 12.0, 7.0]
+            location: [0.0, 0.0, 1.75]
+            orientation: [0.0, 0.0, 0.0]
+        collision_family: 7
+      visualization:
+        model_file: ../assets/geometry/hull.obj
+        shape_location: [0.0, 0.0, 1.75]
+        color: [0.85, 0.72, 0.12]
+
+    - name: body2
+      location: [0.0, 10.0, -1.75]
+      orientation: [0.0, 0.0, 0.0]
+      mass: 956667.0
+      fixed: false
+      inertia:
+        moments: [16875600.0, 149479167.0, 149479167.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      contact:
+        materials:
+          - name: deck_material
+            coefficient_of_friction: 0.9
+            coefficient_of_restitution: 0.01
+            physical_properties:
+              Young_modulus: 2.0e7
+              Poisson_ratio: 0.3
+            coefficients:
+              normal_stiffness: 2.0e5
+              normal_damping: 40.0
+              tangential_stiffness: 2.0e5
+              tangential_damping: 20.0
+        shapes:
+          - type: BOX
+            material: deck_material
+            dimensions: [50.0, 12.0, 7.0]
+            location: [0.0, 0.0, 1.75]
+            orientation: [0.0, 0.0, 0.0]
+        collision_family: 7
+      visualization:
+        model_file: ../assets/geometry/hull.obj
+        shape_location: [0.0, 0.0, 1.75]
+        color: [0.85, 0.72, 0.12]
+
+  tsdas:
+    - name: station_keeping_body1
+      type: TSDA
+      body1: ground
+      body2: body1
+      point1: [0.0, -10.0, -1.75]
+      point2: [0.0, -10.0, -1.75]
+      spring_coefficient: 5.0e4
+      damping_coefficient: 5.0e4
+      free_length: 0.0
+    - name: station_keeping_body2
+      type: TSDA
+      body1: ground
+      body2: body2
+      point1: [0.0, 10.0, -1.75]
+      point2: [0.0, 10.0, -1.75]
+      spring_coefficient: 5.0e4
+      damping_coefficient: 5.0e4
+      free_length: 0.0

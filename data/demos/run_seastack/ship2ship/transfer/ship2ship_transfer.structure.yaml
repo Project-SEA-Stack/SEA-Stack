@@ -1,0 +1,91 @@
+# Flexible linkspan bridge between the two hulls (FEA beams + deck planks).
+#
+# Topology (all beams in one plane at z = 3.34 m, the girder centreline):
+#   - 2 longitudinal girders at x = +/-2 m, spanning y = -6 .. +6 m, 8 elements
+#     each. y_direction = +z makes the section's local y vertical, so the
+#     strong (depth-cubed) bending is EIzz and the visualised moment is Mz.
+#   - 9 transverse cross-beams (one per girder node station), 2 elements each,
+#     so each has a mid node at x = 0. Those mid nodes form the "cross_centres"
+#     set the deck planks clamp to.
+#   - 4 pinned bearings (no rotations constrained): stbd end pins x/y/z at
+#     girder A and y/z at girder B; the port end pins only z at each girder.
+#     Six independent constraints locate the bridge and release every
+#     differential hull motion.
+#   - 9 rigid deck planks (family 7, self-collision off) clamped in all 6 DOF
+#     to the cross-beam centres; these are what the tires roll on. Plank centre
+#     sits 0.18 m above the girder node (frame top + half thickness).
+#
+# Bodies referenced by the bearings (body1 = stbd hull at y=-10, body2 = port
+# hull at y=+10) come from the model YAML and exist after Populate.
+structure:
+  automatic_gravity: true
+
+  materials:
+    # Marine aluminium 5083 (E / 2(1+nu) with nu = 0.33).
+    - { name: al5083, density: 2700.0, youngs_modulus: 7.0e10, shear_modulus: 2.63e10 }
+
+  sections:
+    # 150 wide x 300 deep x 8 mm RHS girder; 100 x 150 x 6 mm RHS cross-beam.
+    # width = local-z thickness, depth = local-y (vertical) thickness.
+    - { name: girder, type: BOX, material: al5083, width: 0.150, depth: 0.300, wall: 0.008 }
+    - { name: cross,  type: BOX, material: al5083, width: 0.100, depth: 0.150, wall: 0.006 }
+
+  beams:
+    - name: girder_a
+      section: girder
+      start: [-2.0, -6.0, 3.34]
+      end:   [-2.0,  6.0, 3.34]
+      elements: 8
+      y_direction: [0, 0, 1]
+    - name: girder_b
+      section: girder
+      start: [ 2.0, -6.0, 3.34]
+      end:   [ 2.0,  6.0, 3.34]
+      elements: 8
+      y_direction: [0, 0, 1]
+
+  cross_beams:
+    name_prefix: cross
+    section: cross
+    between: [girder_a, girder_b]
+    elements: 2
+    y_direction: [0, 0, 1]
+    node_set: cross_centres
+
+  mates:
+    # stbd end (body1): girder A pins x, y, z; girder B pins y, z.
+    - { name: bridge_bearing_stbd_a, node: girder_a.first, body: body1,
+        constrain: [true,  true,  true,  false, false, false] }
+    - { name: bridge_bearing_stbd_b, node: girder_b.first, body: body1,
+        constrain: [false, true,  true,  false, false, false] }
+    # port end (body2): each girder pins z only.
+    - { name: bridge_bearing_port_a, node: girder_a.last,  body: body2,
+        constrain: [false, false, true,  false, false, false] }
+    - { name: bridge_bearing_port_b, node: girder_b.last,  body: body2,
+        constrain: [false, false, true,  false, false, false] }
+
+  rigid_attachments:
+    - name_prefix: bridge_plank
+      node_set: cross_centres
+      mass: 270.0                 # kg (40 kg/m^2 alu plate + stiffeners)
+      box: [4.5, 1.5, 0.06]       # m: drivable width, plank pitch, thickness
+      offset: [0.0, 0.0, 0.18]    # plank centre above the girder node
+      collision_family: 7
+      opacity: 0.35
+      color: [0.75, 0.78, 0.82]
+      material:
+        friction: 0.9
+        restitution: 0.01
+        Young_modulus: 2.0e7
+        Poisson_ratio: 0.3
+        normal_stiffness: 2.0e5
+        normal_damping: 40.0
+        tangential_stiffness: 2.0e5
+        tangential_damping: 20.0
+
+  visualization:
+    data_type: ELEM_BEAM_MZ
+    colormap: JET
+    range: [-7.0e4, 7.0e4]
+    beam_resolution: 12
+    beam_resolution_section: 8

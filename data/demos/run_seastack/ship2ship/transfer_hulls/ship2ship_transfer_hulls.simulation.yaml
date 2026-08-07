@@ -1,0 +1,30 @@
+# SMC + Euler implicit linearized + SPARSE_LU: the same policy the C++
+# ship2ship transfer demo uses for tire/deck contact (even though this
+# hulls-only case has no vehicle yet). Chrono's ChParserMbsYAML already
+# sets the Bullet collision system.
+chrono-version: 10.0
+
+simulation:
+  contact_method: SMC
+
+  time_step: 0.001
+  end_time: 30.0
+  enforce_realtime: false
+  gravity: [0, 0, -9.81]
+
+  integrator:
+    type: EULER_IMPLICIT_LINEARIZED
+    time_step: 0.001
+
+  solver:
+    type: SPARSE_LU
+    lock_sparsity_pattern: true
+
+  visualization:
+    type: MODEL_FILE
+    render_fps: 50
+    enable_shadows: true
+    camera:
+      vertical: Z
+      location: [-45, -30, 22]
+      target: [0, 0, 2]
