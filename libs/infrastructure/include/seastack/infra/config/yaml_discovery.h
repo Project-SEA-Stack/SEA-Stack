@@ -47,6 +47,10 @@ struct SetupConfig {
         std::string working_directory;         ///< optional cwd for child
         int timeout_ms = 10000;
         bool rich_state = true;                ///< publish full kinematics channel list
+        /// When true, apply model YAML spring_coefficient / damping_coefficient
+        /// (and preload) on top of the external force. Default false: external
+        /// force alone; non-zero model YAML k/c then produce a warning.
+        bool combine_native = false;
     };
     ExternalPtoConfig external_pto;
     bool has_external_pto = false;

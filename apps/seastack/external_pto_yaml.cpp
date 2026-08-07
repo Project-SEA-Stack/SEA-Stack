@@ -2,6 +2,7 @@
 
 #ifdef SEASTACK_HAVE_EXTERNAL
 
+#include <seastack/adapters/chrono/model_yaml_link_coeffs.h>
 #include <seastack/adapters/chrono/pto_chrono_adapter.h>
 #include <seastack/external/external_pto_model.h>
 #include <seastack/external/ipc_external_force_model.h>
@@ -12,6 +13,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -82,6 +84,9 @@ void ParseExternalPtoAttachNode(const YAML::Node& ep,
     }
     if (ep["rich_state"]) {
         cfg.rich_state = ep["rich_state"].as<bool>();
+    }
+    if (ep["combine_native"]) {
+        cfg.combine_native = ep["combine_native"].as<bool>();
     }
     if (ep["command"]) {
         cfg.command.clear();
@@ -249,7 +254,8 @@ ExternalPtoAttachment& ExternalPtoAttachment::operator=(
 ExternalPtoAttachment ExternalPtoAttachment::Attach(
     ::chrono::ChSystem& system,
     const seastack::infra::SetupConfig::ExternalPtoConfig& cfg,
-    double dt) {
+    double dt,
+    const std::filesystem::path& model_yaml_path) {
     // Find named TSDA/RSDA -> spawn IPC child -> wrap in ExternalPtoModel ->
     // register Chrono force/torque functor (rich or lean).
     std::shared_ptr<::chrono::ChLinkTSDA> tsda;
@@ -296,16 +302,70 @@ ExternalPtoAttachment ExternalPtoAttachment::Attach(
     model->EnableRichState(cfg.rich_state);
     model->Initialize(dt, cfg.config_json);
 
+    // Recover model YAML k/c/preload. Chrono embeds them in its YAML functor
+    // (which we replace); link coefficients stay at zero so export power uses
+    // -(F*v) on the total force without double-counting.
+    seastack::chrono::LinkSpringDamperCoeffs yaml_coeffs;
+    std::string model_yaml_text;
+    if (!model_yaml_path.empty()) {
+        std::ifstream in(model_yaml_path);
+        if (in) {
+            std::ostringstream ss;
+            ss << in.rdbuf();
+            model_yaml_text = ss.str();
+            if (tsda) {
+                yaml_coeffs =
+                    seastack::chrono::LookupTsdaSpringDamperFromModelYaml(
+                        model_yaml_text, cfg.link_name);
+            } else {
+                yaml_coeffs =
+                    seastack::chrono::LookupRsdaSpringDamperFromModelYaml(
+                        model_yaml_text, cfg.link_name);
+            }
+        }
+    }
+
+    const bool yaml_nonzero =
+        (yaml_coeffs.has_spring && yaml_coeffs.spring_coefficient != 0.0) ||
+        (yaml_coeffs.has_damping && yaml_coeffs.damping_coefficient != 0.0) ||
+        (yaml_coeffs.has_preload && yaml_coeffs.preload != 0.0);
+
+    seastack::chrono::NativeSpringDamper native;
+    if (cfg.combine_native) {
+        if (yaml_coeffs.has_spring) {
+            native.k = yaml_coeffs.spring_coefficient;
+        }
+        if (yaml_coeffs.has_damping) {
+            native.c = yaml_coeffs.damping_coefficient;
+        }
+        if (yaml_coeffs.has_preload) {
+            native.preload = yaml_coeffs.preload;
+        }
+        seastack::infra::cli::LogInfo(
+            "external_pto combine_native on '" + cfg.link_name +
+            "': k=" + std::to_string(native.k) +
+            ", c=" + std::to_string(native.c) +
+            ", preload=" + std::to_string(native.preload));
+    } else if (yaml_nonzero) {
+        seastack::infra::cli::LogWarning(
+            "external_pto on '" + cfg.link_name +
+            "': model YAML spring_coefficient/damping_coefficient/preload "
+            "are non-zero but ignored (Chrono functor is replaced). Set "
+            "combine_native: true on the external PTO attach to apply them "
+            "on top of the external force.");
+    }
+
     if (tsda) {
         tsda->SetSpringCoefficient(0.0);
         tsda->SetDampingCoefficient(0.0);
         if (cfg.rich_state) {
             tsda->RegisterForceFunctor(
                 std::make_shared<seastack::chrono::ExternalPtoForceFunctor>(
-                    model));
+                    model, native));
         } else {
             tsda->RegisterForceFunctor(
-                std::make_shared<seastack::chrono::PTOForceFunctor>(model));
+                std::make_shared<seastack::chrono::PTOForceFunctor>(model,
+                                                                   native));
         }
         std::string detail = "Attached external PTO to TSDA '" + cfg.link_name + "'";
         if (!cfg.command.empty()) {
@@ -319,10 +379,11 @@ ExternalPtoAttachment ExternalPtoAttachment::Attach(
         if (cfg.rich_state) {
             rsda->RegisterTorqueFunctor(
                 std::make_shared<seastack::chrono::ExternalPtoTorqueFunctor>(
-                    model));
+                    model, native));
         } else {
             rsda->RegisterTorqueFunctor(
-                std::make_shared<seastack::chrono::PTOTorqueFunctor>(model));
+                std::make_shared<seastack::chrono::PTOTorqueFunctor>(model,
+                                                                    native));
         }
         std::string detail = "Attached external PTO to RSDA '" + cfg.link_name + "'";
         if (!cfg.command.empty()) {

@@ -4,6 +4,7 @@
  */
 
 #include <seastack/adapters/chrono/simulation_export.h>
+#include <seastack/adapters/chrono/model_yaml_link_coeffs.h>
 #include <seastack/core/force_component.h>
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/radiation_types.h>
@@ -286,103 +287,14 @@ struct SimulationExporter::Impl {
 
 namespace {
 
-// Match Impl::SanitizeName for YAML `name:` lookup (Chrono MBS may prefix link names).
-std::string SanitizeLinkNameForYaml(const std::string& in) {
-    std::string out;
-    out.reserve(in.size());
-    for (char c : in) {
-        if (c == ' ')
-            out.push_back('_');
-        else if (c == '/' || c == '\\' || c == ':')
-            ;
-        else
-            out.push_back(c);
-    }
-    if (out.empty()) {
-        out = "unnamed";
-    }
-    return out;
-}
-
-// Chrono MBS uses SetName(model_prefix + yaml_key); match either exact or suffix "_<yaml_key>".
-bool YamlLinkNameMatches(const std::string& sanitized_link_name, const std::string& yaml_name_raw) {
-    const std::string k = SanitizeLinkNameForYaml(yaml_name_raw);
-    if (sanitized_link_name == k) {
-        return true;
-    }
-    if (sanitized_link_name.size() > k.size() + 1 &&
-        sanitized_link_name[sanitized_link_name.size() - k.size() - 1] == '_' &&
-        sanitized_link_name.compare(sanitized_link_name.size() - k.size(), k.size(), k) == 0) {
-        return true;
-    }
-    return false;
-}
-
-bool LookupTsdaDampingFromModelYaml(const std::string& model_yaml,
-                                    const std::string& sanitized_name,
-                                    double& c_out) {
-    if (model_yaml.empty()) {
-        return false;
-    }
-    try {
-        YAML::Node root = YAML::Load(model_yaml);
-        YAML::Node tsdas = root["model"]["tsdas"];
-        if (!tsdas || !tsdas.IsSequence()) {
-            return false;
-        }
-        for (const auto& e : tsdas) {
-            if (!e["name"]) {
-                continue;
-            }
-            const std::string raw = e["name"].as<std::string>();
-            if (!YamlLinkNameMatches(sanitized_name, raw)) {
-                continue;
-            }
-            if (e["damping_coefficient"]) {
-                c_out = e["damping_coefficient"].as<double>();
-                return true;
-            }
-            return false;
-        }
-    } catch (...) {
-    }
-    return false;
-}
-
-bool LookupRsdaDampingFromModelYaml(const std::string& model_yaml,
-                                    const std::string& sanitized_name,
-                                    double& c_out) {
-    if (model_yaml.empty()) {
-        return false;
-    }
-    try {
-        YAML::Node root = YAML::Load(model_yaml);
-        YAML::Node rsdas = root["model"]["rsdas"];
-        if (!rsdas || !rsdas.IsSequence()) {
-            return false;
-        }
-        for (const auto& e : rsdas) {
-            if (!e["name"]) {
-                continue;
-            }
-            const std::string raw = e["name"].as<std::string>();
-            if (!YamlLinkNameMatches(sanitized_name, raw)) {
-                continue;
-            }
-            if (e["damping_coefficient"]) {
-                c_out = e["damping_coefficient"].as<double>();
-                return true;
-            }
-            return false;
-        }
-    } catch (...) {
-    }
-    return false;
-}
+using seastack::chrono::LookupRsdaDampingFromModelYaml;
+using seastack::chrono::LookupTsdaDampingFromModelYaml;
 
 // Time-mean PTO metrics: c*v^2 with v from Chrono. Chrono MBS YAML always sets a built-in
 // ForceFunctor on TSDAs; only SEA-Stack PTOForceFunctor / ExternalPtoForceFunctor
-// (IPTOModel) need -(F*v) fallback.
+// (IPTOModel) need -(F*v) fallback. Combined external+native mode keeps link
+// coefficients at zero and holds k/c inside the functor so -(F*v) on the total
+// force stays correct (no double-count via c*v^2).
 double ComputeTsdaPtoPowerW(::chrono::ChLinkTSDA* L,
                             double damping_coeff_ns_per_m,
                             const std::string& sanitized_name,

@@ -9,6 +9,7 @@ add_library(seastack_chrono_adapter STATIC
     src/chrono_state_utils.cpp
     src/setup_from_yaml.cpp
     src/simulation_export.cpp
+    src/model_yaml_link_coeffs.cpp
     src/helper.cpp
     src/pto_chrono_adapter.cpp
 )

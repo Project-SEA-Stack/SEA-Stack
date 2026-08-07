@@ -134,14 +134,49 @@ def make_native_twin(damping: float) -> Path:
     return twin
 
 
+def make_combined_native_case(damping: float) -> Path:
+    """External module returns zero; native k/c applied via combine_native."""
+    src = _RM3 / "external_pto"
+    case = _RM3 / "_regression_combined_native"
+    if case.exists():
+        shutil.rmtree(case)
+    case.mkdir()
+
+    for suffix, out in (("simulation", "simulation"), ("hydro", "hydro")):
+        shutil.copy2(src / f"rm3_external_pto.{suffix}.yaml",
+                     case / f"rm3_combined_native.{out}.yaml")
+    shutil.copy2(src / "linear_damper_pto.py", case / "linear_damper_pto.py")
+
+    model = (src / "rm3_external_pto.model.yaml").read_text()
+    model = re.sub(r"damping_coefficient:\s*\S+.*",
+                   f"damping_coefficient: {damping:.1f}", model, count=1)
+    (case / "rm3_combined_native.model.yaml").write_text(model)
+
+    # External damper c=0 (zero force); Chrono model c carries the physics.
+    (case / "rm3_combined_native.external_pto.yaml").write_text(
+        "link: PTO\n"
+        "command: [\"python\", \"linear_damper_pto.py\"]\n"
+        "combine_native: true\n"
+        "config:\n"
+        "  damping: 0\n")
+    (case / "rm3_combined_native.setup.yaml").write_text(
+        "model_file: rm3_combined_native.model.yaml\n"
+        "simulation_file: rm3_combined_native.simulation.yaml\n"
+        "hydro_file: rm3_combined_native.hydro.yaml\n"
+        "external_pto_file: rm3_combined_native.external_pto.yaml\n"
+        "output_directory: outputs\n")
+    return case
+
+
 def cleanup(*dirs: Path) -> None:
     for d in dirs:
         out = d / "outputs"
         if out.exists():
             shutil.rmtree(out, ignore_errors=True)
-    twin = _RM3 / "_regression_native_linpto"
-    if twin.exists():
-        shutil.rmtree(twin, ignore_errors=True)
+    for name in ("_regression_native_linpto", "_regression_combined_native"):
+        twin = _RM3 / name
+        if twin.exists():
+            shutil.rmtree(twin, ignore_errors=True)
 
 
 def main() -> int:
@@ -164,6 +199,7 @@ def main() -> int:
     adaptive_dir = _RM3 / "external_pto_adaptive"
     hydraulic_dir = _RM3 / "external_pto_hydraulic"
     twin_dir = None
+    combined_dir = None
     try:
         def mean_power_post_ramp(h5: Path) -> float:
             t = read(h5, TIME)
@@ -203,6 +239,21 @@ def main() -> int:
                  f"linear post-ramp mean power > 0 ({lin_pmean:.3g} W)")
         ck.check(heave_rms > 0.05,
                  f"linear heave is wave-excited (RMS {heave_rms:.3g} m)")
+
+        # --- Combined native: zero external force + model YAML c via combine_native ---
+        print("Combined native: zero external + model YAML c=1.2e6 vs native twin")
+        combined_dir = make_combined_native_case(1.2e6)
+        comb_h5 = run_case(args.exe, combined_dir)
+        heave_comb = np.interp(t_ext, read(comb_h5, TIME),
+                               read(comb_h5, HEAVE, 2))
+        force_comb = np.interp(t_ext, read(comb_h5, TIME), read(comb_h5, FORCE))
+        he_c = rms_rel(heave_nat, heave_comb)
+        fe_c = rms_rel(force_nat, force_comb)
+        ck.check(he_c <= args.tol,
+                 f"combine_native heave matches native LinearPTO (RMSrel {he_c:.3g})")
+        ck.check(fe_c <= args.force_tol,
+                 f"combine_native PTO force matches native LinearPTO "
+                 f"(RMSrel {fe_c:.3g})")
 
         # --- Adaptive: aggregate checks under the same sea state ---
         print("Adaptive: aggregate checks (irregular waves)")
@@ -245,8 +296,8 @@ def main() -> int:
         sys.stderr.write(f"ERROR: {e}\n")
         return 1
     finally:
-        cleanup(linear_dir, adaptive_dir, hydraulic_dir,
-                *( [twin_dir] if twin_dir else [] ))
+        extra = [d for d in (twin_dir, combined_dir) if d is not None]
+        cleanup(linear_dir, adaptive_dir, hydraulic_dir, *extra)
 
     print()
     if ck.failures:

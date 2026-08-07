@@ -208,10 +208,20 @@ external_pto_file: my_case.external_pto.yaml
 link: PTO                 # name of a ChLinkTSDA or ChLinkRSDA
 command: ["python", "my_pto.py"]
 # rich_state: false       # optional; default true (17-channel kinematics)
+# combine_native: true    # optional; layer model YAML k/c on top of external force
 timeout_ms: 20000
 config:
   damping: 1200000
 ```
+
+Attaching an external PTO **replaces** Chrono’s built-in TSDA/RSDA force
+functor. Model YAML `spring_coefficient` / `damping_coefficient` /
+`preload` are ignored unless you set `combine_native: true`, which applies
+Chrono’s linear spring-damper law (`F = P - k Δx - c v`) **in addition to**
+the external module force. Link coefficients stay at zero so HDF5 absorbed
+power uses `-(F·v)` on the **total** force (external + native); in combined
+mode that total includes the passive term. Non-zero model YAML k/c with
+`combine_native` left at its default (`false`) produces a warning at attach.
 
 An inline `external_pto:` map in setup is still accepted for small one-offs;
 do not set both `external_pto_file` and `external_pto:` together.

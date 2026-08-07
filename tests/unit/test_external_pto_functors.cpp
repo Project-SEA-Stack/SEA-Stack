@@ -168,6 +168,77 @@ int main() {
                   "lean PTOTorqueFunctor");
     }
 
+    // Combined native spring-damper + lean PTO (Chrono LinearSpringDamperForce sign).
+    {
+        class LeanPto : public seastack::pto::IPTOModel {
+          public:
+            double ComputeForce(double /*d*/, double v, double /*t*/) override {
+                return -5.0 * v;  // external contribution
+            }
+        };
+        seastack::chrono::NativeSpringDamper native;
+        native.k = 100.0;
+        native.c = 2.0;
+        native.preload = 3.0;
+        auto model = std::make_shared<LeanPto>();
+        seastack::chrono::PTOForceFunctor fun(model, native);
+        chrono::ChSystemNSC system;
+        auto b1 = chrono_types::make_shared<chrono::ChBody>();
+        auto b2 = chrono_types::make_shared<chrono::ChBody>();
+        system.Add(b1);
+        system.Add(b2);
+        auto tsda = chrono_types::make_shared<chrono::ChLinkTSDA>();
+        tsda->Initialize(b1, b2, false, chrono::ChVector3d(0, 0, 0),
+                         chrono::ChVector3d(0, 0, 1));
+        system.AddLink(tsda);
+
+        const double rest = 0.5;
+        const double length = 0.8;  // displacement = 0.3
+        const double vel = 1.5;
+        const double F = fun.evaluate(0.0, rest, length, vel, *tsda);
+        // external = -5*1.5 = -7.5
+        // native   = 3 - 100*0.3 - 2*1.5 = 3 - 30 - 3 = -30
+        TEST_NEAR(F, -37.5, tol, "combined PTOForceFunctor = external + native");
+
+        // Default native zeros: exact no-op on existing path.
+        seastack::chrono::PTOForceFunctor fun0(model);
+        TEST_NEAR(fun0.evaluate(0.0, rest, length, vel, *tsda), -7.5, tol,
+                  "default native zeros leave external-only force");
+    }
+
+    // Combined on rich ExternalPtoForceFunctor
+    {
+        chrono::ChSystemNSC system;
+        auto body1 = chrono_types::make_shared<chrono::ChBody>();
+        auto body2 = chrono_types::make_shared<chrono::ChBody>();
+        body1->SetFixed(true);
+        system.Add(body1);
+        system.Add(body2);
+        auto tsda = chrono_types::make_shared<chrono::ChLinkTSDA>();
+        tsda->Initialize(body1, body2, false, chrono::ChVector3d(0, 0, 0),
+                         chrono::ChVector3d(0, 0, 1.0));
+        tsda->SetRestLength(0.0);
+        system.AddLink(tsda);
+
+        auto backend = std::make_unique<CaptureBackend>();
+        auto model = std::make_shared<seastack::external::ExternalPtoModel>(
+            std::move(backend));
+        model->SetLinkKind(seastack::external::ExternalPtoLinkKind::Tsda);
+        model->EnableRichState(true);
+        model->Initialize(0.01);
+
+        seastack::chrono::NativeSpringDamper native;
+        native.c = 4.0;
+        auto fun =
+            std::make_shared<seastack::chrono::ExternalPtoForceFunctor>(model,
+                                                                       native);
+        const double length = 1.0;
+        const double vel = 2.0;
+        // CaptureBackend returns -7*vel = -14; native = -4*2 = -8
+        TEST_NEAR(fun->evaluate(0.0, 0.0, length, vel, *tsda), -22.0, tol,
+                  "combined ExternalPtoForceFunctor");
+    }
+
     test_results.Summary();
     return test_results.failed > 0 ? 1 : 0;
 }

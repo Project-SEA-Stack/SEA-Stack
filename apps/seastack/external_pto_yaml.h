@@ -45,10 +45,13 @@ class ExternalPtoAttachment {
 
     /// Spawn the IPC child, handshake, and register a Chrono force/torque functor
     /// on the named TSDA or RSDA. Keeps the model alive for the run.
+    /// @param model_yaml_path Chrono MBS model YAML (used when combine_native
+    ///        is set, and to warn about ignored non-zero k/c).
     static ExternalPtoAttachment Attach(
         ::chrono::ChSystem& system,
         const seastack::infra::SetupConfig::ExternalPtoConfig& cfg,
-        double dt);
+        double dt,
+        const std::filesystem::path& model_yaml_path = {});
 
     explicit operator bool() const { return static_cast<bool>(impl_); }
 
