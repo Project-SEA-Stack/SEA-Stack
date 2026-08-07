@@ -85,7 +85,7 @@ class UI {
      */
     ::chrono::ChSystem* GetSystem() const { return pSystem; }
 
-    bool simulationStarted = true;
+    bool simulationStarted = false;  // VSG viewer provides Start button
 
   protected:
     ::chrono::ChSystem* pSystem;  // Do not manage the memory
