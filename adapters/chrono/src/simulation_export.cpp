@@ -286,6 +286,25 @@ struct SimulationExporter::Impl {
 
 namespace {
 
+// HDF5 group names must be unique within their parent group. A Chrono model may
+// well repeat a name: a tracked vehicle gives every track shoe and every shoe
+// revolute joint the same name. Suffix the later occurrences instead of letting
+// H5Gcreate2 throw, which would take down the whole export.
+//
+// `used` accumulates the names already taken in one parent group, so callers
+// keep a separate set per group (bodies, joints, tsdas, rsdas).
+std::string MakeUniqueGroupName(const std::string& name, std::unordered_set<std::string>& used) {
+    if (used.insert(name).second) {
+        return name;
+    }
+    for (int occurrence = 2;; ++occurrence) {
+        std::string candidate = name + "_" + std::to_string(occurrence);
+        if (used.insert(candidate).second) {
+            return candidate;
+        }
+    }
+}
+
 // Match Impl::SanitizeName for YAML `name:` lookup (Chrono MBS may prefix link names).
 std::string SanitizeLinkNameForYaml(const std::string& in) {
     std::string out;
@@ -646,9 +665,11 @@ void SimulationExporter::WriteModel(::chrono::ChSystem* system) {
     auto chrono_bodies = system->GetBodies();
     impl_->bodies.clear();
     impl_->bodies.reserve(chrono_bodies.size());
+    std::unordered_set<std::string> used_body_names;
     for (auto& b : chrono_bodies) {
         std::string name = b->GetName();
         if (name.empty()) name = "body"; // fallback
+        name = MakeUniqueGroupName(Impl::SanitizeName(name), used_body_names);
         auto g_body = g_bodies.CreateGroup(name);
 
         g_body.WriteAttribute("mass", b->GetMass());
@@ -690,6 +711,11 @@ void SimulationExporter::WriteModel(::chrono::ChSystem* system) {
     int rsda_idx = 0;
     int joint_idx = 0;
 
+    // One set per HDF5 parent group; LOCK and generic links share /joints.
+    std::unordered_set<std::string> used_tsda_names;
+    std::unordered_set<std::string> used_rsda_names;
+    std::unordered_set<std::string> used_joint_names;
+
     // Frequency table of link classes
     if (impl_->verbosity == H5Verbosity::Verbose) {
         seastack::infra::cli::LogDebug(std::string("H5 Exporter: total links=") + std::to_string(static_cast<int>(system->GetLinks().size())));
@@ -707,7 +733,7 @@ void SimulationExporter::WriteModel(::chrono::ChSystem* system) {
         if (auto* tsda = dynamic_cast<::chrono::ChLinkTSDA*>(base)) {
             std::string raw = link_ptr->GetName();
             if (raw.empty()) raw = std::string("TSDA_") + std::to_string(++tsda_idx);
-            std::string nm = Impl::SanitizeName(raw);
+            std::string nm = MakeUniqueGroupName(Impl::SanitizeName(raw), used_tsda_names);
             impl_->model_tsda_names.push_back(nm);
             auto gt = g_tsdas.CreateGroup(nm);
             gt.WriteAttribute("type", std::string("TSDA"));
@@ -761,7 +787,7 @@ void SimulationExporter::WriteModel(::chrono::ChSystem* system) {
         if (auto* rsda = dynamic_cast<::chrono::ChLinkRSDA*>(base)) {
             std::string raw = link_ptr->GetName();
             if (raw.empty()) raw = std::string("RSDA_") + std::to_string(++rsda_idx);
-            std::string nm = Impl::SanitizeName(raw);
+            std::string nm = MakeUniqueGroupName(Impl::SanitizeName(raw), used_rsda_names);
             impl_->model_rsda_names.push_back(nm);
             auto gr = g_rsdas.CreateGroup(nm);
             gr.WriteAttribute("type", std::string("RSDA"));
@@ -815,7 +841,7 @@ void SimulationExporter::WriteModel(::chrono::ChSystem* system) {
         if (auto* lock = dynamic_cast<::chrono::ChLinkLock*>(base)) {
             std::string raw = link_ptr->GetName();
             if (raw.empty()) raw = std::string("joint_") + std::to_string(++joint_idx);
-            std::string nm = Impl::SanitizeName(raw);
+            std::string nm = MakeUniqueGroupName(Impl::SanitizeName(raw), used_joint_names);
             impl_->model_joint_names.push_back(nm);
             auto gj = g_joints.CreateGroup(nm);
             gj.WriteAttribute("type", std::string("LOCK"));
@@ -863,7 +889,7 @@ void SimulationExporter::WriteModel(::chrono::ChSystem* system) {
         if (auto* any_link = dynamic_cast<::chrono::ChLink*>(base)) {
             std::string raw = link_ptr->GetName();
             if (raw.empty()) raw = std::string("joint_") + std::to_string(++joint_idx);
-            std::string nm = Impl::SanitizeName(raw);
+            std::string nm = MakeUniqueGroupName(Impl::SanitizeName(raw), used_joint_names);
             impl_->model_joint_names.push_back(nm);
             auto gj = g_joints.CreateGroup(nm);
             gj.WriteAttribute("type", std::string("LINK"));
