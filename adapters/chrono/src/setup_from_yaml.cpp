@@ -523,27 +523,60 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
         md_cfg.enabled = true;
         md_cfg.input_file = hydro_data.moordyn_input_file;
 
-        // Resolve body names to 0-based indices in matched_bodies
+        // Resolve each MoorDyn body name to a 0-based index in the concatenated
+        // list [hydro bodies..., auxiliary bodies...]. Hydrodynamic bodies keep
+        // their index in matched_bodies. Any other name is resolved against the
+        // full Chrono body list and registered as an auxiliary (mooring-only)
+        // coupled body, so MoorDyn can couple e.g. a vehicle chassis that has no
+        // BEM data. Auxiliary indices follow the hydro bodies, in registration
+        // order.
+        int aux_count = 0;
         for (const auto& bname : hydro_data.moordyn_body_names) {
-            bool found = false;
+            // 1. Hydrodynamic body?
+            int hydro_index = -1;
             for (size_t i = 0; i < matched_bodies.size(); ++i) {
                 if (matched_bodies[i]->GetName() == bname) {
-                    md_cfg.coupled_body_indices.push_back(static_cast<int>(i));
-                    found = true;
+                    hydro_index = static_cast<int>(i);
                     break;
                 }
             }
-            if (!found) {
-                throw std::runtime_error(
-                    "MoorDyn config references body '" + bname +
-                    "' which was not found among hydrodynamic bodies");
+            if (hydro_index >= 0) {
+                md_cfg.coupled_body_indices.push_back(hydro_index);
+                continue;
             }
+
+            // 2. Any other Chrono body -> auxiliary coupled body.
+            std::shared_ptr<ChBody> aux_body;
+            for (const auto& b : bodies) {
+                if (b->GetName() == bname) {
+                    aux_body = b;
+                    break;
+                }
+            }
+            if (aux_body) {
+                hydro_system->AddAuxiliaryCoupledBody(aux_body);
+                md_cfg.coupled_body_indices.push_back(
+                    static_cast<int>(matched_bodies.size()) + aux_count);
+                ++aux_count;
+                continue;
+            }
+
+            // 3. Not found anywhere: report with the available names.
+            std::ostringstream available;
+            for (const auto& b : bodies) {
+                available << " '" << b->GetName() << "'";
+            }
+            throw std::runtime_error(
+                "MoorDyn config references body '" + bname +
+                "' which was not found among the hydrodynamic bodies or the "
+                "Chrono system bodies. Available Chrono bodies:" + available.str());
         }
 
         hydro_system->SetMoorDynConfig(md_cfg);
         seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine(
             "+", "MoorDyn", hydro_data.moordyn_input_file +
-            " (" + std::to_string(md_cfg.coupled_body_indices.size()) + " bodies)"));
+            " (" + std::to_string(md_cfg.coupled_body_indices.size()) + " bodies, " +
+            std::to_string(aux_count) + " auxiliary)"));
     }
 #else
     if (hydro_data.moordyn_enabled) {

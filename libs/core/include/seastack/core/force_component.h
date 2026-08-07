@@ -61,6 +61,11 @@ public:
      * Computes the force contribution for the given system state and time,
      * adding the result to the provided forces vector.
      * 
+     * `state` and `inout_forces` cover every coupled body and may be longer
+     * than the component's own body count when auxiliary (mooring-only) bodies
+     * are appended; see HydroForces::Evaluate for the index convention.  A
+     * component must only touch the slots it owns.
+     *
      * @param state Current system state (positions, velocities for all bodies)
      * @param time Current simulation time
      * @param inout_forces Force vector to add contribution to (one GeneralizedForce per body)
