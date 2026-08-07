@@ -44,6 +44,25 @@ using seastack::hydro::kDofPerBody;
 /// Alias for the solver-agnostic profiling stats from HydroForces.
 using HydroProfileStats = seastack::hydro::HydroForcesProfileStats;
 
+/**
+ * @brief Numerical blow-up thresholds for ChronoForceAttacher.
+ *
+ * Magnitude checks (position, velocity, roll/pitch, force) run only when
+ * `enabled` is true. Non-finite (NaN/Inf) state and force values always trip
+ * divergence — that path is not user-disableable.
+ *
+ * A threshold of 0 or negative means "no limit" for that magnitude entry.
+ * Defaults match the historical compile-time constants (90 deg roll/pitch).
+ */
+struct DivergenceLimits {
+    bool enabled = true;
+    double max_position_m = 200.0;
+    double max_velocity_ms = 20.0;
+    double max_ang_vel_rads = 5.0;
+    double max_roll_pitch_rad = 1.5708;  ///< ~90 deg; YAML exposes degrees
+    double max_force_magnitude = 1.0e10;
+};
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 //  ChronoForceAttacher — Chrono callback plumbing and per-timestep caching
@@ -85,10 +104,12 @@ class ChronoForceAttacher {
      * @param evaluator Callback invoked once per new timestep to compute forces.
      * @param attach_forces_to_bodies When false, no ChForce objects are added; `CoordinateFuncForBody`
      *        returns 0 without calling the evaluator (added-mass-only / KKT isolation experiments).
+     * @param limits Divergence magnitude thresholds (defaults match historical behaviour).
      */
     ChronoForceAttacher(std::vector<std::shared_ptr<::chrono::ChBody>> bodies,
                         ForceEvaluator evaluator,
-                        bool attach_forces_to_bodies = true);
+                        bool attach_forces_to_bodies = true,
+                        DivergenceLimits limits = {});
 
     ~ChronoForceAttacher();
 
@@ -124,11 +145,7 @@ class ChronoForceAttacher {
 
     bool diverged_ = false;
     bool divergence_logged_ = false;
-    static constexpr double kMaxPosition_m    = 200.0;
-    static constexpr double kMaxVelocity_ms   = 20.0;
-    static constexpr double kMaxAngVel_rads   = 5.0;
-    static constexpr double kMaxRollPitch_rad = 1.5708;
-    static constexpr double kMaxForceMagnitude = 1.0e10;
+    DivergenceLimits limits_;
 
     seastack::hydro::SystemState cached_state_;
 

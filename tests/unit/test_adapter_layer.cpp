@@ -7,6 +7,8 @@
  *   2. ChronoForceAttacher: out-of-range index throws
  *   3. ChronoForceAttacher: divergence from invalid force (NaN)
  *   4. ChronoForceAttacher: divergence from excessive body position
+ *   4b. ChronoForceAttacher: divergence from roll/pitch beyond limit
+ *   4c. ChronoForceAttacher: magnitude limits disableable; NaN still trips
  *   5. ChronoForceAttacher: multi-body routing (correct body_num per DOF)
  *   6. ChronoForceAttacher: Chrono ChForce clone safety
  *   7. ChronoForceAttacher: destruction/lifecycle sanity
@@ -22,6 +24,7 @@
 
 #include <chrono/physics/ChBody.h>
 #include <chrono/physics/ChSystemNSC.h>
+#include <chrono/core/ChQuaternion.h>
 
 #include <cassert>
 #include <cmath>
@@ -267,6 +270,75 @@ static void TestDivergenceBodyState() {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// Test: divergence from roll beyond default ~90 deg limit
+// ════════════════════════════════════════════════════════════════════════
+static void TestDivergenceRollPitch() {
+    ::chrono::ChSystemNSC system;
+    auto bodies = MakeBodies(system, 1);
+
+    CountingEvaluator eval(1);
+    ChronoForceAttacher attacher(bodies, std::ref(eval));
+
+    // Cardan XYZ: roll is rotation about X. ~100 deg > default 90 deg.
+    bodies[0]->SetRot(::chrono::QuatFromAngleX(100.0 * chrono::CH_DEG_TO_RAD));
+
+    double f = attacher.CoordinateFuncForBody(1, 0);
+    Check(attacher.HasDiverged(), "roll/pitch divergence: diverged with roll 100 deg");
+    Check(f == 0.0, "roll/pitch divergence: force zeroed");
+
+    std::cout << "  TestDivergenceRollPitch done\n";
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Test: magnitude limits can be disabled; NaN still trips
+// ════════════════════════════════════════════════════════════════════════
+static void TestDivergenceLimitsConfigurable() {
+    ::chrono::ChSystemNSC system;
+    auto bodies = MakeBodies(system, 1);
+
+    // Extreme position with limits disabled — must not trip.
+    {
+        CountingEvaluator eval(1);
+        DivergenceLimits limits;
+        limits.enabled = false;
+        ChronoForceAttacher attacher(bodies, std::ref(eval), true, limits);
+        bodies[0]->SetPos(::chrono::ChVector3d(0, 0, 500));
+        bodies[0]->SetRot(::chrono::QUNIT);
+        (void)attacher.CoordinateFuncForBody(1, 0);
+        Check(!attacher.HasDiverged(),
+              "limits disabled: extreme position does not diverge");
+    }
+
+    // Raised roll/pitch limit — 100 deg roll must not trip.
+    {
+        CountingEvaluator eval(1);
+        DivergenceLimits limits;
+        limits.max_roll_pitch_rad = 2.0;  // ~114.6 deg
+        ChronoForceAttacher attacher(bodies, std::ref(eval), true, limits);
+        bodies[0]->SetPos(::chrono::ChVector3d(0, 0, 0));
+        bodies[0]->SetRot(::chrono::QuatFromAngleX(100.0 * chrono::CH_DEG_TO_RAD));
+        (void)attacher.CoordinateFuncForBody(1, 0);
+        Check(!attacher.HasDiverged(),
+              "raised roll limit: 100 deg roll does not diverge");
+    }
+
+    // Limits disabled but NaN force still trips.
+    {
+        NaNEvaluator eval(1);
+        DivergenceLimits limits;
+        limits.enabled = false;
+        ChronoForceAttacher attacher(bodies, std::ref(eval), true, limits);
+        bodies[0]->SetPos(::chrono::ChVector3d(0, 0, 0));
+        bodies[0]->SetRot(::chrono::QUNIT);
+        (void)attacher.CoordinateFuncForBody(1, 0);
+        Check(attacher.HasDiverged(),
+              "limits disabled: NaN force still diverges");
+    }
+
+    std::cout << "  TestDivergenceLimitsConfigurable done\n";
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // Test: multi-body routing — each body's callbacks reach the right
 // (body_num, dof) in CoordinateFuncForBody
 // ════════════════════════════════════════════════════════════════════════
@@ -442,6 +514,8 @@ int main() {
     TestDivergenceNaNForce();
     TestDivergenceHugeForce();
     TestDivergenceBodyState();
+    TestDivergenceRollPitch();
+    TestDivergenceLimitsConfigurable();
     TestMultiBodyRouting();
     TestChForceCloneSafety();
     TestDestructionLifecycle();

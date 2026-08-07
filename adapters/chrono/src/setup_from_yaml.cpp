@@ -376,7 +376,30 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
                                        ramp_duration, h5_water_depth);
     
     // Create and initialize HydroSystem (multibody: all matched bodies passed in)
-    const HydroCouplingOptions coupling;
+    HydroCouplingOptions coupling;
+    if (hydro_data.divergence.has_any) {
+        const auto& d = hydro_data.divergence;
+        if (d.has_enabled) {
+            coupling.divergence.enabled = d.enabled;
+        }
+        if (d.has_max_position) {
+            coupling.divergence.max_position_m = d.max_position;
+        }
+        if (d.has_max_velocity) {
+            coupling.divergence.max_velocity_ms = d.max_velocity;
+        }
+        if (d.has_max_angular_velocity) {
+            coupling.divergence.max_ang_vel_rads = d.max_angular_velocity;
+        }
+        if (d.has_max_roll_pitch) {
+            // YAML is degrees; ChronoForceAttacher stores radians.
+            coupling.divergence.max_roll_pitch_rad =
+                d.max_roll_pitch_deg / seastack::kRadToDeg;
+        }
+        if (d.has_max_force) {
+            coupling.divergence.max_force_magnitude = d.max_force;
+        }
+    }
     auto hydro_system =
         std::make_unique<HydroSystem>(matched_bodies, h5_file_path, wave, coupling);
     

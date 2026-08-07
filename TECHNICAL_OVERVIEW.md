@@ -586,7 +586,14 @@ implementation and review—not only for hand-written development.
 
 - Production code: exceptions (`std::runtime_error`, `std::logic_error`, `std::invalid_argument`, `std::out_of_range`) for precondition violations
 - Tests: custom assertion macros
-- Runtime divergence checks on body state and force magnitudes
+- Runtime divergence checks on body state and force magnitudes (blow-up
+  detector in `ChronoForceAttacher`, not a joint stop). Defaults:
+  position 200 m, velocity 20 m/s, angular velocity 5 rad/s, roll/pitch
+  90°, force 1e10 N (or N·m). Optional hydro YAML block `divergence:`
+  can disable magnitude checks (`enabled: false`), raise individual
+  thresholds, or set a threshold to `0` for unlimited. Non-finite
+  (NaN/Inf) state and forces always trip, even when magnitude checks
+  are disabled.
 
 ### Test suites and package validation
 

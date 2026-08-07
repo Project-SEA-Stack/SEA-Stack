@@ -20,6 +20,7 @@
 
 #include <seastack/config.h>
 
+#include <seastack/adapters/chrono/chrono_force_attacher.h>
 #include <seastack/adapters/chrono/hydro_system_config.h>
 
 #include <seastack/core/types.h>
@@ -51,7 +52,6 @@ class IHydroForceComponent;
 
 namespace seastack::chrono {
 class ChronoHydroCoupler;
-class ChronoForceAttacher;
 }
 
 namespace seastack::chrono {
@@ -61,6 +61,8 @@ namespace seastack::chrono {
 struct HydroCouplingOptions {
     /// When true (default), register per-body ChForce callbacks that evaluate SEA-Stack hydro forces.
     bool attach_hydro_force_callbacks = true;
+    /// Blow-up detector thresholds (see ChronoForceAttacher::DivergenceLimits).
+    DivergenceLimits divergence;
 };
 
 /// Solver-agnostic profiling stats from HydroForces.

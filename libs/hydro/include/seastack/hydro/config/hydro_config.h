@@ -116,11 +116,35 @@ struct WaveSettings {
 };
 
 /**
+ * @brief Optional divergence (blow-up) thresholds from hydro YAML.
+ *
+ * Magnitude checks are skipped when `enabled` is false; NaN/Inf still trips.
+ * A threshold of 0 or negative means unlimited for that entry.
+ * `max_roll_pitch_deg` is degrees in YAML; converted to radians when applied.
+ */
+struct DivergenceSettings {
+    bool enabled = true;
+    bool has_enabled = false;
+    double max_roll_pitch_deg = 90.0;
+    bool has_max_roll_pitch = false;
+    double max_position = 200.0;          ///< [m]
+    bool has_max_position = false;
+    double max_velocity = 20.0;           ///< [m/s]
+    bool has_max_velocity = false;
+    double max_angular_velocity = 5.0;    ///< [rad/s]
+    bool has_max_angular_velocity = false;
+    double max_force = 1.0e10;            ///< [N] or [N·m]
+    bool has_max_force = false;
+    bool has_any = false;                 ///< true if a `divergence:` block was present
+};
+
+/**
  * @brief Top-level container for hydrodynamic configuration data from YAML.
  */
 struct YAMLHydroData {
     std::vector<HydroBody> bodies;
     WaveSettings waves;
+    DivergenceSettings divergence;
     
     // ─────────────────────────────────────────────────────────────────────────
     // Nonlinear hydrostatics (DEPRECATED system-level enable)
