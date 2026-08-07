@@ -78,7 +78,7 @@ struct WaveDiscretizationSettings {
 
 /// Default `n_omega` for spectral irregular seas when YAML omits `waves.discretization.n_omega`
 /// and `waves.nfrequencies` (see BuildSeaStateDefinition in the Chrono adapter).
-inline constexpr int kDefaultWaveSpectralNOmega = 256;
+inline constexpr int kDefaultWaveSpectralNOmega = 512;
 
 /**
  * @brief Configuration for wave settings.

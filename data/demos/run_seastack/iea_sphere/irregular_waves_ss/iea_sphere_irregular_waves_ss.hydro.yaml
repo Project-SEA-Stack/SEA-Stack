@@ -8,7 +8,8 @@ hydrodynamics:
     height: 2.0
     period: 8.0
     seed: 42
-
+    discretization:
+      n_omega: 512
   radiation:
     method: state_space
     state_space:

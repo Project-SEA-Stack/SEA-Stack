@@ -15,7 +15,7 @@ hydrodynamics:
       type: cos2s
       s: 12
     discretization:
-      n_omega: 64
+      n_omega: 512
       n_theta: 21
     seed: 42
 

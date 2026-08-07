@@ -16,7 +16,8 @@ hydrodynamics:
     height: 3.0
     period: 10.0
     seed: 42
-
+    discretization:
+      n_omega: 512
   radiation:
     method: rirf_convolution
     smoothing:
