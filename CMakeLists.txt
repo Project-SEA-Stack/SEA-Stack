@@ -242,6 +242,15 @@ if(SEASTACK_ENABLE_CHRONO)
     # output bin directory at build time.  This uses the function exported
     # by chrono-config.cmake and works for both script and IDE builds.
     if(WIN32)
+        # ChronoConfig stages Chrono_fsisph_vsg when VSG is on, but omits
+        # Chrono_fsitdpf_vsg from CHRONO_DLL_NAMES. Chrono_parsers imports it
+        # at load time, so without this append local bin/ runs and Windows
+        # ctests that do not put Chrono's bin on PATH fail (0xC0000135 /
+        # 0xC06D007F). Packaging already globs all Chrono bin/*.dll.
+        if(TARGET Chrono::Chrono_fsitdpf_vsg)
+            list(APPEND CHRONO_DLL_NAMES "Chrono_fsitdpf_vsg.dll")
+            message(STATUS "SEA-Stack: staging Chrono_fsitdpf_vsg.dll (Parsers load-time dep)")
+        endif()
         add_CHRONO_DLLS_copy_command()
         include("${CMAKE_SOURCE_DIR}/cmake/SeaStackWindowsPythonRuntime.cmake")
     endif()

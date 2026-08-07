@@ -74,6 +74,7 @@ struct CampaignConfig {
 
     bool has_external_pto = false;
     seastack::infra::SetupConfig::ExternalPtoConfig external_pto;
+    std::vector<seastack::infra::SetupConfig::ExternalPtoConfig> external_ptos;
 
     // Axes
     AxisSpec hs;
@@ -360,6 +361,7 @@ bool ResolveCaseFiles(CampaignConfig& cfg) {
             LoadExternalPtoFromSetupYaml(setup_path, sc);
             cfg.has_external_pto = sc.has_external_pto;
             cfg.external_pto = sc.external_pto;
+            cfg.external_ptos = sc.external_ptos;
         } catch (const std::exception& e) {
             seastack::infra::cli::LogError(
                 std::string("Failed to parse external_pto: ") + e.what());
@@ -804,6 +806,7 @@ int RunCampaign(const std::string& campaign_yaml_path,
             run_cfg.capture_pto_total_timeseries = capture_summary_timeseries;
             run_cfg.has_external_pto = cfg.has_external_pto;
             run_cfg.external_pto = cfg.external_pto;
+            run_cfg.external_ptos = cfg.external_ptos;
 
             std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
             fs::create_directories(cell_diag_dir, ec);
@@ -881,6 +884,7 @@ int RunCampaign(const std::string& campaign_yaml_path,
                 run_cfg.capture_pto_total_timeseries = capture_summary_timeseries;
                 run_cfg.has_external_pto = cfg.has_external_pto;
                 run_cfg.external_pto = cfg.external_pto;
+                run_cfg.external_ptos = cfg.external_ptos;
 
                 std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
                 fs::create_directories(cell_diag_dir, ec);
@@ -930,6 +934,7 @@ int RunCampaign(const std::string& campaign_yaml_path,
             run_cfg.concise_cli     = concise_cells;
             run_cfg.has_external_pto = cfg.has_external_pto;
             run_cfg.external_pto = cfg.external_pto;
+            run_cfg.external_ptos = cfg.external_ptos;
 
             std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
             fs::create_directories(cell_diag_dir, ec);
