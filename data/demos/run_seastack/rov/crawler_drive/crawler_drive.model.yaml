@@ -1,0 +1,49 @@
+# Support vessel only: a 50 m Wigley hull (body1) plus a fixed ground and a
+# soft station-keeping spring. Mass / inertia / CoG z match
+# assets/hydroData/rov_vessel.h5 (CoG at z = -1.75 m).
+# The seabed and crawler come from crawler_drive.vehicle.yaml, not from here.
+chrono-version: 10.0
+
+model:
+  name: crawler_drive
+  angle_degrees: false
+
+  data_path:
+    type: RELATIVE
+    root: "."
+
+  bodies:
+    - name: ground
+      location: [0.0, 0.0, 0.0]
+      fixed: true
+
+    - name: body1
+      location: [0.0, 0.0, -1.75]     # CoG z = -1.75 m (must equal H5 body1 cg)
+      orientation: [0.0, 0.0, 0.0]
+      mass: 956667.0                   # kg (rho * (4/9) L B T at rho = 1025)
+      fixed: false
+      inertia:
+        moments: [16875600.0, 149479167.0, 149479167.0]
+        products: [0.0, 0.0, 0.0]
+      com:
+        location: [0.0, 0.0, 0.0]
+        orientation: [0.0, 0.0, 0.0]
+      visualization:
+        # Mesh is in the BEM frame (waterline z = 0); the body origin is at the
+        # CoG, so the visual shape is offset up by -cg_z = +1.75 m.
+        model_file: ../assets/geometry/vessel.obj
+        shape_location: [0.0, 0.0, 1.75]
+        color: [0.85, 0.72, 0.12]
+
+  tsdas:
+    # Soft station keeping so the vessel does not slowly drift out of shot.
+    # Drift control only, far softer than the wave excitation.
+    - name: station_keeping_vessel
+      type: TSDA
+      body1: ground
+      body2: body1
+      point1: [0.0, 0.0, -1.75]
+      point2: [0.0, 0.0, -1.75]
+      spring_coefficient: 5.0e4
+      damping_coefficient: 5.0e4
+      free_length: 0.0

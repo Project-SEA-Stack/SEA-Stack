@@ -1,0 +1,41 @@
+# Single-body BEM (rov_vessel.h5) on the support vessel. Regular HEAD sea
+# (heading 0 deg, propagating along +x) so the hull heaves and pitches down its
+# length. Depth 40 m must match the BEM solve. Explicit frequency-domain
+# excitation and state-space radiation (RIRF history dominates the step cost
+# at dt = 5e-4). Viscous damping is the 50 m Wigley set shared with the
+# trimaran / ship2ship cases.
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/rov_vessel.h5
+      linear_damping: [0.0, 0.0, 1.0e5, 1.0e6, 1.0e6, 0.0]
+      quadratic_damping: [1.2e4, 1.8e4, 1.0e4, 2.0e5, 2.0e5, 6.0e4]
+
+  waves:
+    type: regular
+    depth: 40.0
+    height: 2.0
+    period: 8.0
+    direction: 0.0
+    ramp_duration: 3.0     # short ramp for the headless smoke test
+    ramp_type: cosine
+
+  excitation:
+    method: frequency_domain
+
+  radiation:
+    method: state_space
+    state_space:
+      max_order: 8
+      r2_threshold: 0.90
+      max_hankel_size: 100
+
+  # Lazy-wave umbilical coupling the support vessel (hydro body1) to the M113
+  # crawler chassis (vehicle_chassis, a non-hydro body added by the vehicle
+  # subsystem). The chassis is an auxiliary coupled body: it feels the mooring
+  # wrench but no BEM forces. Body order matches the BODIES list in umbilical.txt
+  # (1 = vessel, 2 = crawler). Path is relative to this hydro YAML file.
+  moordyn:
+    enabled: true
+    input_file: ../assets/mooring/umbilical.txt
+    bodies: [body1, vehicle_chassis]

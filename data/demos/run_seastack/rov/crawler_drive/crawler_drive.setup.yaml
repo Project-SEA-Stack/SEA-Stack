@@ -1,0 +1,20 @@
+# ROV support vessel + seabed crawler + MoorDyn lazy-wave umbilical.
+#
+# Couples hydro body1 (vessel) to vehicle_chassis (M113) via HydroSystem
+# auxiliary MoorDyn bodies. Water-depth triple-consistency is asserted at
+# startup (H5 / waves.depth / MoorDyn WtrDpth).
+model_file: crawler_drive.model.yaml
+simulation_file: crawler_drive.simulation.yaml
+hydro_file: crawler_drive.hydro.yaml
+vehicle_file: crawler_drive.vehicle.yaml
+output_directory: outputs
+
+# The M113 contributes several hundred bodies, so writing every 5e-4 s step
+# would produce a multi-GB file. 20 Hz still oversamples everything this case
+# is judged on (vessel motion, umbilical tension, crawler track) by ~100x.
+output:
+  decimation: 100
+
+checks:
+  - type: water_depth_consistency
+    tolerance_m: 0.01

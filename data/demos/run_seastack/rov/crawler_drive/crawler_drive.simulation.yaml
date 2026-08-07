@@ -1,0 +1,31 @@
+# SMC + Euler implicit linearized + SPARSE_LU with a locked sparsity pattern.
+# dt = 5e-4 s is set by the single-pin M113 track pin joints and shoe/ground
+# contact, not the hydro.
+chrono-version: 10.0
+
+simulation:
+  contact_method: SMC
+
+  time_step: 0.0005
+  end_time: 45.0            # long enough for a headless smoke / validation run
+  enforce_realtime: false
+  gravity: [0, 0, -9.81]
+
+  integrator:
+    type: EULER_IMPLICIT_LINEARIZED
+    time_step: 0.0005
+
+  solver:
+    type: SPARSE_LU
+    # The KKT pattern is constant here (fixed body/link counts; SMC contacts
+    # enter as penalty forces, not constraints), so reuse the symbolic analysis.
+    lock_sparsity_pattern: true
+
+  visualization:
+    type: MODEL_FILE
+    render_fps: 50
+    enable_shadows: true
+    camera:
+      vertical: Z
+      location: [-20, -95, 15]
+      target: [10, -8, -10]

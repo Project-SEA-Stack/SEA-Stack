@@ -1,0 +1,115 @@
+ROV umbilical -- lazy-wave S-bend from a support-vessel stern A-frame to a seabed crawler
+--
+-- NOTE ON COMMENTS: MoorDyn parses each section until it hits a line containing
+-- three dashes, and does NOT skip "--" comment lines inside a section body. All
+-- commentary therefore lives here in the preamble; the sections below carry data
+-- rows only. Do not put a "--" line between the section header and its data.
+--
+-- COUPLED BODIES
+-- Both ends are Coupled bodies driven kinematically by SEA-Stack,
+-- not by MoorDyn:
+--    Body1 = support vessel  (Chrono body frame = its CoG, world z = -1.75 m)
+--    Body2 = M113 crawler chassis on the seabed
+-- The BODIES X0..y0 columns are nominal start-up poses only. MoorDynWrapper::
+-- Initialize passes the actual Chrono body states to MoorDyn_Init, so the real
+-- poses win. The crawler z in particular comes from the terrain height query
+-- at runtime, not from this file.
+--
+-- POINT OFFSETS ARE MEASURED FROM EACH BODY'S CENTRE OF MASS
+-- Points attached to BodyN are offsets in that body's own frame, and both Chrono
+-- bodies here report their centre-of-mass frame, so the offsets are NOT measured
+-- from a hull baseline or a chassis reference point.
+--   Point 1 = vessel CoG + (26, 0, 6.75) = world (26, 0, +5): just aft of the
+--             stern at x = +25 and above the deck at z = +3.5, i.e. at the head
+--             of a stern A-frame.
+--   Point 4 = crawler CoG + (-2, 0, 1.2): a towing eye 2 m aft and 1.2 m up.
+--   Points 2 and 3 only join the three sections. Their coordinates are an initial
+--             guess; MoorDyn's IC relaxation replaces them with the equilibrium.
+--
+-- LAZY-WAVE LAYOUT (three lines, buoyancy on the middle one)
+--
+--     fairlead (vessel stern, z = +5 m)
+--        \                 _.-'''-._      hog bend, lifted by the buoyant section
+--         \   upper 40 m _-'         '-_
+--          '-._        _-'               '-._   lower 28 m
+--              '--''''                       '-.__ crawler (z ~ -39.4 m)
+--                                                 ~12 m of it lying on the bottom
+--
+-- Slant range fairlead to crawler at t = 0 is 49 m against 80 m of cable (1.6x),
+-- so there is real slack. The arch is what decouples vessel heave from the
+-- crawler: without it every heave cycle would snatch the vehicle. The
+-- bottom-lying tail is what lets the crawler drive away without immediately
+-- loading the cable.
+--
+-- BUOYANCY BUDGET
+-- MoorDyn takes weight from Mass/m and buoyancy from Diam, so at rho = 1025:
+--   Umbil    displaces  8.05 kg/m, weighs 12 kg/m -> sinks at  3.95 kg/m (38.8 N/m)
+--   Buoyant  displaces 38.96 kg/m, weighs 25 kg/m -> lifts at 13.96 kg/m (137 N/m)
+-- The 12 m buoyant section lifts about 1.64 kN against the 1.09 kN submerged
+-- weight of the 28 m lower section it holds up. Buoyancy dominant by about
+-- 0.55 kN, which gives a stable hog bend rather than a sagging line, and which
+-- also relieves the fairlead: expect FairTen1 of order 1 to 2 kN in still water,
+-- not the 3.1 kN the whole 80 m would weigh if it all hung from the ship.
+--
+-- AXIAL STIFFNESS, SEGMENT LENGTH AND dtM ARE ONE CHOICE, NOT THREE
+-- MoorDyn integrates the lines explicitly (RK2), so dtM has to resolve the fastest
+-- axial segment mode. Per segment k = EA/l and m = (Mass/m)*l, so w = sqrt(k/m),
+-- and MoorDyn's rule of thumb is dtM < 0.1/w. With the numbers below:
+--   Umbil,   l = 2.5 m: k = 24 MN/m, m = 30.0 kg -> w =  894 rad/s -> dtM < 1.1e-4
+--   Buoyant, l = 1.5 m: k = 40 MN/m, m = 37.5 kg -> w = 1033 rad/s -> dtM < 9.7e-5
+-- dtM = 5e-5 s therefore has about a factor of two in hand, and means 10 MoorDyn
+-- substeps per 5e-4 s Chrono coupling step. For reference, dtM = 5e-4 s diverges
+-- to NaN in the buoyant section within 25 steps.
+--
+-- EA = 60 MN is the SOFT end of the realistic 50 to 200 MN range for a 100 mm
+-- umbilical, i.e. a lightly armoured cable rather than a heavily armoured power
+-- umbilical. It is chosen deliberately: a stiffer cable would need a dtM small
+-- enough that MoorDyn's initial-condition relaxation (TmaxIC below) dominates the
+-- run time, and axial stiffness has almost no bearing on what this demo shows,
+-- which is the geometry and heave-decoupling of a lazy wave. Raise EA if you care
+-- about snap loads, and drop dtM with it.
+--
+-- SEABED
+-- WtrDpth must match the BEM solve and the demo sea state; the demo asserts it.
+-- MoorDyn's seabed here is FLAT at the height-map crest level (z = -40 m), so the
+-- cable rests on the high spots and bridges the hollows. The 1.5 m of bathymetry
+-- is felt only by the crawler's tracks.
+---------------------- LINE TYPES -----------------------------------------------------
+LineType  Diam      Mass/m        EA          BA/-zeta   EI         Cd     Ca    CdAx     CaAx
+(-)       (m)       (kg/m)        (N)          (N-s/-)  (N-m^2)    (-)     (-)    (-)     (-)
+Umbil      0.100      12.0       60.0E6       -0.8      0        1.6     1.0    0.05     0.0
+Buoyant    0.220      25.0       60.0E6       -0.8      0        1.6     1.0    0.05     0.0
+---------------------------- BODIES -----------------------------------------------------
+ID   Attachment  X0     Y0      Z0      r0     p0     y0     Mass  CG*   I*      Volume   CdA*   Ca
+(#)     (-)      (m)    (m)     (m)    (deg)  (deg)  (deg)   (kg)  (m)  (kg-m^2)  (m^3)   (m^2)  (-)
+1       Coupled   0.0    0.0    -1.75    0      0      0      0.0   0    0         0       0      0
+2       Coupled  45.0  -12.0   -40.60    0      0      0      0.0   0    0         0       0      0
+---------------------- POINTS  -----------------------------------------------------
+ID      Attachment    X        Y        Z            Mass   Volume     CdA     CA
+(#)     (word/ID)    (m)      (m)      (m)           (kg)   (mˆ3)      (m^2)   (-)
+1         Body1      26.0      0.0      6.75          0        0         0      0
+2         Free       33.0     -5.0    -22.00          0        0         0      0
+3         Free       38.0     -8.0    -25.00          0        0         0      0
+4         Body2      -2.0      0.0      1.20          0        0         0      0
+---------------------- LINES -----------------------------------------------------
+ID     LineType  AttachA  AttachB  UnstrLen     NumSegs   LineOutputs
+(#)      (-)       (#)      (#)       (m)         (-)       (-)
+1        Umbil      1        2        40.0         16        tp
+2        Buoyant    2        3        12.0          8        tp
+3        Umbil      3        4        28.0         11        tp
+---------------------- SOLVER OPTIONS-----------------------------------------
+0.00005  dtM          - mooring integration step; set by the axial segment mode, see preamble
+0        WaveKin      - wave kinematics flag (0=neglect, the only option currently supported)
+3.0e6    kBot         - bottom stiffness
+3.0e5    cBot         - bottom damping
+40       WtrDpth      - water depth (MUST match the BEM solve and the demo sea state)
+5.0      CdScaleIC    - factor by which to scale drag coefficients during dynamic relaxation IC gen
+0.001    threshIC     - threshold for IC convergence
+60.0     TmaxIC       - cap on ic gen (s); a slack cable relaxes well inside this
+2        writeLog     - Write a log file
+0        WriteUnits   - 0: do not write the units header on the output files
+1        disableOutTime - 1: do not write timesteps to command window
+-------------------------- OUTPUTS --------------------------------
+FairTen1
+FairTen3
+--------------------- need this line ------------------

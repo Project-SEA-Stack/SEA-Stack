@@ -1,0 +1,74 @@
+# M113 tracked crawler on a bumpy rigid seabed. Spawn, ride height, path, and
+# seabed patch sizes are the case's design constants (see comments below).
+#
+# Paths in *_json and heightmap / texture are relative to Chrono's vehicle data
+# root (same convention as vehicle::GetVehicleDataFile).
+
+vehicle:
+  # Optional; cross-checked against the "Template" field of vehicle_json, which
+  # is what actually selects wheeled vs tracked.
+  type: TRACKED
+  # Single-pin tracks: far cheaper than band tracks and plenty for a seabed
+  # crawl. EngineSimple (not EngineSimpleMap) because Chrono 10's shipped
+  # M113_EngineSimpleMap.json fails to parse.
+  vehicle_json: M113/vehicle/M113_Vehicle_SinglePin.json
+  engine_json: M113/powertrain/M113_EngineSimple.json
+  transmission_json: M113/powertrain/M113_AutomaticTransmissionSimpleMap.json
+
+  # Spawn well inside the terrain patch, offset in y so a later umbilical has a
+  # clear 3-D shape. z = "terrain" -> seabed height under (x, y) + ride_height.
+  initial_position: [45.0, -12.0, terrain]
+  initial_yaw: 0.0        # rad, facing +x (down the survey line)
+  ride_height: 0.6        # m, chassis reference above the seabed surface
+
+  visualization:
+    chassis: MESH
+    sprocket: MESH
+    track_shoe: MESH
+    suspension: PRIMITIVES
+    wheel: PRIMITIVES
+
+  driver:
+    type: PATH_FOLLOWER
+    # Straight survey line along +x, away from the vessel.
+    path: [[45.0, -12.0], [80.0, -12.0]]
+    target_speed: 1.0     # m/s (~2 kn, realistic for a trencher)
+    # Raised over Chrono's defaults: skid steering on undulating ground is
+    # sloppy, and the 11 t M113 needs full throttle to break the tracks loose.
+    steering: { lookahead: 4.0, kp: 1.0, ki: 0.05, kd: 0.0 }
+    speed:    { kp: 2.0, ki: 0.1, kd: 0.0 }
+    # Hold on the brakes until the wave ramp is done (GUI users may prefer
+    # ~25 s to let the sea settle).
+    start_time: 4.0
+    # Park once the survey line is complete so the tracker does not turn back.
+    stop_at_x: 80.0
+
+  chase_camera:
+    point: [0.0, 0.0, 0.0]
+    distance: 14.0
+    height: 2.0
+
+terrain:
+  patches:
+    # bump64.bmp gives gentle rolling relief. The patch origin places the white
+    # level (hMax) on the charted depth: surface spans z = -41.5 m (hollows) to
+    # z = -40.0 m (crests). 100 x 64 m covers the vessel and the whole run.
+    - heightmap: terrain/height_maps/bump64.bmp
+      center: [40.0, 0.0, -41.5]
+      size: [100.0, 64.0]
+      height_range: [0.0, 1.5]
+      # false -> a single BVH triangle-mesh shape instead of ~7900 per-triangle
+      # shapes, a large win against the M113's 126 track shoes.
+      connected_mesh: false
+      sweep_sphere_radius: 0.01
+      material:
+        friction: 0.8
+        restitution: 0.01
+        Young_modulus: 1.0e7
+        Poisson_ratio: 0.3
+        normal_stiffness: 2.0e5
+        normal_damping: 40.0
+        tangential_stiffness: 2.0e5
+        tangential_damping: 20.0
+      texture: terrain/textures/dirt.jpg
+      color: [0.42, 0.38, 0.30]
