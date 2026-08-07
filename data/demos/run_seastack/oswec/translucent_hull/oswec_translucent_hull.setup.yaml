@@ -1,0 +1,5 @@
+model_file: oswec_translucent_hull.model.yaml
+simulation_file: oswec_translucent_hull.simulation.yaml
+hydro_file: oswec_translucent_hull.hydro.yaml
+
+output_directory: outputs

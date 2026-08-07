@@ -319,9 +319,13 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                         static_cast<bool>(vis_node["shape_location"]) &&
                         vis_node["shape_location"].IsSequence() &&
                         vis_node["shape_location"].size() >= 3;
-                    // Optional scalar opacity in [0,1]; <1 makes the mesh translucent
-                    // (e.g. a see-through hull). The VSG scene-paint step preserves
-                    // bodies whose material opacity is <1 (see guihelperVSG.cpp).
+                    // Optional scalar opacity in [0,1]; <1 makes a mesh visual
+                    // translucent (e.g. a see-through hull). Applies to mesh
+                    // shapes (model_file / triangle mesh) only; Chrono primitive
+                    // shapes under visualization.shapes: are left alone.
+                    // ApplyMaterialToAllVisualShapes skips materials with
+                    // opacity < 1 so the VSG painted-metal pass does not
+                    // overwrite them.
                     const bool has_opacity = static_cast<bool>(vis_node["opacity"]);
                     float opacity = 1.f;
                     if (has_opacity) {
@@ -358,9 +362,17 @@ static std::shared_ptr<::chrono::ChSystem> InitializeChronoSystem(
                     const auto apply_appearance =
                         [&](const std::shared_ptr<::chrono::ChVisualShapeTriangleMesh>& tri) {
                             if (has_opacity) {
+                                // Fill a complete PBR material: Chrono VSG enables alpha
+                                // blending when opacity < 1, and a default-constructed
+                                // material (roughness/metallic = 0) can crash the Vulkan
+                                // pipeline once the viewer starts stepping/rendering.
                                 auto mat = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
                                 mat->SetDiffuseColor(has_color ? ::chrono::ChColor(r, g, b)
                                                                : ::chrono::ChColor(0.7f, 0.7f, 0.75f));
+                                mat->SetSpecularColor(::chrono::ChColor(0.25f, 0.25f, 0.25f));
+                                mat->SetSpecularExponent(64.0f);
+                                mat->SetRoughness(0.45f);
+                                mat->SetMetallic(0.05f);
                                 mat->SetOpacity(opacity);
                                 tri->GetMaterials().clear();
                                 tri->AddMaterial(mat);
@@ -908,6 +920,21 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         double yaml_end_time = 0.0;
         TryFindYamlDouble(config.simulation_file, "end_time", yaml_end_time);
 
+        // Chrono YAML parses enforce_realtime, but run_seastack steps via
+        // DoStepDynamics directly (not ChParserMbsYAML::Advance), so honour it
+        // here. GUI mode always paces to realtime so Play is watchable.
+        bool enforce_realtime = false;
+        try {
+            auto sim_yaml = YAML::LoadFile(config.simulation_file);
+            if (sim_yaml["simulation"] && sim_yaml["simulation"]["enforce_realtime"]) {
+                enforce_realtime = sim_yaml["simulation"]["enforce_realtime"].as<bool>();
+            }
+        } catch (...) {
+        }
+        if (!nogui) {
+            enforce_realtime = true;
+        }
+
         // Diagnostic dump: compare system state to compiled regression tests.
         if (config.debug_mode) {
             std::ostringstream diag;
@@ -990,10 +1017,21 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         } else {
             // GUI-driven loop
             startup_line("Tip: if the GUI becomes unresponsive, try --nogui for headless mode.");
+            ::chrono::ChRealtimeStepTimer realtime_timer;
+            bool announced_end_time = false;
             while (ui.IsRunning(loop_dt)) {
                 if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
-                    startup_line(std::string("Reached configured end_time: ") + seastack::infra::FormatNumber(yaml_end_time, 3) + " s. Stopping.");
-                    break;
+                    // Keep the window open at end_time; do not quit (that looks like a crash).
+                    if (ui.simulationStarted) {
+                        ui.simulationStarted = false;
+                    }
+                    if (!announced_end_time) {
+                        seastack::infra::cli::LogInfo(
+                            std::string("Reached configured end_time: ") +
+                            seastack::infra::FormatNumber(yaml_end_time, 3) +
+                            " s. Paused — close the window when finished.");
+                        announced_end_time = true;
+                    }
                 }
                 if (ui.simulationStarted) {
                 double current_time = system->GetChTime();
@@ -1016,18 +1054,37 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 }
 
                 try {
-                    if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
-                    system->DoStepDynamics(loop_dt);
-                    if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
-                    step_count++;
-                    if (exporter) {
-                        if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
-                        exporter->RecordStep(system.get());
-                        if (export_detailed_hydro) {
-                            exporter->RecordHydroForces(hydro_forces->GetLastComponentForces());
-                        }
-                        if (config.profile_mode) { prof_export_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
+                    // Small Chrono steps (e.g. MoorDyn dt = 0.5 ms) need many
+                    // substeps per render frame or the GUI crawls at ~0.03× realtime.
+                    constexpr double kGuiFrameSimBudget = 1.0 / 60.0;
+                    constexpr int kGuiMaxSubsteps = 400;
+                    int n_substeps = 1;
+                    if (enforce_realtime && loop_dt > 0.0) {
+                        n_substeps = static_cast<int>(std::ceil(kGuiFrameSimBudget / loop_dt));
+                        n_substeps = std::max(1, std::min(n_substeps, kGuiMaxSubsteps));
                     }
+
+                    if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
+                    for (int sub = 0; sub < n_substeps; ++sub) {
+                        if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
+                            break;
+                        }
+                        system->DoStepDynamics(loop_dt);
+                        step_count++;
+                        if (exporter) {
+                            exporter->RecordStep(system.get());
+                            if (export_detailed_hydro) {
+                                exporter->RecordHydroForces(hydro_forces->GetLastComponentForces());
+                            }
+                        }
+                        if (hydro_forces && hydro_forces->HasDiverged()) {
+                            break;
+                        }
+                    }
+                    if (enforce_realtime) {
+                        realtime_timer.Spin(static_cast<double>(n_substeps) * loop_dt);
+                    }
+                    if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
 
                     if (first_step) {
                         double new_time = system->GetChTime();
