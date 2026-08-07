@@ -47,3 +47,5 @@ WORK.md
 .DS_Store
 /_package_verify
 /release-assets
+build-clean-verify.log
+test-suites-verify.log
