@@ -904,6 +904,21 @@ The adapter calls **Hydro** with a `SystemState` from Chrono bodies and applies 
 - **GUI** — Optional VSG: water surface, mooring, radiation viz, controls
 - **Doctor** — Environment checks (paths, DLLs, Chrono config)
 
+**Model YAML visualization extensions** (applied after Chrono MBS YAML load in
+`single_run.cpp`):
+
+| Key under `bodies[].visualization` | Effect |
+|------------------------------------|--------|
+| `color: [r, g, b]` | Diffuse color on a rebuilt mesh shape |
+| `shape_location: [x, y, z]` | Visual offset of the mesh relative to the body frame |
+| `opacity: <0–1>` | Mesh material alpha; values `< 1` make the mesh translucent |
+
+`opacity` applies to **mesh** visuals (`model_file` / triangle mesh) only.
+Chrono primitive `shapes:` (cylinder, sphere, …) are not rewritten by this
+post-pass. Opaque bodies still receive the VSG painted-metal appearance;
+shapes whose material already has opacity `< 1` are left alone so the YAML
+alpha survives into the GUI. See `oswec/translucent_hull`.
+
 ### F.2 Core data types (C++)
 
 ```cpp
