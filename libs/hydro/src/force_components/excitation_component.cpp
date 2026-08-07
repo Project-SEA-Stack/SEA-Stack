@@ -38,9 +38,11 @@ ExcitationComponent::ExcitationComponent(
 void ExcitationComponent::Compute(const SystemState& state,
                                   double time,
                                   BodyForces& inout_forces) {
-    if (static_cast<int>(inout_forces.size()) != num_bodies_) {
+    // A larger buffer (auxiliary mooring-only bodies appended) is allowed; only
+    // the first num_bodies_ are written.
+    if (static_cast<int>(inout_forces.size()) < num_bodies_) {
         throw std::runtime_error(
-            "ExcitationComponent::Compute: inout_forces.size() mismatch (expected " +
+            "ExcitationComponent::Compute: inout_forces.size() too small (need at least " +
             std::to_string(num_bodies_) + ", got " + std::to_string(inout_forces.size()) + ")");
     }
 

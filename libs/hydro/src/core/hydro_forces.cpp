@@ -45,12 +45,14 @@ const char* HydroComponentTypeName(seastack::hydro::HydroComponentType type) {
 namespace seastack::hydro {
 
 HydroForces::HydroForces(int num_bodies,
-                         std::vector<std::unique_ptr<IHydroForceComponent>> components)
+                         std::vector<std::unique_ptr<IHydroForceComponent>> components,
+                         int num_coupled_bodies)
     : num_bodies_(num_bodies),
+      num_coupled_bodies_(num_coupled_bodies > num_bodies ? num_coupled_bodies : num_bodies),
       components_(std::move(components)),
       profile_stats_(),
       profiling_enabled_(false),
-      forces_buffer_(num_bodies_) {
+      forces_buffer_(num_coupled_bodies_) {
     // Require at least one body; otherwise hydrodynamic forces are meaningless.
     if (num_bodies_ <= 0) {
         throw std::invalid_argument(
@@ -60,6 +62,17 @@ HydroForces::HydroForces(int num_bodies,
 
 BodyForces HydroForces::Evaluate(const SystemState& state, double time,
                                  std::vector<ComponentForceRecord>* per_component) {
+    // Single point of truth for the buffer-size invariant: the caller's state
+    // must cover every coupled body, hydro and auxiliary alike. Components only
+    // check that their own slots exist, so a state that is too long would
+    // otherwise leave auxiliary wrenches silently unapplied.
+    if (static_cast<int>(state.bodies.size()) != num_coupled_bodies_) {
+        throw std::runtime_error(
+            "HydroForces::Evaluate: state.bodies.size() must equal the coupled body count "
+            "(expected " + std::to_string(num_coupled_bodies_) + ", got " +
+            std::to_string(state.bodies.size()) + ")");
+    }
+
     for (auto& force : forces_buffer_) {
         force.force.setZero();
         force.moment.setZero();

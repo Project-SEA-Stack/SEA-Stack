@@ -168,14 +168,15 @@ void RadiationStateSpaceComponent::Compute(
     double time,
     BodyForces& inout_forces) {
     
-    // Validate state and forces sizes
-    if (static_cast<int>(state.bodies.size()) != num_bodies_) {
+    // Validate state and forces sizes. A larger state/buffer (auxiliary
+    // mooring-only bodies appended) is allowed; only the first num_bodies_ are read.
+    if (static_cast<int>(state.bodies.size()) < num_bodies_) {
         throw std::runtime_error(
-            "RadiationStateSpaceComponent::Compute: state.bodies.size() mismatch");
+            "RadiationStateSpaceComponent::Compute: state.bodies.size() too small");
     }
-    if (static_cast<int>(inout_forces.size()) != num_bodies_) {
+    if (static_cast<int>(inout_forces.size()) < num_bodies_) {
         throw std::runtime_error(
-            "RadiationStateSpaceComponent::Compute: inout_forces.size() mismatch");
+            "RadiationStateSpaceComponent::Compute: inout_forces.size() too small");
     }
 
     // Extract velocity vector from state (use member buffer)

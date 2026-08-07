@@ -22,6 +22,7 @@
 #include <seastack/infra/debug_trace.h>
 #include <seastack/infra/logging.h>
 
+#include <cstddef>
 #include <stdexcept>
 #include <string>
 
@@ -90,6 +91,21 @@ HydroSystem::HydroSystem(std::vector<std::shared_ptr<ChBody>> user_bodies,
 
     user_waves_ = waves;
     AddWaves(user_waves_);
+}
+
+void HydroSystem::AddAuxiliaryCoupledBody(std::shared_ptr<ChBody> body) {
+    ThrowIfModelConstructed("AddAuxiliaryCoupledBody");
+    if (!body) {
+        throw std::invalid_argument(
+            "HydroSystem::AddAuxiliaryCoupledBody: body must not be null");
+    }
+    auxiliary_bodies_.push_back(std::move(body));
+}
+
+std::vector<std::shared_ptr<ChBody>> HydroSystem::AllCoupledBodies() const {
+    std::vector<std::shared_ptr<ChBody>> all = bodies_;
+    all.insert(all.end(), auxiliary_bodies_.begin(), auxiliary_bodies_.end());
+    return all;
 }
 
 void HydroSystem::AddWaves(std::shared_ptr<WaveBase> waves) {
@@ -170,10 +186,18 @@ void HydroSystem::EnsureHydroForcesAndCoupler() {
         builder.WithDiagnosticsOutputDir(config_.diagnostics_output_dir);
     }
 
+    // Auxiliary bodies (e.g. a vehicle chassis) are appended after the hydro
+    // bodies in the SystemState and the force buffer, so MoorDyn can couple them
+    // even though they carry no BEM forces.
+    const std::vector<std::shared_ptr<ChBody>> all_bodies = AllCoupledBodies();
+    if (!auxiliary_bodies_.empty()) {
+        builder.WithAuxiliaryBodyCount(static_cast<int>(auxiliary_bodies_.size()));
+    }
+
 #ifdef SEASTACK_HAVE_MOORDYN
     if (config_.moordyn_config.enabled) {
         seastack::hydro::SystemState init_state;
-        seastack::chrono::BuildSystemStateFromChronoBodies(bodies_, init_state);
+        seastack::chrono::BuildSystemStateFromChronoBodies(all_bodies, init_state);
 
         auto wrapper = std::make_unique<seastack::mooring::MoorDynWrapper>(
             config_.moordyn_config.input_file, config_.moordyn_config.coupled_body_indices);
@@ -185,8 +209,19 @@ void HydroSystem::EnsureHydroForcesAndCoupler() {
 
     hydro_model_ = std::make_unique<seastack::hydro::HydroModel>(builder.Build());
 
+    // The coupler builds the SystemState from all coupled bodies (hydro + aux).
+    // Hydro force components only read/write the first num_bodies_ entries; the
+    // mooring component may write into the auxiliary slots.
     chrono_coupler_ = std::make_unique<seastack::chrono::ChronoHydroCoupler>(
-        hydro_model_->GetForces(), bodies_);
+        hydro_model_->GetForces(), all_bodies);
+
+    // One force accumulator per auxiliary body, refreshed each evaluation with
+    // the mooring wrench MoorDyn returns for that body.
+    auxiliary_accumulators_.clear();
+    auxiliary_accumulators_.reserve(auxiliary_bodies_.size());
+    for (const auto& body : auxiliary_bodies_) {
+        auxiliary_accumulators_.push_back(body->AddAccumulator());
+    }
 
     if (config_.profiling_enabled) {
         chrono_coupler_->SetProfilingEnabled(true);
@@ -201,9 +236,36 @@ seastack::hydro::BodyForces HydroSystem::EvaluateForces(double time) {
     seastack::hydro::BodyForces body_forces = chrono_coupler_->Evaluate(
         time, per_component_capture_ ? &last_component_forces_ : nullptr);
 
+    // Auxiliary bodies do not have hydro ChForce callbacks, so their mooring
+    // wrench is applied directly here through per-body accumulators.
+    ApplyAuxiliaryMooringForces(body_forces);
+
     profile_stats_ = chrono_coupler_->GetProfileStats();
 
     return body_forces;
+}
+
+void HydroSystem::ApplyAuxiliaryMooringForces(
+    const seastack::hydro::BodyForces& body_forces) {
+    for (std::size_t i = 0; i < auxiliary_bodies_.size(); ++i) {
+        const std::size_t idx = static_cast<std::size_t>(num_bodies_) + i;
+        if (idx >= body_forces.size() || i >= auxiliary_accumulators_.size()) {
+            break;
+        }
+        const auto& gf = body_forces[idx];
+        const auto& body = auxiliary_bodies_[i];
+        const unsigned int acc = auxiliary_accumulators_[i];
+
+        // The wrench is expressed about the body centre of mass in world axes,
+        // matching MoorDynWrapper's convention.
+        body->EmptyAccumulator(acc);
+        body->AccumulateForce(acc,
+                              ::chrono::ChVector3d(gf.force[0], gf.force[1], gf.force[2]),
+                              body->GetPos(), /*local=*/false);
+        body->AccumulateTorque(acc,
+                               ::chrono::ChVector3d(gf.moment[0], gf.moment[1], gf.moment[2]),
+                               /*local=*/false);
+    }
 }
 
 // ────────────────────────────────────────────────────────────────────

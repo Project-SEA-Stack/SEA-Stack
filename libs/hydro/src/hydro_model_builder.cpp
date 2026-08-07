@@ -219,6 +219,11 @@ HydroModelBuilder& HydroModelBuilder::AddComponent(
     return *this;
 }
 
+HydroModelBuilder& HydroModelBuilder::WithAuxiliaryBodyCount(int n) {
+    auxiliary_body_count_ = (n > 0) ? n : 0;
+    return *this;
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // Build — validation + assembly
 // ═══════════════════════════════════════════════════════════════════════
@@ -595,8 +600,12 @@ HydroModel HydroModelBuilder::Build() {
     extra_components_.clear();
 
     // ── 8. Construct HydroForces and package into HydroModel ────────
+    // Auxiliary bodies (mooring-only) extend the force buffer / SystemState past
+    // the hydrodynamic bodies; hydro components still only touch the first
+    // num_bodies entries.
+    const int num_coupled_bodies = num_bodies + auxiliary_body_count_;
     auto forces = std::make_unique<HydroForces>(
-        num_bodies, std::move(components));
+        num_bodies, std::move(components), num_coupled_bodies);
 
     return HydroModel(std::move(data_), std::move(wave), std::move(forces));
 }

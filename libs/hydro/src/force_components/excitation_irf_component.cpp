@@ -174,9 +174,11 @@ void ExcitationIrfComponent::Compute(
     double time,
     BodyForces& inout_forces) {
 
-    if (static_cast<int>(inout_forces.size()) != num_bodies_) {
+    // A larger buffer (auxiliary mooring-only bodies appended) is allowed; only
+    // the first num_bodies_ are written.
+    if (static_cast<int>(inout_forces.size()) < num_bodies_) {
         throw std::runtime_error(
-            "ExcitationIrfComponent::Compute: inout_forces.size() mismatch");
+            "ExcitationIrfComponent::Compute: inout_forces.size() too small");
     }
 
     const auto& birf0 = body_irfs_[0];

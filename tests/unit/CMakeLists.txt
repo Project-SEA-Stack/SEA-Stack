@@ -34,6 +34,11 @@ target_include_directories(test_radiation_ss_fitter PRIVATE
 )
 set_tests_properties(test_radiation_ss_fitter PROPERTIES LABELS "unit;chrono-free")
 
+# Auxiliary (mooring-only) body slots in HydroForces (Chrono-free, HDF5-free)
+build_unit_test(test_hydro_auxiliary_bodies)
+target_link_libraries(test_hydro_auxiliary_bodies PRIVATE SEAStack::Hydro)
+set_tests_properties(test_hydro_auxiliary_bodies PROPERTIES LABELS "unit;chrono-free")
+
 # Directional waves test (requires HDF5 via HydroIO, but no Chrono)
 if(TARGET seastack_hydro_io)
     build_unit_test(test_directional_waves)

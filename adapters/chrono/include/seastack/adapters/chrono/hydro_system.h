@@ -119,6 +119,19 @@ class HydroSystem {
     std::shared_ptr<seastack::hydro::WaveBase> GetWave() const { return user_waves_; }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Auxiliary coupled bodies (mooring only, no BEM)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// Append a body that participates in MoorDyn (and the SystemState) but
+    /// receives NO BEM hydro forces. Auxiliary bodies are appended after the
+    /// hydrodynamic bodies, so MoorDyn coupled-body indices are into the
+    /// concatenated list [hydro bodies..., auxiliary bodies...]. The mooring
+    /// wrench for each auxiliary body is applied directly to the Chrono body via
+    /// a force accumulator (bypassing the ChForce body<N> naming rule used for
+    /// hydro bodies). Must be called before model construction (first timestep).
+    void AddAuxiliaryCoupledBody(std::shared_ptr<::chrono::ChBody> body);
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Configuration setters (delegate to config_)
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -244,6 +257,12 @@ class HydroSystem {
     std::vector<std::shared_ptr<::chrono::ChBody>> bodies_;
     int num_bodies_;
 
+    // Auxiliary bodies coupled to MoorDyn only (no BEM). Appended after bodies_
+    // in the SystemState. Their mooring wrenches are applied through per-body
+    // force accumulators refreshed on each force evaluation.
+    std::vector<std::shared_ptr<::chrono::ChBody>> auxiliary_bodies_;
+    std::vector<unsigned int> auxiliary_accumulators_;
+
     // BEM data
     seastack::hydro::HydroData file_info_;
 
@@ -269,6 +288,14 @@ class HydroSystem {
 
     /// Force evaluation callback provided to ChronoForceAttacher.
     seastack::hydro::BodyForces EvaluateForces(double time);
+
+    /// Concatenation of hydro bodies (bodies_) and auxiliary_bodies_, in that
+    /// order. This is the body list MoorDyn / SystemState indices refer to.
+    std::vector<std::shared_ptr<::chrono::ChBody>> AllCoupledBodies() const;
+
+    /// Apply the mooring wrenches for auxiliary bodies (indices past the hydro
+    /// body count in @p body_forces) onto their Chrono bodies via accumulators.
+    void ApplyAuxiliaryMooringForces(const seastack::hydro::BodyForces& body_forces);
 };
 
 }  // namespace seastack::chrono

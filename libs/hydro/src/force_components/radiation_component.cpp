@@ -100,15 +100,17 @@ double RadiationComponent::GetRIRFval(int row, int col, int st) {
 void RadiationComponent::Compute(const SystemState& state,
                              double time,
                              BodyForces& inout_forces) {
-    // Internal consistency check: state and forces must match expected body count.
-    if (static_cast<int>(state.bodies.size()) != num_bodies_) {
+    // Internal consistency check: state and forces must cover at least the
+    // hydrodynamic bodies. A larger state/buffer (auxiliary mooring-only bodies
+    // appended) is allowed; only the first num_bodies_ are read.
+    if (static_cast<int>(state.bodies.size()) < num_bodies_) {
         throw std::runtime_error(
-            "RadiationComponent::Compute: state.bodies.size() mismatch (expected " +
+            "RadiationComponent::Compute: state.bodies.size() too small (need at least " +
             std::to_string(num_bodies_) + ", got " + std::to_string(state.bodies.size()) + ")");
     }
-    if (static_cast<int>(inout_forces.size()) != num_bodies_) {
+    if (static_cast<int>(inout_forces.size()) < num_bodies_) {
         throw std::runtime_error(
-            "RadiationComponent::Compute: inout_forces.size() mismatch (expected " +
+            "RadiationComponent::Compute: inout_forces.size() too small (need at least " +
             std::to_string(num_bodies_) + ", got " + std::to_string(inout_forces.size()) + ")");
     }
 

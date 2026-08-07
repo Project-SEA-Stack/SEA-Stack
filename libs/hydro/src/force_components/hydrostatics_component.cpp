@@ -80,16 +80,17 @@ HydrostaticsComponent::HydrostaticsComponent(
 void HydrostaticsComponent::Compute(const SystemState& state,
                                 double time,
                                 BodyForces& inout_forces) {
-    // Internal consistency check: state and forces must match expected body count.
-    // This can fail if HydroSystem is misused (integration bug, not user config error).
-    if (static_cast<int>(state.bodies.size()) != num_bodies_) {
+    // Internal consistency check: state and forces must cover at least the
+    // hydrodynamic bodies. The state/buffer may be larger when auxiliary
+    // (mooring-only) bodies are appended; only the first num_bodies_ are read.
+    if (static_cast<int>(state.bodies.size()) < num_bodies_) {
         throw std::runtime_error(
-            "HydrostaticsComponent::Compute: state.bodies.size() mismatch (expected " +
+            "HydrostaticsComponent::Compute: state.bodies.size() too small (need at least " +
             std::to_string(num_bodies_) + ", got " + std::to_string(state.bodies.size()) + ")");
     }
-    if (static_cast<int>(inout_forces.size()) != num_bodies_) {
+    if (static_cast<int>(inout_forces.size()) < num_bodies_) {
         throw std::runtime_error(
-            "HydrostaticsComponent::Compute: inout_forces.size() mismatch (expected " +
+            "HydrostaticsComponent::Compute: inout_forces.size() too small (need at least " +
             std::to_string(num_bodies_) + ", got " + std::to_string(inout_forces.size()) + ")");
     }
 

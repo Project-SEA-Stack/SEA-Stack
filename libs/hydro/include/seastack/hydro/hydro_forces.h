@@ -53,33 +53,50 @@ class HydroForces {
 public:
     /**
      * @brief Constructor.
-     * 
-     * @param num_bodies Number of bodies in the system
+     *
+     * @param num_bodies Number of hydrodynamic bodies. Force components
+     *        (hydrostatics, radiation, excitation) operate on these bodies.
      * @param components Vector of force components (ownership transferred via move)
+     * @param num_coupled_bodies Total number of bodies in the SystemState /
+     *        BodyForces buffer, including auxiliary bodies that receive mooring
+     *        forces only (no BEM). Defaults to num_bodies when < num_bodies.
+     *        Auxiliary bodies are appended after the hydro bodies, so mooring can
+     *        write wrenches into indices [num_bodies, num_coupled_bodies).
      */
     HydroForces(int num_bodies,
-                std::vector<std::unique_ptr<IHydroForceComponent>> components);
+                std::vector<std::unique_ptr<IHydroForceComponent>> components,
+                int num_coupled_bodies = -1);
 
     /**
-     * @brief Evaluate total hydrodynamic forces.
-     * 
+     * @brief Evaluate total forces on every coupled body.
+     *
      * Computes force contributions from all components for the given
      * system state and time, accumulating them into a single result.
      * Also updates profiling statistics for each component type.
-     * 
-     * @param state Current system state (positions, velocities for all bodies)
-     * @param time Current simulation time
+     *
+     * INDEX CONVENTION (the one place it is stated):
+     *   Indices [0, num_bodies())          hydrodynamic bodies: BEM components
+     *                                      (hydrostatics, radiation, excitation)
+     *                                      plus mooring.
+     *   Indices [num_bodies(), size())     auxiliary bodies: mooring only, no BEM.
+     * `state` and the returned buffer are both exactly num_coupled_bodies long
+     * (num_bodies plus the auxiliary count passed to the constructor); a state of
+     * any other length throws.
+     *
+     * @param state Current system state for all coupled bodies
+     * @param time Current simulation time [s]
      * @param per_component If non-null, filled with one ComponentForceRecord per
-     *        component (delta-snapshot approach). The total return value is unchanged.
-     * @return BodyForces Total forces (one GeneralizedForce per body, 6 DOF each)
+     *        component, each covering the hydrodynamic bodies only
+     *        (delta-snapshot approach). The total return value is unchanged.
+     * @return BodyForces Total wrench per coupled body, 6 DOF each
      */
     BodyForces Evaluate(const SystemState& state, double time,
                         std::vector<ComponentForceRecord>* per_component = nullptr);
 
     /**
-     * @brief Get number of bodies in the system.
-     * 
-     * @return Number of bodies
+     * @brief Number of hydrodynamic bodies (excludes auxiliary bodies).
+     *
+     * @return Number of bodies carrying BEM forces
      */
     int num_bodies() const { return num_bodies_; }
 
@@ -125,6 +142,9 @@ public:
 
 private:
     int num_bodies_;
+    /// Size of the forces buffer / SystemState: hydro bodies plus auxiliary
+    /// (mooring-only) bodies. Equals num_bodies_ when there are no aux bodies.
+    int num_coupled_bodies_;
     std::vector<std::unique_ptr<IHydroForceComponent>> components_;
     mutable HydroForcesProfileStats profile_stats_;
     bool profiling_enabled_ = false;  ///< Profiling disabled by default

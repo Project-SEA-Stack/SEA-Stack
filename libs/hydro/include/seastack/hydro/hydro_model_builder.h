@@ -223,6 +223,12 @@ class HydroModelBuilder {
     HydroModelBuilder& AddComponent(
         std::unique_ptr<IHydroForceComponent> component);
 
+    /// Reserve extra body slots in the force buffer / SystemState for auxiliary
+    /// bodies that participate in mooring only (no BEM forces). These are
+    /// appended after the hydrodynamic bodies. Used by the Chrono adapter to let
+    /// MoorDyn couple non-hydro bodies (e.g. a vehicle chassis). Default 0.
+    HydroModelBuilder& WithAuxiliaryBodyCount(int n);
+
     // ── Build ────────────────────────────────────────────────────────
 
     /// Validate configuration and build a self-contained HydroModel.
@@ -278,6 +284,9 @@ class HydroModelBuilder {
 
     // Extra components added via AddComponent()
     std::vector<std::unique_ptr<IHydroForceComponent>> extra_components_;
+
+    // Auxiliary (mooring-only) bodies appended after the hydrodynamic bodies.
+    int auxiliary_body_count_ = 0;
 };
 
 }  // namespace seastack::hydro
