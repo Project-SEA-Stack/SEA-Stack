@@ -79,6 +79,14 @@ build_unit_test(test_hydraulic_components)
 target_link_libraries(test_hydraulic_components PRIVATE SEAStack::PTO)
 set_tests_properties(test_hydraulic_components PROPERTIES LABELS "unit;chrono-free")
 
+# MoorDyn orientation-convention test (Chrono-free, header-only: no MoorDyn link)
+build_unit_test(test_moordyn_euler_convention)
+target_link_libraries(test_moordyn_euler_convention PRIVATE SEAStack::Core)
+target_include_directories(test_moordyn_euler_convention PRIVATE
+    "${CMAKE_SOURCE_DIR}/libs/mooring/include"
+)
+set_tests_properties(test_moordyn_euler_convention PROPERTIES LABELS "unit;chrono-free")
+
 # Control tests (Chrono-free, HDF5-free)
 build_unit_test(test_pi_controller)
 target_link_libraries(test_pi_controller PRIVATE SEAStack::Control)
