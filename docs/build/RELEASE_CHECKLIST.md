@@ -7,7 +7,7 @@ Keep Windows and macOS in sync before tagging.
 
 1. Create / check out `release/vX.Y.Z[-suffix]` from `main`.
 2. Bump every product-facing version string:
-   - [`CMakeLists.txt`](../../CMakeLists.txt) — `SEASTACK_VERSION_SUFFIX` (e.g. `"-beta.3"`)
+   - [`CMakeLists.txt`](../../CMakeLists.txt) — `SEASTACK_VERSION_SUFFIX` (e.g. `"-beta.4"`)
    - [`README.md`](../../README.md) — badge + “current release” prose
    - [`TECHNICAL_OVERVIEW.md`](../../TECHNICAL_OVERVIEW.md) — version header and body mentions
    - [`scripts/windows/stage_release_reports.ps1`](../../scripts/windows/stage_release_reports.ps1) — usage examples (`-Version v…`)
@@ -76,7 +76,7 @@ only — but release staging expects the PDFs.
 
 Copies regression / verification / comparison **PDF** reports into
 `./release-assets/` (gitignored) with GitHub Release names, e.g.
-`SEA-Stack-v1.0.0-beta.3-regression-report.pdf`. Fails if any PDF is missing.
+`SEA-Stack-v1.0.0-beta.4-regression-report.pdf`. Fails if any PDF is missing.
 
 ## 6. Staged-install smoke
 
@@ -99,7 +99,7 @@ Conventions used in this project:
 - Work on a **`release/v…` branch** (not directly on `main`), then open a PR and
   merge it into `main` when the cut is ready.
 - Tag the release commit with an annotated tag matching the version string, e.g.
-  `v1.0.0-beta.3` (same stem as the branch / `SEASTACK_VERSION_FULL`).
+  `v1.0.0-beta.4` (same stem as the branch / `SEASTACK_VERSION_FULL`).
 - Beta / RC tags are published as **GitHub pre-releases**; attach the Windows and
   macOS ZIPs plus any staged reports from `release-assets/`.
 - Prefer creating the GitHub Release in the web UI (or `gh release create`) after
