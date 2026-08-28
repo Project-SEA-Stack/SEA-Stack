@@ -183,12 +183,17 @@ if(SEASTACK_ENABLE_CHRONO)
             "  (or /usr/local/opt/libomp on Intel Homebrew).")
     endif()
 
-    # If Chrono set HDF5_DIR, retry the find
+    # If Chrono set HDF5_DIR to NOTFOUND (common when Chrono itself found HDF5
+    # via module mode, not hdf5-config.cmake), clear it so later FindHDF5
+    # module-mode discovery (e.g. Ubuntu libhdf5-dev) can succeed.
     if(NOT HDF5_FOUND AND DEFINED CACHE{HDF5_DIR})
         if("${HDF5_DIR}" MATCHES "NOTFOUND")
             unset(HDF5_DIR CACHE)
             find_package(HDF5 CONFIG QUIET)
         endif()
+    endif()
+    if(SEASTACK_ENABLE_HYDRO_IO AND NOT HDF5_FOUND)
+        find_package(HDF5 QUIET COMPONENTS CXX)
     endif()
 
     # Use same C++ standard as Chrono for ABI compatibility
