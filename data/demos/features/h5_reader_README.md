@@ -20,10 +20,10 @@ With capabilities such as
 
 run h5 output reader python file in terminal
 - located in data/demos/run_seastack/features
-  - either cd data/demos/run_seastack/features or direct to data/demos/run_seastack/features/h5outputsReader.py
+  - either cd data/demos/run_seastack/features or direct to data/demos/run_seastack/features/h5_reader.py
 
 ```bash
-python h5outputsReader.py <path_to_h5_output_file/results.x.h5> --field <field> [options] --bodies <body> [options] --dof <dof> [options]  --joints <joints> [options] --tsda <tsda> [options] --list --mooring <field> [index] --mooring_path <path>
+python h5_reader.py <path_to_h5_output_file/results.x.h5> --field <field> [options] --bodies <body> [options] --dof <dof> [options]  --joints <joints> [options] --tsda <tsda> [options] --list --mooring <field> [index] --mooring_path <path>
 ```
 
 ## Features
@@ -161,7 +161,7 @@ Mooring directory can be specified with `--mooring_path`
 ### Plot heave position (all bodies) of 5sa demo - bodies not specified
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5 --field position --dof heave
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5 --field position --dof heave
 ```
 <img width="572" height="456" alt="image" src="https://github.com/user-attachments/assets/ee8b9a63-f13a-43c3-975d-c065858f9389" />
 
@@ -171,7 +171,7 @@ python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5 --fiel
 (note: order bodies are listed can change plotting order!)
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5 --field velocity --dof sway --bodies 3 5 
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5 --field velocity --dof sway --bodies 3 5 
 ```
 <img width="570" height="445" alt="image" src="https://github.com/user-attachments/assets/b2b534de-e555-4c8d-bc37-362e7c4e1c60" />
 
@@ -180,7 +180,7 @@ python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5 --fiel
 ### Plot total TSDA power of RM3
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --field power
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --field power
 ```
 <img width="630" height="442" alt="image" src="https://github.com/user-attachments/assets/a2eaa409-3586-41a5-b81f-955f2293e2b3" />
 
@@ -188,7 +188,7 @@ python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --fie
 
 ### List available joint force outputs for the 5sa
 ```bash
-python h5outputsReader.py 5sa/regular_waves/outputs/results.regular.h5  --list
+python h5_reader.py 5sa/regular_waves/outputs/results.regular.h5  --list
 ```
 
 <img width="252" height="522" alt="image" src="https://github.com/user-attachments/assets/87dd47c3-8137-4b86-bb24-5afb171ecc31" />
@@ -198,7 +198,7 @@ python h5outputsReader.py 5sa/regular_waves/outputs/results.regular.h5  --list
 ### Plot joint torque for RM3
 
 ```bash
-python h5outputsReader.py ../rm3/regular_waves/outputs/results.regular.h5  --field joint_torque --joints float_plate_joint
+python h5_reader.py ../rm3/regular_waves/outputs/results.regular.h5  --field joint_torque --joints float_plate_joint
 ```
 <img width="576" height="441" alt="image" src="https://github.com/user-attachments/assets/7f5bce72-d031-4455-bee2-21938041a05e" />
 
@@ -207,7 +207,7 @@ python h5outputsReader.py ../rm3/regular_waves/outputs/results.regular.h5  --fie
 ### Plot selected TSDA forces (between body 1 and 2) of 5sa (tsda names from list function output)
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5 --field tsda_force --tsdas ram_12_top ram_12_bottom ram_12_stbd ram_12_port
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5 --field tsda_force --tsdas ram_12_top ram_12_bottom ram_12_stbd ram_12_port
 ```
 
 <img width="580" height="450" alt="image" src="https://github.com/user-attachments/assets/fdae318d-a2b5-4c4c-aa1e-5241d1cc52cb" />
@@ -217,7 +217,7 @@ python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5 --fiel
 ### Plot selected TSDA energy of 5sa (tsda names from list function output)
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --field energy --tsdas ram_23_stbd ram_45_stbd
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --field energy --tsdas ram_23_stbd ram_45_stbd
 ```
 <img width="544" height="446" alt="image" src="https://github.com/user-attachments/assets/fe8867e5-04ba-4741-ab7c-b06f86fd7fb4" />
 
@@ -226,7 +226,7 @@ python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --fie
 ### Plot total TSDA power of 5sa
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --field energy --tsdas all
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --field energy --tsdas all
 ```
 
 <img width="588" height="439" alt="image" src="https://github.com/user-attachments/assets/44591a55-c582-444f-8489-832ed803cc99" />
@@ -238,7 +238,7 @@ python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --fie
 ### Plot moment on body 2 of 5sa
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring moment 2
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring moment 2
 ```
 <img width="556" height="449" alt="image" src="https://github.com/user-attachments/assets/6d2f0dd3-4477-4486-bebe-b05b3c872e8d" />
 
@@ -247,7 +247,7 @@ python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --moo
 ### Plot tension on lines of RM3 specifying path
 
 ```bash
-python h5outputsReader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring tension --mooring_path C:\Users\ariley\source\repos\sea-stack\build\data\demos\run_seastack\rm3\assets\mooring
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring tension --mooring_path C:\Users\ariley\source\repos\sea-stack\build\data\demos\run_seastack\rm3\assets\mooring
 ```
 <img width="713" height="443" alt="image" src="https://github.com/user-attachments/assets/4580dd69-9077-4d01-9a02-c07048c3b857" />
 
