@@ -69,7 +69,13 @@ parser.add_argument(
     const="elevation",
     default=None,
     choices=["elevation", "energy", "spread"],
-    help="Plot directional wave spectrum (elevation/energy/spread). Default: elevation"
+    help="Plot the measured directional wave spectrum (elevation/energy/spread). Default: elevation"
+)
+parser.add_argument(
+    "--plot_wavedirection_cos",
+    nargs="*",
+    default=None,
+    help="Plot the measured directional distribution against the cos2s fit sea-stack would use. Optional: a 4-digit year and/or months (e.g., --plot_wavedirection_cos jan feb 2020), or omit to use --year / --date. Use --partitions to set the number of wave systems; combining the two plots that count without writing the YAML. Shows measured, reconstructed and difference as polar contours plus the per-partition directional distributions. Never writes the YAML."
 )
 parser.add_argument(
     "--spectrum",
@@ -83,6 +89,33 @@ parser.add_argument(
     type=str,
     default=None,
     help="Read the custom spectrum from a text file instead of downloading it from a buoy, so --buoy is not needed. Accepts a bare name, a path relative to the YAML directory, or an absolute path. Two layouts are recognised: two rows (frequencies then spectral densities) or two columns (frequency, density) - blank lines and lines starting with # or %% are ignored. Units are Hz and m^2/Hz. Implies --type irregular --spectrum custom."
+)
+parser.add_argument(
+    "--partitions",
+    nargs="?",
+    type=int,
+    const=0,
+    default=None,
+    help="Split the measured directional spectrum into wave systems and write them as sea-stack waves.partitions, each with its own Hs, Tp, gamma, direction and cos2s spreading s. Give a number to force it, or omit the number to use the count the watershed recommends (systems holding at least 5%% of the energy). Needs buoy directional data (swdir/swr); implies --type irregular."
+)
+parser.add_argument(
+    "--n_omega",
+    type=int,
+    default=64,
+    help="[--partitions] Number of frequency bins written to waves.discretization.n_omega. Default: 64"
+)
+parser.add_argument(
+    "--n_theta",
+    type=int,
+    default=21,
+    help="[--partitions] Number of directional bins written to waves.discretization.n_theta. Default: 21"
+)
+parser.add_argument(
+    "--spread",
+    nargs="+",
+    type=float,
+    default=None,
+    help="[--partitions / --plot_wavedirection_cos] Override the fitted cos2s exponent s. Give one value per partition, ordered by decreasing energy (e.g., --partitions 2 --spread 0.4 1.2). Higher s is a narrower, taller directional lobe. Applies to both the plot and the YAML."
 )
 parser.add_argument(
     "--elevation_duration",
@@ -211,6 +244,34 @@ if args.spectrum_file:
 if args.buoy is None and not (args.spectrum == "custom" and (args.elevation_file or args.spectrum_file)):
     parser.error("--buoy is required, unless --spectrum custom is reading an existing "
                  "--elevation_file or a --spectrum_file")
+
+if args.partitions is not None:
+    if args.spectrum_file:
+        parser.error("--partitions needs buoy directional data and cannot be used with --spectrum_file")
+    if args.buoy is None:
+        parser.error("--partitions requires --buoy")
+    if args.partitions < 0:
+        parser.error("--partitions must be 0 (auto) or more")
+    args.type = "irregular"
+
+if args.plot_wavedirection is not None:
+    if args.spectrum_file:
+        parser.error("--plot_wavedirection needs buoy directional data and cannot be used with --spectrum_file")
+    if args.buoy is None:
+        parser.error("--plot_wavedirection requires --buoy")
+
+if args.plot_wavedirection_cos is not None:
+    if args.spectrum_file:
+        parser.error("--plot_wavedirection_cos needs buoy directional data and cannot be used with --spectrum_file")
+    if args.buoy is None:
+        parser.error("--plot_wavedirection_cos requires --buoy")
+
+if args.spread is not None:
+    if args.partitions is None and args.plot_wavedirection_cos is None:
+        parser.error("--spread requires --partitions or --plot_wavedirection_cos")
+    bad_s = [v for v in args.spread if v <= 0]
+    if bad_s:
+        parser.error(f"--spread values must be greater than 0; got {bad_s}")
 
 # Flatten gamma list if it was provided (handles both --gamma 1.0 1.5 and --gamma 1.0 --gamma 1.5)
 if args.gamma:
@@ -388,6 +449,7 @@ plot_only_options = (
     args.plot_heatmap is not None or 
     args.plot_wavestats is not None or 
     args.plot_wavedirection is not None or 
+    args.plot_wavedirection_cos is not None or 
     args.plot_spectrum_pm is not None or 
     args.plot_spectrum_js is not None or
     args.plot_wind is not None
@@ -398,12 +460,19 @@ plot_only_options = (
 explicit_update_intent = (
     user_set_spectrum or
     args.depth is not None or
+    args.partitions is not None or
     user_set_type
 )
 
 # If plot-only and no explicit update intent, skip YAML update (height/period used only for plotting)
 # If no plotting options, then height/period alone means update YAML
 skip_yaml_update = plot_only_options and not explicit_update_intent
+
+# --plot_wavedirection_cos is inspection only: it never writes, even next to
+# --partitions or the custom-spectrum flags. Use --partitions alone to write.
+if args.plot_wavedirection_cos is not None:
+    skip_yaml_update = True
+
 should_update_yaml = not skip_yaml_update
 
 # Validate that path was provided, but only if updating YAML (not for plot-only)
@@ -710,6 +779,30 @@ def parse_month(month_input):
     return None, False
 
 
+# --plot_wavedirection_cos mixes a partition count with an optional year and months.
+# --plot_wavedirection_cos selects the period only; the partition count comes from
+# --partitions. Runs after parse_month because it calls it.
+dir_months = None
+dir_year_override = None
+if args.plot_wavedirection_cos is not None:
+    _months, _bad = [], []
+    for tok in args.plot_wavedirection_cos:
+        try:
+            n = int(tok)
+        except (TypeError, ValueError):
+            n = None
+        if n is not None and n >= 1900:
+            dir_year_override = n
+            continue
+        num, is_month = parse_month(tok)
+        _months.append(num) if is_month else _bad.append(tok)
+    if _bad:
+        parser.error(f"--plot_wavedirection_cos: unrecognised value(s) {_bad}. Expected a "
+                     f"4-digit year and/or months (jan, feb, ... or 1-12)")
+    dir_months = sorted(set(_months)) or None
+    args.plot_wavedirection_cos = True
+
+
 def pm_spectrum(freq, hm0, tp):
     """
     Unified Pierson-Moskowitz spectrum function.
@@ -888,6 +981,35 @@ def fit_jonswap_gamma(measured_spectrum, freq, Tp, Hs, gamma_initial=3.3, fit_tp
     hit_bound = (abs(gamma_fit - GAMMA_MIN) < 1e-3) or (abs(gamma_fit - GAMMA_MAX) < 1e-3)
 
     return gamma_fit, final_error, tp_fit, hit_bound
+
+
+SPREAD_S_MIN = 0.5
+SPREAD_S_MAX = 100.0
+
+
+def fit_cos2s_spread(measured_D, thetas, theta_mean, d_theta):
+    """Fit the cos2s exponent s to a measured directional distribution.
+
+    The residual is weighted by the measured density. Unweighted least squares is
+    dominated by the tails, which hold most of the sample points but little energy,
+    and that drags s down so the lobe fits too broad and too low at the peak.
+
+    Returns: (s_fit, error, hit_bound)
+    """
+    weight = measured_D / max(float(measured_D.sum()), 1e-30)
+
+    def shape(s_val):
+        d = np.abs(np.cos(0.5 * (thetas - theta_mean))) ** (2.0 * s_val)
+        return d / max(d.sum() * d_theta, 1e-30)
+
+    def sse(s_val):
+        return float(np.sum(weight * (shape(float(s_val)) - measured_D) ** 2))
+
+    res = minimize_scalar(sse, bounds=(SPREAD_S_MIN, SPREAD_S_MAX),
+                          method='bounded', options={'xatol': 1e-3})
+    s_fit = float(np.clip(res.x, SPREAD_S_MIN, SPREAD_S_MAX))
+    hit_bound = (abs(s_fit - SPREAD_S_MIN) < 1e-2) or (abs(s_fit - SPREAD_S_MAX) < 1e-2)
+    return s_fit, sse(s_fit), hit_bound
 
 # ========== End spectrum helper functions ==========
 
@@ -1308,6 +1430,487 @@ if args.plot_wind is not None and len(wind_data) > 0:
             if len(valid_gusts) > 0:
                 print(f"Mean Wind Gusts: {valid_gusts.mean():.2f} m/s")
 
+#~~~~~~~~~~~~~~ Directional partitions from the measured spectrum ~~~~~~~~~~~~~~
+
+# NDBC transmits the directional distribution as a truncated Fourier series,
+#   D(f,th) = 1/pi * [1/2 + r1*cos(th-a1) + r2*cos(2*(th-a2))]
+# and sea-stack accepts cos2s spreading per partition. For cos2s the first moment
+# is r1 = s/(s+1), so s = r1/(1-r1) falls straight out of swr1 with no fitting.
+wave_partitions = []
+partition_specs = []
+
+if args.partitions is not None or args.plot_wavedirection_cos is not None:
+    # --partitions carries the count; 0 or absent means let the watershed recommend
+    n_bands = args.partitions if args.partitions else None
+    print("\n" + "=" * 60)
+    print(f"Directional partitions ({'auto' if n_bands is None else n_bands})")
+    print("=" * 60)
+
+    dir_year = (dir_year_override if dir_year_override is not None
+                else (selected_years[0] if selected_years else available_years[-1]))
+    try:
+        dir_all = ndbc.request_directional_data(buoy_number, dir_year)
+    except Exception as e:
+        print(f"ERROR: could not fetch directional data for {dir_year}: {e}")
+        exit(1)
+
+    dir_clean = dir_all.dropna(dim='date', how='all')
+    if len(dir_clean.date) == 0:
+        print(f"ERROR: no valid directional data for {dir_year}")
+        exit(1)
+
+    dir_label = str(dir_year)
+    if dir_months:
+        month_names = ', '.join(pd.Timestamp(2000, m, 1).strftime('%b') for m in dir_months)
+        keep = np.isin(pd.DatetimeIndex(dir_clean.date.values).month, dir_months)
+        if not keep.any():
+            print(f"ERROR: no directional records for {month_names} {dir_year}")
+            exit(1)
+        dir_clean = dir_clean.isel(date=np.flatnonzero(keep))
+        dir_label = f"{month_names} {dir_year}"
+
+    if extract_targets:
+        dd = pd.DatetimeIndex(dir_clean.date.values)
+        mask = np.zeros(len(dd), dtype=bool)
+        for t in extract_targets:
+            if t['kind'] == 'range':
+                mask |= (dd >= t['timestamp']) & (dd <= t['end'])
+            elif t['kind'] == 'daily':
+                mask |= (dd.normalize() == t['timestamp'].normalize())
+            else:
+                near = dd[np.argmin(np.abs(dd - t['timestamp']))]
+                if abs((near - t['timestamp']).total_seconds()) < 3600:
+                    mask |= (dd == near)
+        if mask.any():
+            dir_clean = dir_clean.isel(date=np.flatnonzero(mask))
+            labels = [t['label'] for t in extract_targets]
+            dir_label = labels[0] if len(labels) == 1 else f"{labels[0]} ... {labels[-1]}"
+        else:
+            print(f"  WARNING: no directional records in the selection; using all of {dir_year}")
+    print(f"  Source: {len(dir_clean.date)} directional records ({dir_label})")
+
+    # Average the moments as vectors; averaging the angles directly is wrong
+    _rad = np.deg2rad
+    a1m = (dir_clean['swr1'] * np.cos(_rad(dir_clean['swdir']))).mean(dim='date').values
+    b1m = (dir_clean['swr1'] * np.sin(_rad(dir_clean['swdir']))).mean(dim='date').values
+    a2m = (dir_clean['swr2'] * np.cos(2 * _rad(dir_clean['swdir2']))).mean(dim='date').values
+    b2m = (dir_clean['swr2'] * np.sin(2 * _rad(dir_clean['swdir2']))).mean(dim='date').values
+    S_dir = dir_clean['swden'].mean(dim='date').values
+    freq_dir = dir_clean['frequency'].values
+
+    ok = np.isfinite(S_dir) & np.isfinite(a1m) & np.isfinite(b1m)
+    freq_dir, S_dir = freq_dir[ok], S_dir[ok]
+    a1m, b1m, a2m, b2m = a1m[ok], b1m[ok], a2m[ok], b2m[ok]
+
+    thetas_deg = np.arange(0.0, 360.0, 5.0)
+    thetas_rad = np.deg2rad(thetas_deg)
+    d_theta = np.deg2rad(5.0)
+
+    def mem_spread(c1, c2, theta):
+        """Lygre & Krogstad maximum-entropy D(theta) from the first two moments.
+
+        D = sigma / (2*pi*|1 - phi1*e^-i*th - phi2*e^-2i*th|^2) is non-negative by
+        construction and reproduces c1 and c2 exactly, so nothing is clipped here.
+        The 2-term Fourier reconstruction is the one that rings negative when
+        r1 + r2 > 0.5; that is a truncation artifact, not energy.
+        """
+        denom = 1.0 - np.abs(c1) ** 2
+        denom = np.where(np.abs(denom) < 1e-12, 1e-12, denom)
+        phi1 = (c1 - c2 * np.conj(c1)) / denom
+        phi2 = c2 - c1 * phi1
+        sigma = np.real(1.0 - phi1 * np.conj(c1) - phi2 * np.conj(c2))
+
+        # sigma <= 0 means the moment set is not realisable by any distribution,
+        # which vector-averaging across time can in principle produce.
+        n_bad = int(np.sum(sigma <= 0.0))
+        if n_bad:
+            print(f"  WARNING: {n_bad} frequency bin(s) have an inconsistent moment set "
+                  f"(MEM sigma <= 0); their spread is unreliable.")
+        sigma = np.clip(sigma, 1e-12, None)
+
+        e1 = np.exp(-1j * theta)[None, :]
+        e2 = np.exp(-2j * theta)[None, :]
+        num = sigma[:, None]
+        den = np.abs(1.0 - phi1[:, None] * e1 - phi2[:, None] * e2) ** 2
+        D = num / (2.0 * np.pi * np.clip(den, 1e-12, None))
+        return D / np.clip(D.sum(axis=1, keepdims=True) * d_theta, 1e-30, None)
+
+    c1_f = a1m + 1j * b1m
+    c2_f = a2m + 1j * b2m
+    D_mem = mem_spread(c1_f, c2_f, thetas_rad)
+    S2 = S_dir[:, None] * D_mem          # m^2/Hz/rad on (frequency, direction)
+
+    df_dir = np.gradient(freq_dir)
+    cell_E = S2 * df_dir[:, None] * d_theta
+    total_E = float(cell_E.sum())
+    if total_E <= 0:
+        print("ERROR: directional spectrum carries no energy")
+        exit(1)
+
+    def watershed_label(field):
+        """Steepest-ascent watershed over (frequency, direction), wrapping in theta.
+
+        Each cell climbs to a local maximum; cells sharing a maximum form one wave
+        system, so systems are found in 2D rather than imposed as frequency bands.
+        """
+        nf, nth = field.shape
+        lab = -np.ones((nf, nth), dtype=int)
+        peaks = []
+        for flat in np.argsort(field, axis=None)[::-1]:
+            i, j = divmod(int(flat), nth)
+            if field[i, j] <= 0:
+                continue
+            best, best_val = None, field[i, j]
+            for di in (-1, 0, 1):
+                ii = i + di
+                if ii < 0 or ii >= nf:
+                    continue
+                for dj in (-1, 0, 1):
+                    if di == 0 and dj == 0:
+                        continue
+                    jj = (j + dj) % nth
+                    if field[ii, jj] > best_val:
+                        best, best_val = (ii, jj), field[ii, jj]
+            if best is None or lab[best] < 0:
+                lab[i, j] = len(peaks)
+                peaks.append((i, j))
+            else:
+                lab[i, j] = lab[best]
+        return lab
+
+    def merge_to(lab, n_keep):
+        """Merge the weakest system into its strongest neighbour until n_keep remain."""
+        nf, nth = lab.shape
+
+        def label_energy(l):
+            return float(cell_E[lab == l].sum())
+
+        alive = sorted(set(int(v) for v in np.unique(lab) if v >= 0))
+        while len(alive) > n_keep:
+            weakest = min(alive, key=label_energy)
+            nbrs = set()
+            idx_i, idx_j = np.where(lab == weakest)
+            for i, j in zip(idx_i, idx_j):
+                for di in (-1, 0, 1):
+                    ii = i + di
+                    if ii < 0 or ii >= nf:
+                        continue
+                    for dj in (-1, 0, 1):
+                        n = lab[ii, (j + dj) % nth]
+                        if n >= 0 and n != weakest:
+                            nbrs.add(int(n))
+            target = (max(nbrs, key=label_energy) if nbrs
+                      else max((a for a in alive if a != weakest), key=label_energy))
+            lab[lab == weakest] = target
+            alive.remove(weakest)
+        return lab, alive
+
+    def unit_model(tp, gamma, th0_rad, s_val):
+        """JONSWAP x cos2s on the (frequency, direction) grid, scaled to m0 = 1."""
+        S_f = jonswap_spectrum(freq_dir, 4.0, tp, gamma=gamma)   # hm0 = 4 -> m0 = 1
+        D_t = np.abs(np.cos(0.5 * (thetas_rad - th0_rad))) ** (2.0 * s_val)
+        D_t /= max(D_t.sum() * d_theta, 1e-30)
+        return S_f[:, None] * D_t[None, :]
+
+    def peel_systems(field, n_want):
+        """Locate n_want systems by repeatedly fitting a JONSWAP x cos2s and subtracting it.
+
+        The watershed can only merge, never split, so it can never return more systems
+        than the field has local maxima - averaging a month of records smooths them into
+        one blob. Peeling finds the next system in whatever the previous fits leave
+        behind, which is what lets a forced --partitions count exceed that limit.
+
+        Returns a list of fitted models, strongest first.
+        """
+        w = df_dir[:, None] * d_theta
+        R = field.copy()
+        models = []
+        for _ in range(n_want):
+            if R.max() <= 0:
+                break
+            pi0, pj0 = np.unravel_index(int(np.argmax(R)), R.shape)
+            tp0 = 1.0 / float(freq_dir[pi0])
+            th0 = float(thetas_rad[pj0])
+
+            # m0 enters the model linearly, so only (Tp, gamma, s, theta) need searching
+            def fit_error(p):
+                tp, g, s_val, th = p
+                if not (0.5 * tp0 <= tp <= 2.0 * tp0) or not (GAMMA_MIN <= g <= GAMMA_MAX) \
+                        or not (SPREAD_S_MIN <= s_val <= SPREAD_S_MAX):
+                    return 1e30
+                M = unit_model(tp, g, th, s_val)
+                denom = float((w * M * M).sum())
+                if denom <= 0:
+                    return 1e30
+                amp = float((w * R * M).sum()) / denom
+                if amp <= 0:
+                    return 1e30
+                return float((w * (R - amp * M) ** 2).sum())
+
+            best = None
+            for g0 in (1.5, 3.3, 6.0):
+                for s0 in (2.0, 8.0, 25.0):
+                    res = minimize(fit_error, x0=[tp0, g0, s0, th0], method='Nelder-Mead',
+                                   options={'maxiter': 600, 'xatol': 1e-4, 'fatol': 1e-12})
+                    if best is None or res.fun < best.fun:
+                        best = res
+
+            M = unit_model(best.x[0], best.x[1], best.x[3], best.x[2])
+            amp = float((w * R * M).sum()) / max(float((w * M * M).sum()), 1e-30)
+            if amp <= 0:
+                break
+            models.append(amp * M)
+            R = np.clip(R - amp * M, 0.0, None)
+        return models
+
+    labels0 = watershed_label(S2)
+    raw_E = sorted((float(cell_E[labels0 == l].sum())
+                    for l in np.unique(labels0) if l >= 0), reverse=True)
+    significant = [e for e in raw_E if e >= 0.05 * total_E]
+    recommended = int(np.clip(len(significant), 1, 6))
+    print(f"  Watershed found {len(raw_E)} raw system(s); {len(significant)} hold "
+          f">=5% of the energy -> recommending {recommended} partition(s)")
+    print("    energy share of the strongest: "
+          + ", ".join(f"{100 * e / total_E:.1f}%" for e in raw_E[:6]))
+    if n_bands is None:
+        n_bands = recommended
+
+    if n_bands > len(raw_E):
+        print(f"  NOTE: {n_bands} partition(s) requested but the spectrum only contains "
+              f"{len(raw_E)} local maximum/maxima.")
+        print(f"        Merging cannot split one, so the systems are peeled out instead: "
+              f"fit the strongest, subtract it, fit the next from what is left.")
+        models = peel_systems(S2, n_bands)
+        print(f"        Peeled {len(models)} system(s) from the residual.")
+    else:
+        models = []
+
+    if len(models) >= 2:
+        # Each cell goes to whichever peeled model explains it best, so the partitions
+        # stay disjoint and every bit of measured energy is still accounted for
+        labels = np.argmax(np.stack(models), axis=0)
+        alive = sorted(set(int(v) for v in np.unique(labels)))
+    else:
+        if n_bands > len(raw_E):
+            print(f"        Peeling did not separate the blob; falling back to "
+                  f"{len(raw_E)} merged system(s).")
+        labels, alive = merge_to(labels0, n_bands)
+    alive = sorted(alive, key=lambda l: -float(cell_E[labels == l].sum()))
+    print(f"  Using {len(alive)} partition(s)")
+
+    if args.spread and len(args.spread) != len(alive):
+        print(f"ERROR: --spread has {len(args.spread)} value(s) but {len(alive)} partition(s) "
+              f"were found; give one value per partition")
+        exit(1)
+
+    overlays = []
+    for lbl in alive:
+        sel = (labels == lbl)
+        E_p = float(cell_E[sel].sum())
+        if E_p <= 0:
+            continue
+
+        m0 = E_p
+        Hs = 4.0 * np.sqrt(m0)
+
+        # Partition peak cell sets Tp; its direction anchors the partition
+        masked = np.where(sel, S2, -np.inf)
+        pi_, pj_ = np.unravel_index(int(np.argmax(masked)), S2.shape)
+        Tp_bin = 1.0 / float(freq_dir[pi_])
+        Tp = Tp_bin
+
+        # Direction comes from the local maximum of the partition's directional
+        # marginal, not its circular mean: the mean is dragged off the peak whenever
+        # the lobe is skewed or carries a weak secondary shoulder.
+        w_cells = np.where(sel, cell_E, 0.0)
+        D_meas = w_cells.sum(axis=0)
+        D_meas /= max(D_meas.sum() * d_theta, 1e-30)
+
+        n_th = len(thetas_deg)
+        jm = int(np.argmax(D_meas))
+        y0, y1, y2 = D_meas[(jm - 1) % n_th], D_meas[jm], D_meas[(jm + 1) % n_th]
+        curv = y0 - 2.0 * y1 + y2
+        shift = float(np.clip(0.5 * (y0 - y2) / curv, -0.5, 0.5)) if abs(curv) > 1e-30 else 0.0
+        theta_from = float((thetas_deg[jm] + shift * (360.0 / n_th)) % 360.0)
+        direction_deg = float((270.0 - theta_from) % 360.0)
+
+        # Circular mean retained for reference only
+        R = complex((w_cells * np.exp(1j * thetas_rad)[None, :]).sum() / E_p)
+        r1_bar = float(abs(R))
+        theta_mean = float(np.degrees(np.angle(R)) % 360.0)
+
+        s_fitted, s_err, s_hit_bound = fit_cos2s_spread(
+            D_meas, thetas_rad, np.deg2rad(theta_from), d_theta)
+        s_moment = float(np.clip(r1_bar / max(1.0 - r1_bar, 1e-6),
+                                 SPREAD_S_MIN, SPREAD_S_MAX))
+        s_fit = float(args.spread[len(partition_specs)]) if args.spread else s_fitted
+
+        # Frequency spectrum of this partition alone, for the JONSWAP fit
+        S_p = (np.where(sel, S2, 0.0) * d_theta).sum(axis=1)
+        band = np.flatnonzero(S_p > 0)
+        f_lo, f_hi = float(freq_dir[band[0]]), float(freq_dir[band[-1]])
+        # Fit across the whole frequency axis, not just the band. jonswap_spectrum
+        # normalises m0 over whatever axis it is handed, so fitting on the band and
+        # reconstructing on freq_dir would scale the two curves differently; the
+        # zeros outside the band also make the fit pay for energy put in the tail.
+        if len(band) >= 4:
+            gamma_fit, _e, Tp, _hb = fit_jonswap_gamma(S_p, freq_dir, Tp_bin, Hs)
+        else:
+            gamma_fit = 3.3
+
+        partition_specs.append({
+            'spectrum': 'jonswap',
+            'Hs': round(float(Hs), 3),
+            'Tp': round(float(Tp), 3),
+            'gamma': round(float(gamma_fit), 3),
+            'direction': round(float(direction_deg), 1),
+            'spreading': {'type': 'cos2s', 's': round(float(s_fit), 2)},
+        })
+
+        # Measured directional distribution of this partition's energy
+        D_fit = np.abs(np.cos(0.5 * (thetas_rad - np.deg2rad(theta_from)))) ** (2.0 * s_fit)
+        D_fit /= max(D_fit.sum() * d_theta, 1e-30)
+        overlays.append((f_lo, f_hi, theta_from, s_fit, D_meas, D_fit))
+
+        print(f"\n  Partition {len(partition_specs)}: {f_lo:.4f} - {f_hi:.4f} Hz, "
+              f"{100 * E_p / total_E:.1f}% of energy")
+        print(f"    Hs = {Hs:.3f} m   Tp = {Tp:.2f} s   gamma = {gamma_fit:.3f}"
+              f"   (peak bin Tp was {Tp_bin:.2f} s)")
+        print(f"    peak direction: {theta_from:.1f} deg FROM (NDBC) "
+              f"-> {direction_deg:.1f} deg sea-stack (toward, CCW from +X)")
+        print(f"    circular mean was {theta_mean:.1f} deg FROM "
+              f"({abs((theta_mean - theta_from + 180) % 360 - 180):.1f} deg off the peak)")
+        if args.spread:
+            print(f"    cos2s: s = {s_fit:.2f} (--spread override; the fit gave "
+                  f"{s_fitted:.2f}, moment-matched would be {s_moment:.2f})")
+        else:
+            print(f"    Fitted cos2s: s = {s_fit:.2f}, Error = {s_err:.6e} "
+                  f"(moment-matched s would be {s_moment:.2f})")
+        print(f"    peak D: measured {D_meas.max():.3f}, cos2s {D_fit.max():.3f} "
+              f"({100 * D_fit.max() / max(D_meas.max(), 1e-30):.0f}% of measured)")
+        if s_hit_bound and not args.spread:
+            print(f"    NOTE: s pinned at the {SPREAD_S_MIN}-{SPREAD_S_MAX} bound; the measured")
+            print(f"          lobe is outside what a single cos2s can represent")
+
+    if not partition_specs:
+        print("ERROR: could not extract any partition with energy")
+        exit(1)
+
+    total_hs = np.sqrt(sum(p['Hs'] ** 2 for p in partition_specs))
+    print(f"\n  Combined Hs across partitions = {total_hs:.3f} m")
+
+    # Only --partitions writes; --plot_wavedirection_cos is plot-only
+    wave_partitions = partition_specs if args.partitions is not None else []
+
+    if args.plot_wavedirection_cos is not None or args.partitions is not None:
+        n_theta_ss = int(args.n_theta)
+        _fine = np.linspace(-np.pi, np.pi, 4001)
+
+        # Rebuild the full S(f,theta) sea-stack will generate: for each partition a
+        # JONSWAP in frequency times a cos2s in direction. This is what the solver
+        # actually sees, so gamma and Hs enter here, not in the D(theta) curves.
+        S_recon = np.zeros_like(S2)
+        for spec, (f_lo, f_hi, th0, s_val, D_m, D_c) in zip(partition_specs, overlays):
+            S_p = jonswap_spectrum(freq_dir, spec['Hs'], spec['Tp'], gamma=spec['gamma'])
+            D_p = np.abs(np.cos(0.5 * (thetas_rad - np.deg2rad(th0)))) ** (2.0 * s_val)
+            D_p /= max(D_p.sum() * d_theta, 1e-30)
+            S_recon += S_p[:, None] * D_p[None, :]
+
+        diff = S_recon - S2
+        vmax = float(np.nanmax(np.abs(diff))) or 1e-12
+        smax = float(max(np.nanmax(S2), np.nanmax(S_recon))) or 1e-12
+
+        # Trim the frequency axis to where the energy actually is
+        e_cum = np.cumsum(S_dir * df_dir)
+        f_top = freq_dir[min(len(freq_dir) - 1,
+                             int(np.searchsorted(e_cum, 0.995 * e_cum[-1])) + 3)]
+
+        rel_rms = 100.0 * float(np.sqrt(np.mean(diff ** 2))) / smax
+        print(f"\n  Reconstructed vs measured S(f,theta): RMS {rel_rms:.1f}% of peak")
+        i_w, j_w = np.unravel_index(int(np.argmax(np.abs(diff))), diff.shape)
+        print(f"    largest error at {freq_dir[i_w]:.3f} Hz, {thetas_deg[j_w]:.0f} deg "
+              f"({'over' if diff[i_w, j_w] > 0 else 'under'}-predicted)")
+
+        fig = plt.figure(figsize=(16, 9))
+        TH, FR = np.meshgrid(thetas_rad, freq_dir)
+        colors_p = plt.cm.tab10(np.linspace(0, 1, max(len(overlays), 1)))
+        # contourf takes its levels from the data range, so vmin/vmax alone do
+        # nothing; explicit level arrays are what make the extremes saturate.
+        s2max = float(np.nanmax(S2)) or 1e-12
+        srmax = float(np.nanmax(S_recon)) or 1e-12
+        # One scale for both spectra so the panels are directly comparable
+        spec_levels = np.linspace(0.0, max(s2max, srmax), 25)
+        # The residual peak is often a single cell, which contourf renders as an
+        # invisible sliver. Saturate at the 99th percentile and draw it per cell.
+        vshow = float(np.nanpercentile(np.abs(diff), 99.0))
+        if not np.isfinite(vshow) or vshow <= 0:
+            vshow = vmax
+        print(f"    difference colour saturates at +/-{vshow:.1f} "
+              f"(true extreme {vmax:.1f})")
+
+        panels = [
+            ("Measured (MEM)", S2, 'viridis', spec_levels, True),
+            (f"Reconstructed ({len(partition_specs)} x JONSWAP x cos2s)", S_recon,
+             'viridis', spec_levels, True),
+            ("Difference (reconstructed - measured)", diff, 'RdBu_r', None, False),
+        ]
+        for k, (title, field, cmap, levels, show_marks) in enumerate(panels):
+            ax = fig.add_subplot(2, 3, k + 1, projection='polar')
+            if levels is None:
+                cf = ax.pcolormesh(TH, FR, field, cmap=cmap, shading='auto',
+                                   vmin=-vshow, vmax=vshow)
+            else:
+                cf = ax.contourf(TH, FR, field, levels=levels, cmap=cmap, extend='both')
+            ax.set_theta_zero_location('N')
+            ax.set_theta_direction(-1)
+            ax.set_ylim(0, f_top)
+            ax.set_title(title, fontsize=10, pad=14)
+            ax.tick_params(labelsize=8)
+            # Radial line = partition mean direction. Left off the difference panel
+            # so nothing hides the residual.
+            if show_marks:
+                for pidx, ov in enumerate(overlays):
+                    th0 = ov[2]
+                    ax.plot([np.deg2rad(th0), np.deg2rad(th0)], [0.0, f_top],
+                            linestyle='--', linewidth=1.4, color=colors_p[pidx], alpha=0.9)
+            plt.colorbar(cf, ax=ax, pad=0.10, shrink=0.8, extend='both',
+                         label="S [m^2/Hz/rad]")
+
+        # Directional distributions only: normalised, so no Hs or gamma dependence
+        axd = fig.add_subplot(2, 1, 2)
+        colors = colors_p
+        for i, (f_lo, f_hi, th0, s_val, D_m, D_c) in enumerate(overlays):
+            axd.plot(thetas_deg, D_m, linewidth=2.2, color=colors[i],
+                     label=f"P{i + 1} measured ({f_lo:.3f}-{f_hi:.3f} Hz)")
+            axd.plot(thetas_deg, D_c, linewidth=1.8, color=colors[i], linestyle='--',
+                     label=f"P{i + 1} cos2s s={s_val:.1f} @ {th0:.0f} deg")
+            d_th_ss = 2.0 * np.pi / n_theta_ss
+            C_s = 1.0 / np.trapezoid(np.abs(np.cos(0.5 * _fine)) ** (2.0 * s_val), _fine)
+            th_ss = np.deg2rad(th0) - np.pi + (np.arange(n_theta_ss) + 0.5) * d_th_ss
+            D_ss = C_s * np.abs(np.cos(0.5 * (th_ss - np.deg2rad(th0)))) ** (2.0 * s_val)
+            axd.plot(np.degrees(th_ss) % 360.0, D_ss, 'o', markersize=3.5,
+                     color=colors[i], alpha=0.8)
+        axd.set_xlim(0, 360)
+        axd.set_xticks(range(0, 361, 30))
+        axd.set_xlabel("Direction FROM [deg]   (circles = sea-stack n_theta sampling)",
+                       fontsize=10)
+        axd.set_ylabel("D [1/rad]", fontsize=10)
+        axd.set_title("Directional distribution per partition (normalised: no Hs or gamma)",
+                      fontsize=11)
+        axd.grid(True, alpha=0.3)
+        axd.legend(fontsize=8, ncol=max(1, len(overlays)), loc='upper right')
+
+        fig.suptitle(f"{source_title} - Directional Reconstruction ({dir_label}, "
+                     f"{len(partition_specs)} partition(s), n_theta={n_theta_ss})\n"
+                     f"polar: angle = direction FROM, radius = frequency [Hz]; "
+                     f"dashed = partition mean direction",
+                     fontsize=12)
+        plt.tight_layout()
+        plt.show()
+        plt.close()
+        print("\nDirectional reconstruction comparison displayed")
+
+
 #~~~~~~~~~~~~~~ Custom spectrum -> surface elevation time series ~~~~~~~~~~~~~~
 
 # EtaTableWaveField / ComponentSampler::BuildFromEtaFile require one "time:elevation"
@@ -1488,7 +2091,55 @@ if wave_type == "irregular" and args.spectrum == "custom" and not skip_yaml_upda
 
 #~~~~~~~~~~~~~~ Update YAML file with calculated wave parameters ~~~~~~~~~~~~~~
 
-if not skip_yaml_update and os.path.exists(yaml_file_path):
+if wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_path):
+    print(f"\n\nUpdating YAML file: {yaml_file_path}")
+
+    with open(yaml_file_path, 'r') as f:
+        yaml_data = yaml.safe_load(f)
+
+    if 'waves' not in ((yaml_data or {}).get('hydrodynamics') or {}):
+        print("ERROR: 'hydrodynamics.waves' section not found in YAML file")
+        exit(1)
+
+    # Rebuilt from scratch: height / period / spectrum / eta_file are all ignored
+    # by sea-stack once partitions are present.
+    waves_block = {
+        'type': 'irregular',
+        'discretization': {'n_omega': int(args.n_omega), 'n_theta': int(args.n_theta)},
+        'seed': int(args.seed) if args.seed is not None else 42,
+        'partitions': wave_partitions,
+    }
+    ramp = float(args.ramp_time) if args.ramp_time is not None else 60.0
+    if ramp > 0.0:
+        waves_block['ramp_duration'] = ramp
+        waves_block['ramp_type'] = "cosine"
+    if args.depth is not None:
+        waves_block['depth'] = float(args.depth)
+    elif water_depth:
+        waves_block['depth'] = float(water_depth)
+
+    yaml_data['hydrodynamics']['waves'] = waves_block
+
+    class IndentDumper(yaml.SafeDumper):
+        def increase_indent(self, flow=False, indentless=False):
+            return super().increase_indent(flow, False)
+
+    # Serialise first: opening with "w" truncates, so a dump failure would destroy the file
+    rendered = yaml.dump(yaml_data, Dumper=IndentDumper,
+                         default_flow_style=False, sort_keys=False)
+    with open(yaml_file_path, "w") as f:
+        f.write(rendered)
+
+    print("Updated wave parameters:")
+    print(f"  Type: irregular with {len(wave_partitions)} partition(s)")
+    print(f"  discretization: n_omega={args.n_omega}, n_theta={args.n_theta} "
+          f"-> {args.n_omega * args.n_theta * len(wave_partitions)} wave components")
+    for i, p in enumerate(wave_partitions, 1):
+        print(f"  partition {i}: Hs={p['Hs']} m, Tp={p['Tp']} s, gamma={p['gamma']}, "
+              f"direction={p['direction']} deg, s={p['spreading']['s']}")
+    print(f"\nYAML file updated successfully!")
+
+if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_path):
     print(f"\n\nUpdating YAML file: {yaml_file_path}")
     
     with open(yaml_file_path, 'r') as f:
@@ -1697,7 +2348,7 @@ if not skip_yaml_update and os.path.exists(yaml_file_path):
         print(f"\nYAML file updated successfully!")
     else:
         print("ERROR: 'hydrodynamics.waves' section not found in YAML file")
-elif not skip_yaml_update:
+elif not wave_partitions and not skip_yaml_update:
     # Trying to update but file not found
     print(f"ERROR: YAML file not found at {yaml_file_path}")
     exit(1)
