@@ -1,8 +1,8 @@
 # MHKiT Wave YAML Writer
 
-A Python tool for analyzing real ocean wave data and writing it into SEA-Stack YAML input files.
+A Python tool for analyzing real ocean wave data and writing characteristics into SEA-Stack YAML input files.
 
-It pulls spectral wave density (`swden`) records from NDBC buoys via MHKiT, computes sea-state statistics, and writes the result into device `*.hydro.yaml` file 
+It pulls spectral wave density (`swden`) records from NDBC buoys via MHKiT, computes sea-state statistics, and writes the result into device `*.hydro.yaml` file. For custom wave directional distributions, it pulls four moments per frequency (`swdir` α₁, `swdir2` α₂, `swr1` r₁, `swr2` r₂) from MKHiT alongside `swden`. These are reconstructed into a full 2D spectrum S(f,θ), and fitted to the JONSWAP + cos-2s form that SEA-Stack accepts. The reconstruction uses the **maximum entropy method** (MEM) (Lygre & Krogstad, 1986). 
 
 It supports:
 - Regular waves (height + period from measured data)
@@ -262,6 +262,25 @@ python MHKiT_writer.py  --buoy 46050 --plot_wavedirection spread --year 2024 --n
 
 ---
 
+### `--plot_wavedirection_cos`
+Compare the measured directional spectrum against the cos-2s reconstruction for SEA-Stack. Use with date/time/year  **Does not rewrites the YAML**
+
+- `--plot_wavedirection_cos` → uses the recommended number of partitions
+- `--plot_wavedirection_cos jan --year 2020` → averages over the month for 2020
+- `--plot_wavedirection_cos --partitions 3` → uses three partitions
+
+Produces three polar panels — measured (MEM), reconstructed (N × JONSWAP × cos-2s), and their RMS error difference, as well as the per-partition directional distributions.
+
+**Example:**
+```bash
+python MHKiT_writer.py --buoy 46050 --plot_wavedirection_cos --date 01-03-2022
+```
+
+<img width="1579" height="884" alt="image" src="https://github.com/user-attachments/assets/339174a0-2506-40aa-ae7c-e3b55e8868b2" />
+
+
+---
+
 ### `--plot_wind`
 Wind speed, direction and gusts from the `stdmet` record.
 
@@ -444,117 +463,59 @@ How SEA-Stack consumes the eta file (default = `dft`)
 
 ---
 
-## Directional wave partitions
+### `--partitions`
+Recommended number of partitions are identified using a local-maximum steepest-ascent watershed over the (frequency, direction) plane. This finds systems in 2D, so a swell and a wind sea arriving from different directions at overlapping frequencies are separated. Forcing a count higher than the number of local maxima switches to residual peeling (fit the strongest JONSWAP × cos2s system, subtract it, fit the next from what is left). This is written to the hydro.yaml under waves.partitions and plots the measured vs reconstructed wave directions same as --plot_wavedirection_cos.
 
-NDBC transmits the directional distribution as four moments per frequency (`swdir` α₁, `swdir2` α₂, `swr1` r₁, `swr2` r₂) alongside `swden`. These are reconstructed into a full 2D spectrum S(f,θ), split into distinct wave systems, and each system is fitted to the JONSWAP + cos-2s form that SEA-Stack accepts as `waves.partitions`.
-
-The reconstruction uses the **maximum entropy method** (Lygre & Krogstad) rather than the truncated Fourier series. With only two directional harmonics, the Fourier form rings negative opposite the peak whenever r₁ + r₂ > 0.5 — inventing energy from directions that carry none. MEM is non-negative by construction and resolves twin directional peaks.
-
-Partitions are then found by a **steepest-ascent watershed** over the (frequency, direction) plane, wrapping in θ. Every cell climbs to a local maximum; cells sharing a maximum form one wave system. This finds systems in 2D, so a swell and a wind sea arriving from different directions at overlapping frequencies are separated — which a frequency-only split cannot do.
+- `--partitions` → uses the recommended count and initiates writing to the yaml
+- `--partitions 3` → forces 3 partitions
 
 Per partition:
-
 | YAML key | Derived from |
 |---|---|
 | `Hs` | 4√(energy integrated over the partition's cells) |
-| `Tp` | 1 / frequency of the partition's peak cell |
-| `gamma` | least-squares JONSWAP fit to the partition's frequency spectrum |
+| `Tp` | least-squares JONSWAP fit, seeded from the peak cell |
+| `gamma` | same fit, over the full frequency axis |
 | `direction` | local maximum of the directional marginal, parabolic sub-bin refined |
 | `s` | least-squares cos-2s fit to the measured D(θ), weighted by energy |
 
-**Direction convention:** NDBC reports the direction waves come *from*, clockwise from true North. SEA-Stack `direction` is the direction waves travel *toward*, counter-clockwise from +X. The conversion is `(270 − α) mod 360`, and both values are printed.
-
-
-
-### `--plot_wavedirection_cos`
-Compare the measured directional spectrum against the cos-2s reconstruction SEA-Stack would generate. **Never writes the YAML**, even alongside `--partitions` or the custom-spectrum flags.
-
-- `--plot_wavedirection_cos` → uses the recommended number of partitions
-- `--plot_wavedirection_cos 4` → forces 4 partitions
-
-Produces three polar panels — measured (MEM), reconstructed (N × JONSWAP × cos-2s), and their difference — plus the per-partition directional distributions with the `n_theta` sampling marked. Prints the RMS error and where the largest residual sits.
 
 **Example:**
 ```bash
-python MHKiT_writer.py --buoy 46050 --plot_wavedirection_cos --date 01-03-2022
+python MHKiT_writer.py ../5sa/bimodal/5sa_bimodal.hydro.yaml --buoy 46050 --partitions --date 12-16 --year 2025 --time 00:00-12:00
 ```
-
-<!-- image: three polar panels + directional distribution row -->
+<img width="1578" height="877" alt="image" src="https://github.com/user-attachments/assets/9f709aa0-d429-4288-bd03-47785c27bef6" />
 
 ---
 
-### `--partitions`
-Split the measured directional spectrum into wave systems and write them as `waves.partitions`. Implies `--type irregular`. Plots the same comparison as `--plot_wavedirection_cos`.
+### `--spread`
 
-- `--partitions` → uses the recommended count
-- `--partitions 3` → forces 3 partitions
+Overrides the fitted cos2s exponent s for each partition. One value per partition, ordered by decreasing energy. Higher s is a narrower.
 
-The recommendation counts systems holding at least 5% of the total energy, capped at 6. The full energy ladder is printed so you can see whether your chosen number agrees with the data:
+Used with: --partitions or --plot_wavedirection_cos
 
-```
-Watershed found 14 raw system(s); 2 hold >=5% of the energy -> recommending 2 partition(s)
-  energy share of the strongest: 63.3%, 31.9%, 1.7%, 1.0%, 0.7%, 0.4%
-```
+The value count must match the partition count or it errors out. Applies to the polar reconstruction, the D(θ) overlay curves and the YAML, so you can preview a value with --plot_wavedirection_cos before committing it with --partitions.
 
 **Example:**
 ```bash
-python MHKiT_writer.py ../5sa/bimodal/5sa_bimodal.hydro.yaml --buoy 46050 --partitions --date 01-03-2022
+python MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml>  --buoy 46050 --date 12-16 --time 00:00-12:00 --year 2025 --partitions 2 --spread 50 12 --plot_wavedirection_cos
 ```
 
-<!-- image: console output showing the partition table -->
+<img width="1581" height="884" alt="image" src="https://github.com/user-attachments/assets/b52948c7-386b-415b-b700-5376262d0ddb" />
 
-Produces:
-
-```yaml
-  waves:
-    type: irregular
-    discretization:
-      n_omega: 64
-      n_theta: 21
-    seed: 42
-    partitions:
-      - spectrum: jonswap
-        Hs: 5.647
-        Tp: 12.121
-        gamma: 1.048
-        direction: 82.4
-        spreading:
-          type: cos2s
-          s: 23.91
-      - spectrum: jonswap
-        Hs: 3.863
-        Tp: 11.429
-        gamma: 1.024
-        direction: 359.4
-        spreading:
-          type: cos2s
-          s: 11.04
-```
 
 ---
 
 ### `--n_omega` / `--n_theta`
-Discretization written to `waves.discretization` (defaults 64 and 21).
+Discretization for directional waves written to `waves.discretization` (defaults 64 and 21).
 
 **Used with:** `--partitions`
 
-`s` controls how concentrated each lobe is — higher `s` is a narrower beam — while `n_theta` controls how finely SEA-Stack samples it. Total wave components are `n_omega × n_theta × partitions`, all evaluated per surface vertex per frame, so this is the main cost knob.
+While `s` controls how concentrated the spread of each lobe is, n_theta bins span the full circle centered on each partition's direction, controlling how finely SEA-Stack samples it. A narrow lobe (high s) wastes most of its bins on near-zero directions, whereas n_omega bins are spaced linearly in Hz across 0.25/Tp_max to 4.0/Tp_min, taken from the partition peak periods. Total wave components are n_omega × n_theta × partitions, all evaluated per surface vertex per frame, so this is the main cost knob. Mixing a short-period wind sea with a long-period swell widens that range and coarsens resolution at the swell peak, and linear spacing makes the sea repeat every 1/df seconds — it is recommended to pick n_omega so that exceeds your simulation.end_time.
 
 **Example:**
 ```bash
 python MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml> --buoy 46050 --partitions 2 --n_omega 64 --n_theta 31
 ```
-
----
-
-### Notes on directional partitioning
-
-- **Use `--date` or `--time`, not a year.** Averaging thousands of records smooths every local maximum away — a full year of buoy 46050 collapses to a single system, while one day resolves 9–14. The script warns when more partitions are requested than the spectrum contains, since merging can combine systems but never split one.
-- **More partitions is not automatically better.** Beyond the systems that hold real energy, extra partitions fragment a single physical wave train and each one still costs `n_omega × n_theta` components.
-- **cos-2s cannot match MEM exactly.** Both are normalised so ∫D dθ = 1, but the measured distribution is zero outside its partition while cos-2s has tails around the whole circle. A peak match of 90–97% is the structural limit, not a fitting failure.
-- **Swell is inner, wind sea is outer.** Radius is frequency, so low-frequency swell sits near the centre with a tight lobe (high `s`), and locally generated wind sea sits toward the rim with a broad lobe (low `s`) aligned with the local wind. Cross-check against `--plot_wind` for the same date.
-- Needs buoy directional data (`swdir` / `swr1` / `swr2`); not available with `--spectrum_file`.
-
 
 ---
 
@@ -564,3 +525,5 @@ python MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml> --buoy 46050 --parti
 - **Hm0 in the file header vs the statistics block** can differ by a percent or two because the header uses a plain trapezoid integration whereas the statistics use MHKiT's `significant_wave_height`. The eta record targets the former.
 - **SSL / VPN.** If NDBC downloads fail with a certificate error, the `REQUESTS_CA_BUNDLE` and `SSL_CERT_FILE` lines near the top of the script point at a local root CA and may need updating for your machine.
 - **Plot flags do not write YAML.** Add `--spectrum`, `--type irregular` if you want a plot *and* an update in the same run.
+- **cos-2s cannot match MEM exactly.** Both are normalised so ∫D dθ = 1, but the measured distribution is zero outside its partition while cos-2s has tails around the whole circle. A peak match of 90–97% is the structural limit, not a fitting failure.
+- **Swell is inner, wind sea is outer.** Radius is frequency, so low-frequency swell sits near the center with a tight lobe, and locally generated wind sea sits toward the rim with a broad lobe aligned with the local wind. Cross-check wave_direction against `--plot_wind` for the same date.
