@@ -318,14 +318,15 @@ else
   USE_VSG=0
 fi
 
+# HydroIO / HDF5:
+# Do not force HydroIO OFF merely because build-config.json leaves HDF5Dir empty.
+# On Ubuntu/Debian, libhdf5-dev is discovered by CMake FindHDF5 (module mode)
+# without a config-mode HDF5_DIR. Passing -DHDF5_DIR is optional; Chrono's
+# ChronoConfig may even set HDF5_DIR to NOTFOUND when it used module-mode HDF5.
+# Only --no-hydro-io disables HydroIO here. If CMake cannot find HDF5, configure
+# fails with a clear FindHDF5 error instead of a later missing-header failure.
 if [[ -z "${SEASTACK_HDF5_DIR:-}" && "${NO_HYDRO_IO}" -eq 0 ]]; then
-  echo "   [WARN] HDF5 not found; HydroIO will be disabled." >&2
-  if [[ "${USE_CHRONO}" -eq 1 ]]; then
-    echo "          If Chrono was built without HDF5, set HDF5Dir in build-config.json." >&2
-  else
-    echo "          For Chrono-free builds, set HDF5Dir or use --no-hydro-io." >&2
-  fi
-  NO_HYDRO_IO=1
+  echo "   [INFO] HDF5Dir unset; HydroIO left ON for CMake HDF5 discovery (module/config)." >&2
 fi
 
 if [[ "${MOORDYN}" -eq 1 && ! -f "${REPO_ROOT}/extern/MoorDyn/CMakeLists.txt" ]]; then
