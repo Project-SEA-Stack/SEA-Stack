@@ -638,12 +638,38 @@ if(TARGET run_seastack)
             "^/usr/lib/"
             "^/lib/"
             "^/usr/libexec/"
+            # ROS is an external runtime requirement, not a bundled dependency. urdfdom and
+            # friends arrive transitively via Chrono::Chrono_parsers when Chrono is built
+            # with ROS support; a consumer needing those components is expected to have ROS.
+            "^/opt/ros/"
             # Transitive Chrono/SWIG stacks may reference Python; SEA-Stack does not ship it.
             "Python3\\.framework"
             "Python\\.framework")
+
+        # file(GET_RUNTIME_DEPENDENCIES) ignores LD_LIBRARY_PATH by design, so a Chrono
+        # installed outside the system paths must be pointed at explicitly.
+        set(SEASTACK_RUNTIME_DEP_DIRS "" CACHE STRING
+            "Extra directories searched when bundling runtime dependencies for the release package.")
+
+        set(_seastack_dep_dirs ${SEASTACK_RUNTIME_DEP_DIRS})
+        if(TARGET Chrono::Chrono_core)
+            foreach(_prop IMPORTED_LOCATION_RELEASE IMPORTED_LOCATION)
+                get_target_property(_chrono_core_loc Chrono::Chrono_core ${_prop})
+                if(_chrono_core_loc)
+                    get_filename_component(_chrono_lib_dir "${_chrono_core_loc}" DIRECTORY)
+                    list(APPEND _seastack_dep_dirs "${_chrono_lib_dir}")
+                    break()
+                endif()
+            endforeach()
+        endif()
+        if(_seastack_dep_dirs)
+            list(REMOVE_DUPLICATES _seastack_dep_dirs)
+        endif()
+
         if(APPLE)
             install(TARGETS run_seastack
                 RUNTIME_DEPENDENCIES
+                    DIRECTORIES ${_seastack_dep_dirs}
                     POST_EXCLUDE_REGEXES ${_seastack_dep_exclude}
                 CONFIGURATIONS Release
                 RUNTIME DESTINATION bin COMPONENT runtime
@@ -652,12 +678,14 @@ if(TARGET run_seastack)
         else()
             install(TARGETS run_seastack
                 RUNTIME_DEPENDENCIES
+                    DIRECTORIES ${_seastack_dep_dirs}
                     POST_EXCLUDE_REGEXES ${_seastack_dep_exclude}
                 CONFIGURATIONS Release
                 RUNTIME DESTINATION bin COMPONENT runtime
                 LIBRARY DESTINATION lib COMPONENT runtime)
         endif()
         unset(_seastack_dep_exclude)
+        unset(_seastack_dep_dirs)
     endif()
 endif()
 
