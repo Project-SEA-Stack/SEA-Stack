@@ -13,9 +13,13 @@ from scipy.optimize import minimize, minimize_scalar
 from mhkit import wave
 from mhkit.wave.io import ndbc
 
-# Redirected stdout defaults to cp1252 on Windows, which cannot encode the gamma
-# and superscript characters used in the printed diagnostics.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
+def _represent_scalar_list_inline(dumper, data):
+    """Emit lists of scalars as [a, b, c]; leave lists of maps in block form."""
+    flow = all(not isinstance(item, (dict, list)) for item in data)
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=flow)
 
 
 #~~~~~~~~~~~~~~ Command-line Arguments ~~~~~~~~~~~~~~
@@ -613,6 +617,11 @@ if existing_eta_path:
     class IndentDumper(yaml.SafeDumper):
         def increase_indent(self, flow=False, indentless=False):
             return super().increase_indent(flow, False)
+
+    # The hydro parser reads moordyn bodies and the damping vectors only as
+    # inline [ ] and ignores the block form without saying so, while its
+    # section keys must stay block. So flow-style scalar lists, nothing else.
+    IndentDumper.add_representer(list, _represent_scalar_list_inline)
 
     with open(yaml_file_path, 'w') as f:
         yaml.dump(yaml_data, f, Dumper=IndentDumper, default_flow_style=False, sort_keys=False)
@@ -2325,6 +2334,8 @@ if wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_path):
         def increase_indent(self, flow=False, indentless=False):
             return super().increase_indent(flow, False)
 
+    IndentDumper.add_representer(list, _represent_scalar_list_inline)
+
     # Serialise first: opening with "w" truncates, so a dump failure would destroy the file
     rendered = yaml.dump(yaml_data, Dumper=IndentDumper,
                          default_flow_style=False, sort_keys=False)
@@ -2536,7 +2547,9 @@ if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_pat
         class IndentDumper(yaml.SafeDumper):
             def increase_indent(self, flow=False, indentless=False):
                 return super().increase_indent(flow, False)
-        
+
+        IndentDumper.add_representer(list, _represent_scalar_list_inline)
+
         with open(yaml_file_path, "w") as f:
             yaml.dump(
                 yaml_data,
