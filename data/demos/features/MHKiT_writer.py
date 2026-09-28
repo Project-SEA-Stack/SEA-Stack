@@ -22,6 +22,40 @@ def _represent_scalar_list_inline(dumper, data):
     return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=flow)
 
 
+def _resolve_ramp(existing_waves):
+    """Ramp to write: --ramp_time wins, else the YAML's own value, else 60 s.
+
+    A case's ramp is tuned to its end_time, so overwriting it is how you end up with
+    a 60 s ramp on a 40 s run and a sea state that never reaches full amplitude.
+    Returns (duration, type, source).
+    """
+    if args.ramp_time is not None:
+        return float(args.ramp_time), "cosine", "--ramp_time"
+    previous = (existing_waves or {}).get("ramp_duration")
+    if previous is not None:
+        return (float(previous),
+                str((existing_waves or {}).get("ramp_type") or "cosine"),
+                "kept from YAML")
+    return 60.0, "cosine", "default"
+
+
+def _resolve_depth(existing_waves, measured_depth=None):
+    """Depth to write: --depth wins, else the YAML's own value, else the buoy's.
+
+    The case depth belongs to the site being modelled and usually has to agree with
+    the MoorDyn WtrDpth and the H5, so a buoy reading must not silently replace it.
+    Returns (depth, source); depth is None when there is nothing to write.
+    """
+    if args.depth is not None:
+        return float(args.depth), "--depth"
+    previous = (existing_waves or {}).get("depth")
+    if previous is not None:
+        return float(previous), "kept from YAML"
+    if measured_depth:
+        return float(measured_depth), "buoy metadata"
+    return None, "not set"
+
+
 #~~~~~~~~~~~~~~ Command-line Arguments ~~~~~~~~~~~~~~
 
 parser = argparse.ArgumentParser(
@@ -594,26 +628,27 @@ if existing_eta_path:
 
     eta_ref = os.path.relpath(existing_eta_path, _yaml_dir).replace('\\', '/')
 
+    with open(yaml_file_path, 'r') as f:
+        yaml_data = yaml.safe_load(f) or {}
+    if 'waves' not in (yaml_data.get('hydrodynamics') or {}):
+        print(f"ERROR: 'hydrodynamics.waves' section not found in {yaml_file_path}")
+        exit(1)
+
     waves_block = {'type': 'irregular', 'eta_file': eta_ref}
     if args.eta_method == "irf":
         waves_block['method'] = "irf_convolution"
     else:
         waves_block['nfrequencies'] = int(eta_nfrequencies)
 
-    ramp = float(args.ramp_time) if args.ramp_time is not None else 60.0
+    ramp, ramp_type, ramp_source = _resolve_ramp(yaml_data['hydrodynamics']['waves'])
     if ramp > 0.0:
         waves_block['ramp_duration'] = ramp
-        waves_block['ramp_type'] = "cosine"
-    if args.depth is not None:
-        waves_block['depth'] = float(args.depth)
+        waves_block['ramp_type'] = ramp_type
+    depth, depth_source = _resolve_depth(yaml_data['hydrodynamics']['waves'])
+    if depth is not None:
+        waves_block['depth'] = depth
 
-    with open(yaml_file_path, 'r') as f:
-        yaml_data = yaml.safe_load(f) or {}
-    if 'waves' not in (yaml_data.get('hydrodynamics') or {}):
-        print(f"ERROR: 'hydrodynamics.waves' section not found in {yaml_file_path}")
-        exit(1)
     yaml_data['hydrodynamics']['waves'] = waves_block
-
     class IndentDumper(yaml.SafeDumper):
         def increase_indent(self, flow=False, indentless=False):
             return super().increase_indent(flow, False)
@@ -2319,14 +2354,13 @@ if wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_path):
         'seed': int(args.seed) if args.seed is not None else 42,
         'partitions': wave_partitions,
     }
-    ramp = float(args.ramp_time) if args.ramp_time is not None else 60.0
+    ramp, ramp_type, ramp_source = _resolve_ramp(yaml_data['hydrodynamics']['waves'])
     if ramp > 0.0:
         waves_block['ramp_duration'] = ramp
-        waves_block['ramp_type'] = "cosine"
-    if args.depth is not None:
-        waves_block['depth'] = float(args.depth)
-    elif water_depth:
-        waves_block['depth'] = float(water_depth)
+        waves_block['ramp_type'] = ramp_type
+    depth, depth_source = _resolve_depth(yaml_data['hydrodynamics']['waves'], water_depth)
+    if depth is not None:
+        waves_block['depth'] = depth
 
     yaml_data['hydrodynamics']['waves'] = waves_block
 
@@ -2344,6 +2378,9 @@ if wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_path):
 
     print("Updated wave parameters:")
     print(f"  Type: irregular with {len(wave_partitions)} partition(s)")
+    print(f"  ramp_duration: {ramp} s ({ramp_source})")
+    if depth is not None:
+        print(f"  depth: {depth} m ({depth_source})")
     print(f"  discretization: n_omega={args.n_omega}, n_theta={args.n_theta} "
           f"-> {args.n_omega * args.n_theta * len(wave_partitions)} wave components")
     for i, p in enumerate(wave_partitions, 1):
@@ -2390,15 +2427,17 @@ if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_pat
                     # C++ default of 1000 strides the grid and attenuates the record.
                     waves_block['nfrequencies'] = int(eta_nfrequencies)
 
-                ramp = float(args.ramp_time) if args.ramp_time is not None else 60.0
+                ramp, ramp_type, ramp_source = _resolve_ramp(
+                    yaml_data['hydrodynamics']['waves'])
                 if ramp > 0.0:
                     waves_block['ramp_duration'] = ramp
-                    waves_block['ramp_type'] = "cosine"
+                    waves_block['ramp_type'] = ramp_type
 
-                if args.depth is not None:
-                    # Only when asked for. With no depth key the DFT path assumes deep
-                    # water and EtaTableWaveField falls back to the H5 water depth.
-                    waves_block['depth'] = float(args.depth)
+                # No buoy fallback here: with no depth key the DFT path assumes deep
+                # water and EtaTableWaveField falls back to the H5 water depth.
+                depth, depth_source = _resolve_depth(yaml_data['hydrodynamics']['waves'])
+                if depth is not None:
+                    waves_block['depth'] = depth
 
                 yaml_data['hydrodynamics']['waves'] = waves_block
             elif args.spectrum:
@@ -2456,20 +2495,18 @@ if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_pat
 
         # Drop eta-import leftovers whenever a parametric spectrum is in use, so a
         # previous --spectrum custom run does not keep overriding the sea state.
-        # ramp keys are re-added below when --ramp_time asks for them.
+        # The ramp keys stay: they are the case's own setting, not an eta leftover.
         if args.spectrum != "custom":
-            for stale_key in ('eta_file', 'eta_file_path', 'method', 'nfrequencies',
-                              'ramp_duration', 'ramp_type'):
+            for stale_key in ('eta_file', 'eta_file_path', 'method', 'nfrequencies'):
                 if stale_key in yaml_data['hydrodynamics']['waves']:
                     del yaml_data['hydrodynamics']['waves'][stale_key]
         
 
         if not custom_eta:
-            # Add water depth if available
-            if args.depth is not None:
-                yaml_data['hydrodynamics']['waves']['depth'] = float(args.depth)
-            elif water_depth:
-                yaml_data['hydrodynamics']['waves']['depth'] = float(water_depth)
+            depth, depth_source = _resolve_depth(
+                yaml_data['hydrodynamics']['waves'], water_depth)
+            if depth is not None:
+                yaml_data['hydrodynamics']['waves']['depth'] = depth
 
             # Add optional parameters if provided
             if args.seed is not None:
@@ -2532,10 +2569,7 @@ if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_pat
             print(f"  Spectrum: {yaml_data['hydrodynamics']['waves']['spectrum']}")
         if not custom_eta:
             if 'depth' in yaml_data['hydrodynamics']['waves']:
-                if args.depth is not None:
-                    print(f"  Depth: {yaml_data['hydrodynamics']['waves']['depth']} m (OVERRIDE)")
-                else:
-                    print(f"  Depth: {yaml_data['hydrodynamics']['waves']['depth']} m")
+                print(f"  Depth: {yaml_data['hydrodynamics']['waves']['depth']} m ({depth_source})")
             if args.seed is not None:
                 print(f"  Seed: {yaml_data['hydrodynamics']['waves']['seed']}")
             if args.ramp_time is not None:
