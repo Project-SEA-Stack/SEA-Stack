@@ -6,12 +6,14 @@ Usage:
 
 Called from scripts/unix/build.sh and scripts/windows/build.ps1 after cmake --install
 and before or after cpack (prefix is the same tree that is archived).
+On macOS it also runs scripts/check_macho_portability.py on the prefix.
 
 If macOS packaged runs show NaNs while Windows passes, compare otool -L on run_seastack,
 bundled lib/*.dylib, OpenMP, and BLAS linkage against a local non-packaged Release build.
 """
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 
@@ -56,6 +58,12 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    if sys.platform == "darwin":
+        macho_check = Path(__file__).resolve().parent / "check_macho_portability.py"
+        if subprocess.run([sys.executable, str(macho_check), str(root)]).returncode != 0:
+            print("[FAIL] Mach-O portability check failed (see scripts/check_macho_portability.py)",
+                  file=sys.stderr)
+            return 1
     print(f"[OK] Release install prefix checks passed ({root})")
     return 0
 

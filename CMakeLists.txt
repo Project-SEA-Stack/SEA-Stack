@@ -819,6 +819,9 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/demos/run_seastack/
         PATTERN "*.nemoh"            EXCLUDE
         PATTERN "meshes"             EXCLUDE
         PATTERN "outputs"            EXCLUDE
+        # Local run artifacts (e.g. MoorDyn .log/.out written next to line files).
+        PATTERN "*.log"              EXCLUDE
+        PATTERN "*.out"              EXCLUDE
         PATTERN "_visual_native_linpto" EXCLUDE
         PATTERN "_visual_native_rsda" EXCLUDE
         PATTERN "_regression_native_linpto" EXCLUDE

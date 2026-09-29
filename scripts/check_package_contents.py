@@ -46,6 +46,7 @@ FORBIDDEN = [
     re.compile(r"/outputs[^/]*/"),
     re.compile(r"\.ssph$"),
     re.compile(r"\.log$"),
+    re.compile(r"\.out$"),
     re.compile(r"\.nc$"),
     re.compile(r"/meshes/"),
     re.compile(r"/__pycache__/"),
