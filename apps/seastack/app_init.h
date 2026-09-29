@@ -13,7 +13,8 @@ namespace seastack::app {
 
 /// Configure the Chrono data path and export CHRONO_DATA_DIR for child
 /// processes.  Delegates to seastack::chrono::SetInitialEnvironment()
-/// for the heavy lifting.  Safe to call more than once (idempotent).
+/// for the heavy lifting.  On macOS, also exports VK_DRIVER_FILES for the
+/// packaged MoltenVK driver when present.  Safe to call more than once (idempotent).
 void InitChronoEnvironment();
 
 }  // namespace seastack::app
