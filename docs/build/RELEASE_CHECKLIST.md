@@ -16,6 +16,10 @@ Keep Windows and macOS in sync before tagging.
 Keep `SEASTACK_VERSION_SUFFIX` in sync with the release branch name
 (`release/v<PROJECT_VERSION><SUFFIX>`).
 
+If release candidates are tagged on a branch whose suffix is already `""`,
+their ZIPs carry the final version name (e.g. `SEAStack-1.0.0-win64.zip`).
+Keep those packages internal; publish only the ZIPs built from the final tag.
+
 ## 2. Clean package (Windows)
 
 From a Visual Studio / `vcvars64` environment:

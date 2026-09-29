@@ -11,7 +11,7 @@ Step-by-step guide for building SEA-Stack from source on Windows.
 | CMake | 3.21+ | [cmake.org](https://cmake.org/download/) or via Visual Studio installer |
 | C++ compiler | MSVC 2019+ (C++17) | Visual Studio 2019/2022/2026 with "Desktop development with C++" workload |
 | Eigen3 | 3.3+ | Auto-detected from Chrono if Chrono is enabled; otherwise set `EIGEN3_INCLUDE_DIR` |
-| Project Chrono | v10+ | **Optional.** Required for `run_seastack` and time-domain simulation. Omit with `-NoChrono`. Build/install steps and required modules: [BUILD_CHRONO.md](BUILD_CHRONO.md) |
+| Project Chrono | 10.0.0 (exactly) | **Optional.** Required for `run_seastack` and time-domain simulation. Omit with `-NoChrono`. Build/install steps and required modules: [BUILD_CHRONO.md](BUILD_CHRONO.md) |
 | HDF5 | 1.12+ | **Optional.** Required for HydroIO (BEMIO HDF5 import/export). Omit with `-NoHydroIO` |
 | MoorDyn | Git submodule (`extern/MoorDyn`) | **Optional.** Enable with `-MoorDyn` (initialize submodules after clone; see below) |
 | Vulkan Scene Graph | latest | **Optional.** 3D visualization. Enable with `-VSG` |

@@ -14,7 +14,7 @@ driver script is [`scripts/unix/build.sh`](../../scripts/unix/build.sh)
 | CMake | 3.21+ | macOS: `brew install cmake`. Linux: `sudo apt install cmake` or [cmake.org](https://cmake.org/download/) |
 | C++ compiler | C++17 | macOS: Xcode Command Line Tools (`xcode-select --install`). Linux: GCC 9+ or Clang (`g++` / `clang++`) |
 | Eigen3 | 3.3+ | macOS: `brew install eigen`. Linux: `sudo apt install libeigen3-dev`. Auto-detected from Chrono when Chrono is enabled; otherwise ensure system install or set `EIGEN3_INCLUDE_DIR` |
-| Project Chrono | v10+ | **Optional.** Required for `run_seastack` and time-domain simulation. Omit with `--no-chrono`. Modules and CMake options: [BUILD_CHRONO.md](BUILD_CHRONO.md) |
+| Project Chrono | 10.0.0 (exactly) | **Optional.** Required for `run_seastack` and time-domain simulation. Omit with `--no-chrono`. Modules and CMake options: [BUILD_CHRONO.md](BUILD_CHRONO.md) |
 | HDF5 | 1.12+ | **Optional.** Required for HydroIO (BEMIO HDF5 import/export). Omit with `--no-hydro-io` |
 | MoorDyn | Git submodule (`extern/MoorDyn`) | **Optional.** Enable with `--moordyn` (initialize submodules after clone; see below) |
 | Vulkan Scene Graph | latest | **Optional.** 3D visualization. Enable with `--vsg` |

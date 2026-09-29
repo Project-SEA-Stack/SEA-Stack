@@ -387,11 +387,11 @@ Development follows the Google C++ style guide, Effective Modern C++ idioms, and
 
 ### 7.2 Current limitations
 
-**Beta scope.** Radiation and excitation are linear potential-flow about equilibrium. Nonlinear hydrostatics (mesh buoyancy) exists; nonlinear Froude–Krylov and viscous drag do not yet. `IPTOModel` / `IController` are scalar; multi-DOF PTO and state-feedback would need interface work. Tests use custom macros (`TEST_ASSERT`, `TEST_NEAR`), not Google Test/Catch2.
+**Current scope.** Radiation and excitation are linear potential-flow about equilibrium. Nonlinear hydrostatics (mesh buoyancy) exists; nonlinear Froude–Krylov and viscous drag do not yet. `IPTOModel` / `IController` are scalar; multi-DOF PTO and state-feedback would need interface work. Tests use custom macros (`TEST_ASSERT`, `TEST_NEAR`), not Google Test/Catch2.
 
 **Architecture.** YAML wave construction lives in the Chrono adapter (`CreateWaveFromSettings`); moving it into `libs/hydro` would strengthen standalone use. Core headers live under `libs/core/` but use `namespace seastack::hydro` for some types—a naming cleanup for later.
 
-**Distribution.** CPack targets Windows ZIP today. `SEASTACK_ENABLE_CHRONO=OFF` builds, but a Chrono-free installable SDK has not been fully validated.
+**Distribution.** CPack produces Windows and macOS ZIPs; Linux is a source build only. `SEASTACK_ENABLE_CHRONO=OFF` builds, but a Chrono-free installable SDK has not been fully validated.
 
 ### 7.3 Future direction
 
@@ -403,7 +403,7 @@ Nonlinear hydrodynamics (Froude–Krylov, viscous drag); multi-DOF PTO and riche
 
 SEA-Stack v1.0.0 separates domain physics from the dynamics engine: hydro as a reusable library, PTO/control as light modules, Chrono as the current backend with a thin adapter. That layout supports standalone use, alternative solvers in principle, and future fidelity options.
 
-The beta is buildable, tested, and packagable on Windows, with architecture reviewed against this design. Next focus: documentation, broader testing, community use, and movement toward a stable v1.0.
+v1.0.0 is buildable, tested, and packaged on Windows and macOS, with architecture reviewed against this design. Next focus: documentation, broader testing, community use, and the future directions above.
 
 ---
 

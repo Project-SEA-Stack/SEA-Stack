@@ -318,7 +318,10 @@ double RadiationSurfaceViz::EvaluateBodyContribution(
     // User can further adjust via visual_scale.
     // ------------------------------------
     constexpr double kBaseAmplification = 5.0;  // Empirical visibility boost
-    constexpr double kReferenceRadius = 10.0;   // m
+    // Numerical value of the 10 m reference radius. It is used as a pure
+    // number: kBaseAmplification / sqrt(kReferenceRadius) is a dimensionless
+    // tuning factor, so amp_factor * velocity stays a length (m).
+    constexpr double kReferenceRadius = 10.0;
     const double amp_factor = kBaseAmplification / std::sqrt(kReferenceRadius) *
                               (omega_ / params_.gravity) * r0 * params_.visual_scale;
     
