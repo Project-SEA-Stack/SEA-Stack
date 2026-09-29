@@ -175,6 +175,14 @@ if(SEASTACK_ENABLE_CHRONO)
     endif()
     if(DEFINED Chrono_VERSION)
         message(STATUS "Chrono version: ${Chrono_VERSION}")
+        # Warning only: Chrono main builds can also report 10.0.0, so an exact
+        # version match cannot prove a supported Chrono. See BUILD_CHRONO.md.
+        if(NOT Chrono_VERSION VERSION_EQUAL "10.0.0")
+            message(WARNING
+                "SEA-Stack ${PROJECT_VERSION} is tested with Chrono 10.0.0 only; found "
+                "Chrono ${Chrono_VERSION}. Newer Chrono versions are known to break the "
+                "build. See docs/build/BUILD_CHRONO.md.")
+        endif()
     endif()
 
     # Chrono v10's exported targets carry

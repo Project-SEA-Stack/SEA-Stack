@@ -62,6 +62,8 @@ features and no changes to the physics models.
 - **Wigley demos are no longer shipped in the package.** They were meant to be
   source-only; the exclusion rule never matched. The trimaran demo covers
   Wigley-style hulls.
+- **CMake warns about untested Chrono versions.** Configure prints a warning
+  when Chrono reports a version other than 10.0.0. It does not stop the build.
 - Documentation: version strings, package layout, and the Chrono requirement.
 
 ## Known issues and limitations

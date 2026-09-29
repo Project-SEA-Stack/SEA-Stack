@@ -9,7 +9,7 @@ This page describes the **Chrono modules and CMake options** that match what SEA
 ## Version
 
 - SEA-Stack v1.0.0 is tested with and requires **Chrono 10.0.0** (release tag `10.0.0`).
-- Newer Chrono versions, including Chrono `main`, are not supported: they already contain API changes that break the SEA-Stack build. `find_package(Chrono)` does not enforce the version, so pin the tag yourself.
+- Newer Chrono versions, including Chrono `main`, are not supported: they already contain API changes that break the SEA-Stack build. CMake configure prints a warning if Chrono reports a version other than 10.0.0, but it does not stop the build, and a Chrono `main` build can still report 10.0.0. Pin the tag yourself.
 
 ---
 
