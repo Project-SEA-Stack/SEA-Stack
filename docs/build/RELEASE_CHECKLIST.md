@@ -53,6 +53,46 @@ On Linux, record the distro and version (`/etc/os-release`) and the glibc
 version (`ldd --version`) with the release evidence; the glibc version is the
 minimum the package runs on.
 
+On macOS, build Chrono with the release options in
+[BUILD_CHRONO.md](BUILD_CHRONO.md#macos-release-packages) (no Python, no Eigen
+OpenMP). A VSG package also needs MoltenVK: packaging fails if
+`libMoltenVK.dylib` or `MoltenVK_icd.json` cannot be found next to the Vulkan
+library or under `$VULKAN_SDK`. Packaging rewrites the bundled Mach-O files to
+use `@rpath`, ad-hoc re-signs each file it changes, and aborts on any
+dependency it cannot resolve inside the package. Check the unpacked ZIP independently:
+
+```bash
+mkdir /tmp/seastack-unpacked && ditto -x -k build/SEAStack-<version>-darwin-arm64.zip /tmp/seastack-unpacked
+python3 scripts/check_macho_portability.py /tmp/seastack-unpacked
+```
+
+Expect `[OK] All Mach-O dependencies and rpaths resolve inside the package`.
+Record the `minos` summary it prints; that is the minimum macOS version.
+
+**macOS clean-machine test.** Build-machine paths still exist on the build
+machine, so a normal run can hide a missing library. Run the unpacked package
+under a sandbox that denies reads of the source tree, Homebrew, and the Vulkan
+SDK (adjust paths):
+
+```bash
+cat > /tmp/strict.sb <<'EOF'
+(version 1)
+(allow default)
+(deny file-read* (subpath "/Users/<you>/dev") (subpath "/Users/<you>/VulkanSDK")
+  (subpath "/opt/homebrew") (subpath "/usr/local") (subpath "/Library/Developer/CommandLineTools"))
+EOF
+cd /tmp/seastack-unpacked
+sandbox-exec -f /tmp/strict.sb ./bin/run_seastack --doctor
+sandbox-exec -f /tmp/strict.sb ./bin/run_seastack --nogui demos/rm3/mooring
+sandbox-exec -f /tmp/strict.sb /usr/bin/env DYLD_PRINT_LIBRARIES=1 ./bin/run_seastack --debug demos/oswec/decay
+```
+
+Expect doctor `0 FAIL`, and every non-system image (including
+`libMoltenVK.dylib`) loaded from the package `lib/`. Use `/usr/bin/env` for
+`DYLD_*` variables; SIP strips them when they are set outside the sandbox. For
+the external-PTO demos and `tests/RUN-TESTS.sh`, add `allow file-read*` rules
+for just the Python interpreter and its virtual environment.
+
 ## 4. Full test suites (Windows)
 
 After the packaged Release build exists (do **not** `-Clean` again before staging
@@ -124,6 +164,12 @@ alignment mismatches between the libraries and downstream code.
 
 ```bash
 ./scripts/unix/run_consumer_check.sh        # --prefix-path for Eigen/HDF5 if not on the default path
+```
+
+On macOS with Homebrew, Apple Clang needs keg-only `libomp` on the prefix path:
+
+```bash
+./scripts/unix/run_consumer_check.sh --prefix-path "$(brew --prefix);$(brew --prefix libomp)"
 ```
 
 ## 8. Tagging and publishing

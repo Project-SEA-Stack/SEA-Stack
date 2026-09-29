@@ -7,6 +7,8 @@ This describes what ships in the **runtime** ZIP produced by `cmake --install` a
 | Path | Purpose |
 |------|---------|
 | `bin/` | `run_seastack.exe` and third-party/runtime DLLs. SDK-only executables (`standalone_controller.exe`, and `demo_sphere_decay.exe` when demos are enabled) are installed by `cmake --install` but are not in the runtime ZIP |
+| `lib/` | macOS: bundled shared libraries (Chrono, HDF5, VSG, MoorDyn, …). Every dylib uses an `@rpath` install name; files rewritten at install time are ad-hoc re-signed. A VSG package also bundles `libvulkan` and `libMoltenVK.dylib`, which keep their LunarG signatures |
+| `share/vulkan/icd.d/` | macOS VSG packages only: `MoltenVK_icd.json`, which `run_seastack` passes to the Vulkan loader via `VK_DRIVER_FILES` |
 | `demos/` | YAML-driven `run_seastack` case data (geometry, hydro HDF5 inputs, configs), including RM3/OSWEC `external_pto*` Python PTO cases |
 | `python/` | Thin IPC helper `seastack_external.py` for out-of-process force demos under `demos/` |
 | `examples/external_pto/` | Comparison-plot scripts (`run_visual_verification.py`, `plot_verification.py`) for the external PTO demos |

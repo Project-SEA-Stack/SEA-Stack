@@ -151,7 +151,7 @@ Options:
   -h, --help            This help
 
 Copy build-config.example.json to build-config.json and set ChronoDir.
-See also: build-config.example.macos.json
+See also: docs/build/BUILD_MACOS.md
 EOF
 }
 
