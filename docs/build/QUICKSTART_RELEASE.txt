@@ -39,10 +39,9 @@ needs pip packages from tests/requirements.txt — several minutes, 4x ~600 s ru
 
   Optional: --skip-run to replot existing demos/*/outputs, --open to launch the PDF.
 
-Optional executables (if shipped in this build):
+SDK-only executables (built from source; not included in this package):
   standalone_controller  — small PTO/control example (no Chrono)
-  demo_sphere_decay      — short C++ Chrono demo (when demos were enabled at build time)
-  (bin\...exe on Windows; ./bin/... on macOS/Linux)
+  demo_sphere_decay      — short C++ Chrono demo (when demos are enabled)
 
 Verify install (needs Python 3.10+ and pip packages from tests/requirements.txt):
   Windows:      tests\RUN-TESTS.ps1

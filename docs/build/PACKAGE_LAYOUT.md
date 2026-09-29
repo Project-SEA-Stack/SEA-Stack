@@ -6,7 +6,7 @@ This describes what ships in the **runtime** ZIP produced by `cmake --install` a
 
 | Path | Purpose |
 |------|---------|
-| `bin/` | Executables (`run_seastack.exe`, optional `standalone_controller.exe`, optional `demo_sphere_decay.exe` when demos were enabled at build time) and third-party/runtime DLLs |
+| `bin/` | `run_seastack.exe` and third-party/runtime DLLs. SDK-only executables (`standalone_controller.exe`, and `demo_sphere_decay.exe` when demos are enabled) are installed by `cmake --install` but are not in the runtime ZIP |
 | `demos/` | YAML-driven `run_seastack` case data (geometry, hydro HDF5 inputs, configs), including RM3/OSWEC `external_pto*` Python PTO cases |
 | `python/` | Thin IPC helper `seastack_external.py` for out-of-process force demos under `demos/` |
 | `examples/external_pto/` | Comparison-plot scripts (`run_visual_verification.py`, `plot_verification.py`) for the external PTO demos |
