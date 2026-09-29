@@ -18,3 +18,15 @@ else()
 endif()
 
 target_compile_features(seastack_core INTERFACE cxx_std_17)
+
+# Eigen ABI contract (MSVC). Every translation unit that shares Eigen objects
+# with SEA-Stack libraries must use the same EIGEN_MAX_ALIGN_BYTES. SEA-Stack
+# is compiled with /arch:AVX2 (32-byte alignment, matching Chrono's exported
+# flags; see seastack_apply_compile_settings), which makes Eigen use its own
+# aligned allocator instead of plain malloc/free. A consumer compiled without
+# it frees those blocks with the wrong allocator and corrupts the heap. Export
+# the settings so Chrono-free find_package(SEAStack) consumers inherit them.
+if(MSVC)
+    target_compile_options(seastack_core INTERFACE $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
+    target_compile_definitions(seastack_core INTERFACE ENABLE_EXTENDED_ALIGNED_STORAGE)
+endif()
