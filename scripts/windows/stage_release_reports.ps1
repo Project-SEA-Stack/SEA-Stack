@@ -7,8 +7,8 @@
     expected PDF is missing.
 
     Usage:
-        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0-beta.4
-        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0-beta.4 -OutputDir .\release-assets
+        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0
+        .\scripts\windows\stage_release_reports.ps1 -Version v1.0.0 -OutputDir .\release-assets
 #>
 
 param(
