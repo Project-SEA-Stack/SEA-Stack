@@ -28,5 +28,5 @@ target_compile_features(seastack_core INTERFACE cxx_std_17)
 # the settings so Chrono-free find_package(SEAStack) consumers inherit them.
 if(MSVC)
     target_compile_options(seastack_core INTERFACE $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
-    target_compile_definitions(seastack_core INTERFACE ENABLE_EXTENDED_ALIGNED_STORAGE)
+    target_compile_definitions(seastack_core INTERFACE _ENABLE_EXTENDED_ALIGNED_STORAGE)
 endif()
