@@ -898,35 +898,51 @@ endif()
 install(FILES "${CMAKE_SOURCE_DIR}/tests/utilities/plot_helpers.py"
         DESTINATION tests/utilities COMPONENT runtime)
 
-# RUNTIME_DEPENDENCIES copies dylibs into lib/ but leaves absolute LC_LOAD_DYLIB on the exe; point those at the bundle.
+# macOS: the Vulkan loader bundled via RUNTIME_DEPENDENCIES needs a driver. Ship MoltenVK and its
+# ICD manifest (library_path "../../../lib/libMoltenVK.dylib" matches share/vulkan/icd.d -> lib);
+# run_seastack points VK_DRIVER_FILES at it on startup (apps/seastack/app_init.cpp).
+if(TARGET run_seastack AND APPLE AND SEASTACK_ENABLE_VSG)
+    set(_seastack_vk_hints "")
+    if(Vulkan_LIBRARY)
+        get_filename_component(_seastack_vk_libdir "${Vulkan_LIBRARY}" DIRECTORY)
+        list(APPEND _seastack_vk_hints "${_seastack_vk_libdir}")
+    endif()
+    if(DEFINED ENV{VULKAN_SDK})
+        list(APPEND _seastack_vk_hints "$ENV{VULKAN_SDK}/lib")
+    endif()
+    find_file(SEASTACK_MOLTENVK_LIBRARY NAMES libMoltenVK.dylib HINTS ${_seastack_vk_hints} NO_DEFAULT_PATH)
+    set(SEASTACK_MOLTENVK_ICD "")
+    if(SEASTACK_MOLTENVK_LIBRARY)
+        get_filename_component(_seastack_vk_libdir "${SEASTACK_MOLTENVK_LIBRARY}" DIRECTORY)
+        set(_seastack_vk_icd "${_seastack_vk_libdir}/../share/vulkan/icd.d/MoltenVK_icd.json")
+        if(EXISTS "${_seastack_vk_icd}")
+            file(REAL_PATH "${_seastack_vk_icd}" SEASTACK_MOLTENVK_ICD)
+        endif()
+    endif()
+    if(SEASTACK_MOLTENVK_LIBRARY AND SEASTACK_MOLTENVK_ICD)
+        file(REAL_PATH "${SEASTACK_MOLTENVK_LIBRARY}" _seastack_moltenvk_real)
+        message(STATUS "MoltenVK for packaging: ${_seastack_moltenvk_real}")
+        install(FILES "${_seastack_moltenvk_real}" DESTINATION lib
+                RENAME libMoltenVK.dylib COMPONENT runtime)
+        install(FILES "${SEASTACK_MOLTENVK_ICD}" DESTINATION share/vulkan/icd.d
+                RENAME MoltenVK_icd.json COMPONENT runtime)
+    else()
+        # Build-tree runs use the system Vulkan driver; cmake --install / cpack fail in the fixup below.
+        message(WARNING "MoltenVK (libMoltenVK.dylib + share/vulkan/icd.d/MoltenVK_icd.json) not found "
+                        "next to Vulkan_LIBRARY or $VULKAN_SDK/lib. Packaging will fail.")
+    endif()
+endif()
+
+# macOS: make run_seastack and every bundled dylib relocatable (@rpath), strip absolute rpaths,
+# re-sign. Must stay after every install rule that stages files into lib/.
 # (Linux would need patchelf/chrpath; RPATH $ORIGIN/../lib on the exe covers many layouts.)
 if(TARGET run_seastack AND APPLE)
-    install(CODE "
-        set(_seastack_pfx \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}\")
-        set(_seastack_exe \"\${_seastack_pfx}/bin/run_seastack\")
-        if(EXISTS \"\${_seastack_exe}\")
-            execute_process(COMMAND /usr/bin/otool -L \"\${_seastack_exe}\"
-                OUTPUT_VARIABLE _seastack_otool
-                OUTPUT_STRIP_TRAILING_WHITESPACE)
-            string(REPLACE \"\\n\" \";\" _seastack_lines \"\${_seastack_otool}\")
-            foreach(_seastack_line IN LISTS _seastack_lines)
-                if(_seastack_line MATCHES \"^[ \\t]+(/[^ ]+\\.dylib)\")
-                    set(_seastack_old \"\${CMAKE_MATCH_1}\")
-                    if(_seastack_old MATCHES \"^/usr/lib/\" OR _seastack_old MATCHES \"^/System/\")
-                        continue()
-                    endif()
-                    get_filename_component(_seastack_base \"\${_seastack_old}\" NAME)
-                    set(_seastack_new \"@loader_path/../lib/\${_seastack_base}\")
-                    set(_seastack_cand \"\${_seastack_pfx}/lib/\${_seastack_base}\")
-                    if(EXISTS \"\${_seastack_cand}\")
-                        execute_process(COMMAND /usr/bin/install_name_tool
-                            -change \"\${_seastack_old}\" \"\${_seastack_new}\" \"\${_seastack_exe}\"
-                            RESULT_VARIABLE _seastack_inr)
-                    endif()
-                endif()
-            endforeach()
-        endif()
-    " COMPONENT runtime)
+    if(SEASTACK_ENABLE_VSG)
+        install(CODE "set(SEASTACK_FIXUP_REQUIRE_MOLTENVK ON)" COMPONENT runtime)
+    else()
+        install(CODE "set(SEASTACK_FIXUP_REQUIRE_MOLTENVK OFF)" COMPONENT runtime)
+    endif()
+    install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/SeaStackMacOSBundleFixup.cmake" COMPONENT runtime)
 endif()
 
 set(CPACK_GENERATOR "ZIP")
