@@ -799,7 +799,7 @@ install(DIRECTORY ${SEASTACK_BUILD_DATA}/chrono/ DESTINATION data/chrono COMPONE
 # distribution package (trimaran covers a richer multi-hull Wigley-style example).
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/demos/run_seastack/
         DESTINATION demos COMPONENT runtime
-        REGEX "^wigley"              EXCLUDE
+        REGEX "/wigley(/|$)"         EXCLUDE
         # Omit redundant cases from the release ZIP (full tree remains in the source repo).
         REGEX "rm3/regular_waves"    EXCLUDE
         REGEX "f3of/decay_dt1"     EXCLUDE

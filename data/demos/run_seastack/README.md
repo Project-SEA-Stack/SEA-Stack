@@ -58,7 +58,7 @@ parameters**, and an **available cases** table (paths below are relative to
 | f3of | decay_dt1, decay_dt2 | *(source repo only; omitted from release ZIP)* | `f3of/decay_dt1/…`, `f3of/decay_dt2/…` |
 | trimaran | rigid | Three-hull trimaran with rigid cross-arms, irregular waves | `trimaran/model.setup.yaml` or `trimaran/rigid/trimaran_rigid.setup.yaml` |
 
-**Note:** RM3 `irregular_waves` and OSWEC `irregular_waves` use **long-crested** seas with single-heading BEMIO data (`rm3.h5`, `oswec.h5`). For **bimodal** or **directional spreading** examples, see **5sa** `bimodal` / `spreading` and scripts under `5sa/assets/` and `wigley/assets/`.
+**Note:** RM3 `irregular_waves` and OSWEC `irregular_waves` use **long-crested** seas with single-heading BEMIO data (`rm3.h5`, `oswec.h5`). For **bimodal** or **directional spreading** examples, see **5sa** `bimodal` / `spreading` and scripts under `5sa/assets/` (and `wigley/assets/` in the source repository; Wigley cases are not included in the release package).
 
 ## Directory layout
 
