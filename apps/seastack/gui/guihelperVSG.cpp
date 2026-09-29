@@ -368,7 +368,7 @@ void GUIImplVSG::UpdateRadiationSourceBody(double t) {
         // Get body motion state.
         const ::chrono::ChVector3d pos = body->GetPos();
         const ::chrono::ChVector3d vel = body->GetPosDt();
-        const ::chrono::ChVector3d ang_vel = body->GetAngVelLocal();
+        const ::chrono::ChVector3d ang_vel = body->GetAngVelParent();  // world frame
 
         // Estimate body radius from AABB (rough approximation).
         double radius = 5.0;  // Default
@@ -377,7 +377,9 @@ void GUIImplVSG::UpdateRadiationSourceBody(double t) {
             double dx = aabb.max.x() - aabb.min.x();
             double dy = aabb.max.y() - aabb.min.y();
             radius = std::max(dx, dy) / 2.0;
-            radius = std::max(radius, 1.0);  // Minimum 1m
+            // Guard against degenerate AABBs only; a larger floor would
+            // over-amplify lab-scale bodies.
+            radius = std::max(radius, 0.05);  // m
         }
 
         // Update radiation viz for this body.

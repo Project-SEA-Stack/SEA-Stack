@@ -18,7 +18,8 @@
 //   propagate at phase velocity c_p. For deep water: c_g = c_p/2.
 //
 // Limitations:
-//   - Amplitude scaling is empirical (Kochin functions not available)
+//   - Qualitative only: amplitude scaling is empirical (Kochin functions not
+//     available); do not read radiated wave heights off the display
 //   - Body geometry effects not captured beyond characteristic radius
 //   - Linear superposition assumed (valid for small amplitudes)
 
@@ -305,14 +306,21 @@ double RadiationSurfaceViz::EvaluateBodyContribution(
     // Amplitude calculation.
     // In proper theory: A_j = (ω/g) · H_j(θ,ω) · ξ̇_j where H_j is Kochin function.
     // Without Kochin functions, we use an empirical relationship:
-    //   A ∝ v · (ω/g) · √(r0)
-    // The √(r0) factor accounts for larger bodies radiating more energy.
+    //   A ∝ v · (ω/g) · r0
+    // (ω/g)·r0·v is a length [m], and in deep water equals (k·r0)·ξ for body
+    // motion amplitude ξ, so η/ξ is invariant under Froude scaling: a 1:100
+    // model looks the same as full scale. Larger bodies (relative to the
+    // wavelength) radiate more.
     //
     // Base amplification (empirical) ensures waves are visible for typical
-    // body sizes and velocities. User can further adjust via visual_scale.
+    // body sizes and velocities. It was tuned with a √r0 factor, so dividing
+    // by √(kReferenceRadius) keeps a 10 m radius body unchanged.
+    // User can further adjust via visual_scale.
     // ------------------------------------
     constexpr double kBaseAmplification = 5.0;  // Empirical visibility boost
-    const double amp_factor = kBaseAmplification * (omega_ / params_.gravity) * std::sqrt(r0) * params_.visual_scale;
+    constexpr double kReferenceRadius = 10.0;   // m
+    const double amp_factor = kBaseAmplification / std::sqrt(kReferenceRadius) *
+                              (omega_ / params_.gravity) * r0 * params_.visual_scale;
     
     // Combine modal contributions with appropriate signs.
     // Negative heave velocity (moving down) creates positive wave crest ahead.

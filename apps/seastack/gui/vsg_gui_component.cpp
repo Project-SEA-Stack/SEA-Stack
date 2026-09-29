@@ -95,7 +95,8 @@ void SeastackGuiComponent::render(vsg::CommandBuffer& /*cb*/) {
 
             ImGui::Checkbox("Radiation (approx.)", &settings_->show_radiation_viz);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Visual approximation of radiated waves.\n"
+                ImGui::SetTooltip("Qualitative visual approximation of radiated waves.\n"
+                                  "Heights are empirical - not a quantitative result.\n"
                                   "Does NOT affect physics - for feedback only.");
             }
 
