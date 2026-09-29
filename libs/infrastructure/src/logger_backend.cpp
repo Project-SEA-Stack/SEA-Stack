@@ -18,6 +18,8 @@
 #include <mach-o/dyld.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <climits>
+#include <cstdlib>
 #else
 #include <unistd.h>
 #include <limits.h>
@@ -500,6 +502,15 @@ std::string GetExecutablePath() {
     }
     if (len == 0) return "";
     return std::string(buf.data(), len);
+#elif defined(__APPLE__)
+    // No /proc on macOS; _NSGetExecutablePath may return a symlinked or relative path.
+    uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::vector<char> raw(size + 1, '\0');
+    if (_NSGetExecutablePath(raw.data(), &size) != 0) return "";
+    char resolved[PATH_MAX];
+    if (realpath(raw.data(), resolved) == nullptr) return "";
+    return std::string(resolved);
 #else
     char path[PATH_MAX];
     ssize_t count = readlink("/proc/self/exe", path, PATH_MAX);

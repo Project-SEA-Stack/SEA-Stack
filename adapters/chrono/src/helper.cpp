@@ -12,8 +12,10 @@
 #include <chrono_thirdparty/cxxopts/ChCLI.h>
 
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <vector>
 
 bool seastack::chrono::GetCLIArguments(int argc,
@@ -86,6 +88,13 @@ static path DATADIR{};
 // Last Chrono data path passed to SetChronoDataPath (for subprocess env export).
 static std::string g_chrono_data_dir;
 
+// Probe a candidate data directory without throwing: an unreadable candidate
+// (e.g. a compiled-in build-tree path on another machine) is treated as absent.
+static bool IsExistingDirectory(const path& p) {
+    std::error_code ec;
+    return std::filesystem::is_directory(p, ec);
+}
+
 bool seastack::chrono::SetInitialEnvironment(const std::string& data_dir) {
     const char* env_p = std::getenv("SEASTACK_DATA_DIR");
 
@@ -104,7 +113,7 @@ bool seastack::chrono::SetInitialEnvironment(const std::string& data_dir) {
             exe_relative_data = path(exe_dir) / ".." / "data";
             exe_relative_data = exe_relative_data.lexically_normal();
         }
-        if (!exe_dir.empty() && std::filesystem::exists(exe_relative_data) && std::filesystem::is_directory(exe_relative_data)) {
+        if (!exe_dir.empty() && IsExistingDirectory(exe_relative_data)) {
             DATADIR = absolute(exe_relative_data);
             seastack::infra::debug::LogDebug(std::string("Using exe-relative data directory: '") + GetDataDir() + "'");
         } else {
@@ -124,7 +133,7 @@ bool seastack::chrono::SetInitialEnvironment(const std::string& data_dir) {
 #ifdef SEASTACK_CHRONO_DATA_DIR_PATH
     {
         path canonical(SEASTACK_CHRONO_DATA_DIR_PATH);
-        if (std::filesystem::exists(canonical) && std::filesystem::is_directory(canonical)) {
+        if (IsExistingDirectory(canonical)) {
             chrono_data_path = canonical;
         }
     }
@@ -134,14 +143,14 @@ bool seastack::chrono::SetInitialEnvironment(const std::string& data_dir) {
         if (!exe_dir.empty()) {
             path exe_rel = path(exe_dir) / ".." / "data" / "chrono";
             exe_rel = exe_rel.lexically_normal();
-            if (std::filesystem::exists(exe_rel) && std::filesystem::is_directory(exe_rel)) {
+            if (IsExistingDirectory(exe_rel)) {
                 chrono_data_path = exe_rel;
             }
         }
     }
     if (chrono_data_path.empty()) {
         path seastack_chrono(std::string(SEASTACK_DATA_DIR_PATH) + "/chrono");
-        if (std::filesystem::exists(seastack_chrono) && std::filesystem::is_directory(seastack_chrono)) {
+        if (IsExistingDirectory(seastack_chrono)) {
             chrono_data_path = seastack_chrono;
         }
     }
