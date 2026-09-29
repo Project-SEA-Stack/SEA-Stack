@@ -91,6 +91,20 @@ still succeed if `Eigen3::Eigen` was already provided by `find_dependency(Eigen3
 from `SEAStackConfig.cmake`. If configure fails, align `Eigen3_DIR` with the
 SEA-Stack build or use the Chrono/Eigen combination SEA-Stack was built against.
 
+### macOS: OpenMP from Homebrew `libomp`
+
+`SEAStackConfig.cmake` also looks for **OpenMP** (used by `SEAStack::Hydro`).
+Apple Clang has no bundled OpenMP runtime, and Homebrew's `libomp` is keg-only,
+so CMake does not find it on the default path. Add it to the prefix path:
+
+```bash
+cmake -B build -S . \
+  -DCMAKE_PREFIX_PATH="/path/to/SEA-Stack/build/install;$(brew --prefix);$(brew --prefix libomp)"
+```
+
+The consumer check uses the same value:
+`./scripts/unix/run_consumer_check.sh --prefix-path "$(brew --prefix);$(brew --prefix libomp)"`.
+
 ## Available targets
 
 After `find_package(SEAStack REQUIRED)`, the following imported targets are

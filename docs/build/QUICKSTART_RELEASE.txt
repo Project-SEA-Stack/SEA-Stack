@@ -8,6 +8,16 @@ Main application:
   Windows:      bin\run_seastack.exe
   macOS/Linux:  ./bin/run_seastack
 
+macOS first run:
+  The macOS package needs macOS 15 or later on Apple Silicon (arm64). It is
+  not notarized (run_seastack is ad-hoc signed). If the ZIP was downloaded
+  with a browser and unpacked in Finder, the extracted files are quarantined
+  and macOS refuses to run them ("run_seastack" Not Opened). Before the first run, remove the quarantine
+  flag once, from the package root:
+    xattr -dr com.apple.quarantine .
+  All libraries, including the MoltenVK Vulkan driver for the 3D window, are
+  bundled in lib/; no Homebrew or Vulkan SDK install is needed.
+
 Example (from package root):
   Windows:      bin\run_seastack.exe demos\5sa\bimodal
   macOS/Linux:  ./bin/run_seastack demos/5sa/bimodal
@@ -55,6 +65,7 @@ macOS troubleshooting (packaged build diverges or NaNs while Windows passes):
   use otool -L on bin/run_seastack and lib/*.dylib, confirm bundled libraries load
   (not mixed system copies), and check OpenMP/BLAS linkage. Release packaging
   verification after install: scripts/verify_release_install_prefix.py
+  (on macOS this also runs scripts/check_macho_portability.py).
 
 Support (source builds):
   Windows:      scripts\windows\build.ps1 -Doctor

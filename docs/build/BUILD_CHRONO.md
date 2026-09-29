@@ -113,6 +113,20 @@ cmake --install /path/to/chrono-build
 
 Use **`-DCH_ENABLE_MODULE_VSG=ON`** only if you will build SEA-Stack with **`--vsg` / `-VSG`** and have installed Chrono’s VSG prerequisites per upstream docs.
 
+### macOS release packages
+
+If you will build a redistributable macOS ZIP (`--package`), add these two options to the Chrono configure:
+
+```bash
+  -DCMAKE_DISABLE_FIND_PACKAGE_Python3=ON \
+  -DCH_USE_EIGEN_OPENMP=OFF
+```
+
+- **`CMAKE_DISABLE_FIND_PACKAGE_Python3=ON`**: Chrono's Parsers module auto-detects Python and, if found, links `libChrono_parsers` against it (on the release build Mac it found the Command Line Tools Python 3.9). SEA-Stack only uses the YAML parser, but that link would make the package require the build machine's Python install. With this option `CHRONO_HAS_PYTHON` is undefined in `ChConfigParsers.h`, and no Chrono library links Python.
+- **`CH_USE_EIGEN_OPENMP=OFF`**: the macOS v1.0.0 Chrono libraries were built with Eigen's internal OpenMP parallelism off (`EIGEN_DONT_PARALLELIZE`), as in the earlier release candidates. Keep it off so the package matches the tested build.
+
+Use a separate Chrono build directory for this configuration and point `ChronoDir` at it. The SEA-Stack packaging step aborts if any bundled library still references a path outside the package.
+
 ---
 
 ## Checklist before configuring SEA-Stack

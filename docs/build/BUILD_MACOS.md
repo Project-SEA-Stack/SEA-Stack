@@ -80,7 +80,7 @@ Edit `build-config.json`:
 - **`PythonRoot`** — Python environment used by Chrono. Leave empty if not applicable.
 - **`Generator`** — CMake generator override (e.g. `"Ninja"`). Leave empty to use the script default (Ninja if on `PATH`).
 
-See also `build-config.example.macos.json` in the repo root for a macOS-oriented template.
+Start from `build-config.example.json` in the repo root; the fields above are the ones that differ on macOS.
 
 ## 5. Build
 
