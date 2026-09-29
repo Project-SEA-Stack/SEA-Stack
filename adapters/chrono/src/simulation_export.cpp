@@ -166,10 +166,10 @@ struct SimulationExporter::Impl {
         std::string type;       // e.g., "LOCK" or "LINK"
         std::string class_name; // RTTI class name
         ::chrono::ChLink* link = nullptr; // non-owning
-        std::vector<double> react_force_b1;  // N x 3 (link frame 1)
-        std::vector<double> react_torque_b1; // N x 3 (link frame 1)
-        std::vector<double> react_force_b2;  // N x 3 (link frame 2)
-        std::vector<double> react_torque_b2; // N x 3 (link frame 2)
+        std::vector<double> react_force_b1;  // N x 3 (world axes)
+        std::vector<double> react_torque_b1; // N x 3 (world axes, about link frame 1 origin)
+        std::vector<double> react_force_b2;  // N x 3 (world axes)
+        std::vector<double> react_torque_b2; // N x 3 (world axes, about link frame 2 origin)
     };
     std::vector<JointBuffers> joints;
 
@@ -1309,8 +1309,12 @@ void SimulationExporter::Finalize() {
             gj.WriteAttribute("type", j.type);
             if (!j.class_name.empty()) gj.WriteAttribute("class", j.class_name);
             gj.WriteAttribute("time_ref", std::string("/results/time/time"));
-            gj.WriteAttribute("frame1", std::string("link1"));
-            gj.WriteAttribute("frame2", std::string("link2"));
+            // RecordStep rotates reactions from the link frames into world axes;
+            // torques are about the origin of link frame 1 (resp. 2).
+            gj.WriteAttribute("frame1", std::string("world"));
+            gj.WriteAttribute("frame2", std::string("world"));
+            gj.WriteAttribute("torque_point1", std::string("link frame 1 origin"));
+            gj.WriteAttribute("torque_point2", std::string("link frame 2 origin"));
             gj.WriteAttribute("units_force", std::string("N"));
             gj.WriteAttribute("units_torque", std::string("N*m"));
             const hsize_t N = static_cast<hsize_t>(impl_->time.size());
