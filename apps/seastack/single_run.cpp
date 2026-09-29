@@ -922,7 +922,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 
         // Chrono YAML parses enforce_realtime, but run_seastack steps via
         // DoStepDynamics directly (not ChParserMbsYAML::Advance), so honour it
-        // here. GUI mode always paces to realtime so Play is watchable.
+        // here. It only affects the GUI loop: true paces simulated time to
+        // wall-clock time, false (default) runs as fast as possible.
+        // Headless runs always run as fast as possible.
         bool enforce_realtime = false;
         try {
             auto sim_yaml = YAML::LoadFile(config.simulation_file);
@@ -930,9 +932,6 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 enforce_realtime = sim_yaml["simulation"]["enforce_realtime"].as<bool>();
             }
         } catch (...) {
-        }
-        if (!nogui) {
-            enforce_realtime = true;
         }
 
         // Diagnostic dump: compare system state to compiled regression tests.
@@ -1056,17 +1055,27 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 try {
                     // Small Chrono steps (e.g. MoorDyn dt = 0.5 ms) need many
                     // substeps per render frame or the GUI crawls at ~0.03× realtime.
-                    constexpr double kGuiFrameSimBudget = 1.0 / 60.0;
+                    // Realtime: step 1/60 s of simulated time per frame, then pace.
+                    // As fast as possible: step until the frame's wall-clock
+                    // budget is used, so the window still redraws ~30 times/s.
+                    constexpr double kGuiFrameSimBudget = 1.0 / 60.0;   // s (simulated)
+                    constexpr double kGuiFrameWallBudget = 1.0 / 30.0;  // s (wall clock)
                     constexpr int kGuiMaxSubsteps = 400;
                     int n_substeps = 1;
                     if (enforce_realtime && loop_dt > 0.0) {
                         n_substeps = static_cast<int>(std::ceil(kGuiFrameSimBudget / loop_dt));
                         n_substeps = std::max(1, std::min(n_substeps, kGuiMaxSubsteps));
                     }
+                    const auto frame_wall_start = std::chrono::steady_clock::now();
 
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
-                    for (int sub = 0; sub < n_substeps; ++sub) {
+                    for (int sub = 0; !enforce_realtime || sub < n_substeps; ++sub) {
                         if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
+                            break;
+                        }
+                        if (!enforce_realtime && sub > 0 &&
+                            std::chrono::duration<double>(std::chrono::steady_clock::now() - frame_wall_start)
+                                    .count() >= kGuiFrameWallBudget) {
                             break;
                         }
                         system->DoStepDynamics(loop_dt);

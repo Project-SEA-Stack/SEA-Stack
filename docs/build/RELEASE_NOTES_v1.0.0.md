@@ -53,6 +53,12 @@ features and no changes to the physics models.
   change by a factor of sqrt(radius / 10 m). Roll and pitch contributions now
   use world-frame angular velocity, which changes the pattern for yawed
   bodies.
+- **The GUI honours `enforce_realtime` again.** beta.4 always paced the GUI
+  to real time and ignored the simulation YAML. Now
+  `simulation: enforce_realtime: true` paces simulated time to wall-clock
+  time, and `false` (the default, and the setting in all shipped demos) runs
+  as fast as the machine allows while the window keeps redrawing. Headless
+  (`--nogui`) runs always go as fast as possible.
 - **Wigley demos are no longer shipped in the package.** They were meant to be
   source-only; the exclusion rule never matched. The trimaran demo covers
   Wigley-style hulls.
