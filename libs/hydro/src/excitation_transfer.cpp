@@ -22,6 +22,38 @@ namespace seastack::hydro {
 
 namespace {
 constexpr double kTwoPi = 2.0 * M_PI;
+
+/// Maximum deviation from an evenly spaced grid, as a fraction of the mean
+/// spacing, for a BEM frequency list to count as uniform in omega.
+/// WEC-Sim/WAMIT grids carry up to ~2e-3 of the spacing in rounding noise
+/// (periods stored to 7 significant digits); grids that are uniform in period
+/// (e.g. Capytaine design-screening runs) deviate by O(1). Below this
+/// threshold the linear index map misplaces omega by < 1% of one spacing.
+constexpr double kUniformGridRelTol = 1e-2;
+
+/// True when freq_list [rad/s] is strictly increasing but NOT evenly spaced
+/// in omega (deviation from even spacing > kUniformGridRelTol of the mean
+/// spacing). Only such grids need a bracket search; all other grids keep the
+/// original linear index map.
+bool IsAscendingNonUniformGrid(const Eigen::VectorXd& freq_list) {
+    const Eigen::Index n = freq_list.size();
+    if (n < 3) {
+        return false;
+    }
+    for (Eigen::Index k = 1; k < n; ++k) {
+        if (!(freq_list[k] > freq_list[k - 1])) {
+            return false;
+        }
+    }
+    const double d_omega = (freq_list[n - 1] - freq_list[0]) / static_cast<double>(n - 1);
+    for (Eigen::Index k = 1; k < n - 1; ++k) {
+        const double uniform_omega = freq_list[0] + static_cast<double>(k) * d_omega;
+        if (std::abs(freq_list[k] - uniform_omega) > kUniformGridRelTol * d_omega) {
+            return true;
+        }
+    }
+    return false;
+}
 }  // namespace
 
 ExcitationTFData InterpolateExcitationTransfer(
@@ -52,6 +84,16 @@ ExcitationTFData InterpolateExcitationTransfer(
     const double omega_max_h5 = (n_h5_freq > 0) ? h5_freq_list[n_h5_freq - 1] : 0.0;
     const double omega_range  = omega_max_h5 - omega_min_h5;
 
+    // Uniform grids keep the original linear index map (bit-identical results).
+    // Non-uniform grids (e.g. uniform in period) need a bracket search, since
+    // the linear map would read coefficients at the wrong frequencies.
+    const bool bracket_search = IsAscendingNonUniformGrid(h5_freq_list);
+    if (bracket_search) {
+        LOG_DEBUG("Excitation: H5 frequency grid is non-uniform in omega ("
+                  << n_h5_freq << " points, " << omega_min_h5 << "-" << omega_max_h5
+                  << " rad/s); using bracket search for frequency interpolation.");
+    }
+
     ExcitationTFData result;
     result.re.resize(n_bodies);
     result.im.resize(n_bodies);
@@ -68,6 +110,19 @@ ExcitationTFData InterpolateExcitationTransfer(
                 f_lo = 0;
                 f_hi = 0;
                 f_frac = 0.0;
+            } else if (bracket_search) {
+                // Out-of-range omega is clamped to the end bracket, matching the
+                // uniform-grid branch below.
+                const double omega = components[ci].omega;
+                const double* w_begin = h5_freq_list.data();
+                const double* w_end   = w_begin + n_h5_freq;
+                const double* it_hi   = std::upper_bound(w_begin, w_end, omega);
+                f_hi = static_cast<int>(it_hi - w_begin);
+                f_hi = std::clamp(f_hi, 1, static_cast<int>(n_h5_freq - 1));
+                f_lo = f_hi - 1;
+                const double w_lo = h5_freq_list[f_lo];
+                const double w_hi = h5_freq_list[f_hi];
+                f_frac = std::clamp((omega - w_lo) / (w_hi - w_lo), 0.0, 1.0);
             } else if (n_h5_freq > 1) {
                 double freq_idx = 0.0;
                 if (omega_range > 0.0) {
