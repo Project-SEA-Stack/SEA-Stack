@@ -331,10 +331,8 @@ std::vector<WaveComponent> ComponentSampler::BuildFromEtaFile(
     }
 
     // 4. Parseval energy check: sum(A^2/2) should approximate var(eta) for the
-    // retained Fourier bins only. When nf caps force stride>1, most in-band energy
-    // is omitted from `components` while var_eta is the full-record variance — the
-    // ratio is not meaningful, so skip the warning.
-    if (stride == 1) {
+    // retained Fourier bins.
+    {
         double mean_eta = 0.0;
         for (size_t j = 0; j < N; ++j) mean_eta += etas[j];
         mean_eta /= static_cast<double>(N);
@@ -351,7 +349,18 @@ std::vector<WaveComponent> ComponentSampler::BuildFromEtaFile(
             spectral_energy += 0.5 * c.amplitude * c.amplitude;
         }
 
-        if (var_eta > 0.0) {
+        if (stride > 1) {
+            // The nf cap keeps only every stride-th Fourier bin, so the
+            // reconstructed sea omits most of the in-band energy.
+            LOG_WARNING("BuildFromEtaFile: the eta record has " << nf_full
+                << " Fourier bins in [" << f_min_hz << ", " << f_max_hz
+                << "] Hz but the component cap is " << nf << "; keeping every "
+                << stride << "th bin (" << nf_actual << " components). "
+                << "Retained spectral energy / signal variance = "
+                << ((var_eta > 0.0) ? spectral_energy / var_eta : 0.0)
+                << ". Set waves.discretization.n_omega >= " << nf_full
+                << " to keep all bins.");
+        } else if (var_eta > 0.0) {
             double ratio = spectral_energy / var_eta;
             if (ratio < 0.5 || ratio > 2.0) {
                 LOG_WARNING("BuildFromEtaFile: Parseval check -- spectral energy / signal variance = "

@@ -94,6 +94,33 @@ ExcitationTFData InterpolateExcitationTransfer(
                   << " rad/s); using bracket search for frequency interpolation.");
     }
 
+    // Components outside the BEM band get the coefficients of the nearest
+    // grid end (no extrapolation). Report how much of the sea that affects.
+    if (n_h5_freq > 1 && n_comp > 0) {
+        constexpr double kBandRelTol = 1e-9;
+        Eigen::Index n_outside = 0;
+        double energy_outside = 0.0;
+        double energy_total = 0.0;
+        for (const auto& c : components) {
+            const double energy = c.amplitude * c.amplitude;
+            energy_total += energy;
+            if (c.omega < omega_min_h5 * (1.0 - kBandRelTol) ||
+                c.omega > omega_max_h5 * (1.0 + kBandRelTol)) {
+                ++n_outside;
+                energy_outside += energy;
+            }
+        }
+        if (n_outside > 0) {
+            LOG_WARNING("Excitation: " << n_outside << " of " << n_comp
+                << " wave components ("
+                << ((energy_total > 0.0) ? 100.0 * energy_outside / energy_total : 0.0)
+                << "% of wave energy) lie outside the H5 frequency range ["
+                << omega_min_h5 << ", " << omega_max_h5
+                << "] rad/s; their excitation coefficients are clamped to the "
+                << "nearest grid end (no extrapolation).");
+        }
+    }
+
     ExcitationTFData result;
     result.re.resize(n_bodies);
     result.im.resize(n_bodies);

@@ -77,7 +77,9 @@ struct ConstantCoefficientOptions {
 struct RadiationKernelProcessing {
     /// Smoothing type: "none" (default), "sg" (Savitzky-Golay), or "moving_average"
     std::string smoothing_type = "none";
-    int smoothing_window = 5;              ///< Smoothing window length (odd, >= 3)
+    /// Smoothing window length in RIRF samples (odd, >= 3). Used by
+    /// "moving_average" only; "sg" always uses a fixed 5-point window.
+    int smoothing_window = 5;
 
     /// Tapering: when enabled, applies a half-cosine taper window near the end of the RIRF
     bool taper_enabled = false;
