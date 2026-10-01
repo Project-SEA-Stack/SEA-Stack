@@ -97,7 +97,9 @@ Compare SEA-Stack methods against each other. No external reference data.
 | `test_compare_excitation_irf_vs_fd_sphere_irreg` | `test_comparison_sphere_compare_excitation_irf_vs_fd_sphere_irreg` | kPolar vs kCartesian interpolation |
 | `test_compare_eta_dft_vs_convolution_sphere_irreg` | `test_comparison_sphere_compare_eta_dft_vs_convolution_sphere_irreg` | DFT vs direct-eta convolution for eta-import |
 | `test_compare_linear_vs_nonlinear_hs_sphere_decay` | `test_comparison_sphere_compare_linear_vs_nonlinear_hs_sphere_decay` | Linear vs nonlinear hydro |
+| `test_compare_radiation_methods_sphere_reg` | `test_comparison_sphere_compare_radiation_methods_sphere_reg` | RIRF vs state space vs constant coefficients, regular waves, against the single-DOF frequency-domain solution (CC must be within 1% / 1 deg) |
 | `test_compare_linear_vs_hydraulic_pto_rm3_irreg` | `test_comparison_rm3_compare_linear_vs_hydraulic_pto_rm3_irreg` | LinearPTO vs hydraulic PTO |
+| `test_compare_radiation_methods_rm3_reg` | `test_comparison_rm3_compare_radiation_methods_rm3_reg` | RIRF vs state space vs constant coefficients, two-body heave in regular waves, against the coupled 2x2 frequency-domain solution (CC must be within 1% / 1 deg, power 2%) |
 | `test_validate_rm3_mesh_topology` | `test_comparison_rm3_validate_rm3_mesh_topology` | Mesh topology validation |
 | `compare_interp_polar_vs_cartesian_sphere_reg` | — | (planned; not in current CMake) |
 | `compare_radiation_conv_vs_ss_sphere_decay` | — | (planned; not in current CMake) |

@@ -102,6 +102,7 @@ message(STATUS "Add SEA-Stack comparison tests")
 build_comparison_test(sphere  compare_excitation_irf_vs_fd_sphere_irreg)
 build_comparison_test(sphere  compare_eta_dft_vs_convolution_sphere_irreg)
 build_comparison_test(sphere  compare_linear_vs_nonlinear_hs_sphere_decay)
+build_comparison_test(sphere  compare_radiation_methods_sphere_reg)
 
 set(_rm3_topo_src rm3/test_validate_rm3_mesh_topology.cpp)
 set(_rm3_topo_exe test_validate_rm3_mesh_topology)
@@ -123,6 +124,7 @@ set_tests_properties(${CTEST_RM3_TOPO} PROPERTIES
     COST 10)
 
 build_comparison_test(rm3  compare_linear_vs_hydraulic_pto_rm3_irreg)
+build_comparison_test(rm3  compare_radiation_methods_rm3_reg)
 
 # Report output uses $<CONFIG> for multi-config generators (Python creates the directory).
 
