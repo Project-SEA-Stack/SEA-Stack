@@ -7,6 +7,10 @@
  * This implementation uses a Hankel-SVD approach to identify state-space
  * parameters from an impulse response, following the WEC-Sim algorithm.
  *
+ * 0. DECIMATE LONG KERNELS (SEA-Stack addition)
+ *    stride = ceil((N - 1) / (2 * max_hankel_size - 1)); K <- K[::stride],
+ *    dt <- stride * dt. stride = 1 leaves the kernel unchanged.
+ *
  * 1. SCALE AND BUILD HANKEL MATRIX
  *    y = dt * K
  *    H = hankel(y[1:])  (Hankel matrix from scaled samples)
@@ -56,39 +60,57 @@ RadiationStateSpaceFitter::RadiationStateSpaceFitter(const StateSpaceOptions& op
     if (opts_.r2_threshold <= 0.0 || opts_.r2_threshold > 1.0) {
         opts_.r2_threshold = 0.95;  // Sensible default
     }
+    if (opts_.max_hankel_size < 2) {
+        opts_.max_hankel_size = 200;  // Sensible default
+    }
 }
 
 StateSpaceFitResult RadiationStateSpaceFitter::FitKernel(
-    const Eigen::VectorXd& K,
-    double dt) const {
+    const Eigen::VectorXd& K_in,
+    double dt_in) const {
     
     StateSpaceFitResult result;
     result.order = 0;
     result.r2 = 0.0;
 
-    const int N = static_cast<int>(K.size());
+    const int N_in = static_cast<int>(K_in.size());
 
     // Need at least 4 samples for meaningful fit
-    if (N < 4) {
+    if (N_in < 4) {
         return result;
     }
 
     // Check for trivial (zero) kernel
-    const double K_norm = K.norm();
+    const double K_norm = K_in.norm();
     if (K_norm < 1e-14) {
         return result;
     }
 
     // Validate time step
-    if (dt <= 0.0) {
+    if (dt_in <= 0.0) {
         return result;
     }
 
     // =========================================================================
-    // OPTIMIZATION: Limit Hankel matrix size for faster SVD
-    // The Hankel matrix only needs to capture system dynamics, not all samples.
-    // User can tune via opts_.max_hankel_size (default 200).
+    // Cover the whole kernel with a bounded Hankel matrix.
+    // An n x n Hankel matrix H(i, j) = y(i + j + 1) spans samples 1 .. 2n - 1.
+    // Longer kernels are decimated uniformly (every stride-th sample, time step
+    // stride * dt) so the fit always sees the full kernel duration; the cap
+    // max_hankel_size (SVD cost is O(n^3)) then limits time resolution, not
+    // duration. stride = 1 (no decimation) whenever the kernel already fits.
+    // RIRFs from BEM are band-limited by the highest BEM frequency, so the
+    // decimated step stays well below the Nyquist limit for typical data
+    // (e.g. RM3: 2001 samples at 0.01 s -> stride 6, 0.06 s, 52 rad/s).
     // =========================================================================
+    const int span = 2 * opts_.max_hankel_size - 1;
+    const int stride = std::max(1, (N_in - 1 + span - 1) / span);
+    const int N = (N_in - 1) / stride + 1;
+    const double dt = stride * dt_in;
+    Eigen::VectorXd K(N);
+    for (int k = 0; k < N; ++k) {
+        K(k) = K_in(k * stride);
+    }
+
     const int hankel_size = std::min(N - 1, opts_.max_hankel_size);
     
     // Scale kernel

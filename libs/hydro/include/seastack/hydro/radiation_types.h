@@ -120,7 +120,7 @@ struct RadiationKernelProcessing {
  * 
  * TUNING GUIDE:
  *   - For faster fitting: reduce max_hankel_size (e.g., 100)
- *   - For better accuracy: increase max_hankel_size (e.g., 500) and r2_threshold (e.g., 0.99)
+ *   - For finer time resolution of the fit: increase max_hankel_size (e.g., 500)
  *   - For faster simulations: increase max_order (more modes = better fit = lower residual)
  */
 struct StateSpaceOptions {
@@ -134,29 +134,29 @@ struct StateSpaceOptions {
     int max_order = 10;
     
     /**
-     * @brief Minimum R² (coefficient of determination) threshold for fit acceptance.
+     * @brief R² threshold. Currently NOT used to select or reject fits.
      * 
-     * The fitter tries all orders up to max_order and keeps the best R².
-     * Higher orders can add fast-decaying poles that improve transient accuracy.
-     * Values closer to 1.0 require better fits but may need more modes.
-     * Typical values: 0.90-0.99. Default: 0.95.
+     * The fitter always tries every order up to max_order and keeps the one
+     * with the best R² (higher orders can add fast-decaying poles that improve
+     * transient accuracy). This value is only range-checked (0, 1]; it is kept
+     * so existing configurations remain valid. Default: 0.95.
      */
     double r2_threshold = 0.95;
     
     /**
-     * @brief Maximum size of Hankel matrix for SVD decomposition.
+     * @brief Maximum size n of the n x n Hankel matrix used for the SVD.
      * 
-     * CRITICAL PERFORMANCE PARAMETER: SVD is O(n³), so this directly controls
-     * fitting time. Larger values give better accuracy but slower fitting.
+     * SVD cost is O(n³) per DOF pair, so this controls fitting time.
+     * The fit always covers the full RIRF duration: an n x n Hankel matrix
+     * spans 2n - 1 samples, and longer RIRFs are decimated uniformly (step
+     * stride * dt_rirf) to fit. This value therefore sets the time
+     * resolution of the fit, not how much of the kernel is seen.
+     * Example: RM3 RIRF, 2001 samples at 0.01 s -> stride 6 (0.06 s).
      * 
-     * Guidelines:
-     *   - 100: Very fast fitting (~50ms), may reduce accuracy for complex kernels
-     *   - 200: Good balance (default), ~300ms fitting, suitable for most cases
-     *   - 500: High accuracy, ~2-5s fitting, for demanding applications
-     *   - 1000: Maximum accuracy, ~20-60s fitting, rarely needed
-     * 
-     * If RIRF has fewer samples than this value, all samples are used.
-     * Default: 200.
+     * Larger values give finer resolution but slower fitting. Measured total
+     * fitting time for RM3 (144 DOF pairs): ~1 s at 200, ~25 s at 500,
+     * ~3 min at 1000.
+     * Minimum 2. Default: 200.
      */
     int max_hankel_size = 200;
     

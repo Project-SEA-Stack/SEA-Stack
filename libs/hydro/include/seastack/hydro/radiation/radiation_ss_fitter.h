@@ -11,6 +11,9 @@
  * where A, B, C, D are state-space matrices obtained via Hankel-SVD.
  *
  * ALGORITHM OVERVIEW (matches WEC-Sim radiationIRFSS):
+ *   0. If the kernel is longer than the Hankel matrix spans
+ *      (2 * max_hankel_size - 1 samples), decimate it uniformly so the fit
+ *      covers the full kernel duration
  *   1. Build Hankel matrix from scaled kernel samples
  *   2. Perform SVD to get balanced realization
  *   3. Form discrete-time A, B, C, D matrices

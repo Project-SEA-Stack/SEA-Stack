@@ -120,15 +120,21 @@ bool TestSingleExponential() {
     RadiationStateSpaceModel model = RadiationStateSpaceModel::FromFitResult(result);
     Eigen::VectorXd K_fit = model.ReconstructKernel(dt, N);
 
+    // Relative error where the kernel is significant (> 1% of peak); deeper in
+    // the tail relative error is dominated by division by ~0, so the whole
+    // kernel is checked with a peak-normalised error instead.
+    const double K_peak = K.lpNorm<Eigen::Infinity>();
     double max_rel_error = 0.0;
     for (int k = 0; k < N; ++k) {
-        if (std::abs(K(k)) > 0.001) {
+        if (std::abs(K(k)) > 0.01 * K_peak) {
             double rel_error = std::abs(K(k) - K_fit(k)) / std::abs(K(k));
             max_rel_error = std::max(max_rel_error, rel_error);
         }
     }
+    const double peak_error = (K - K_fit).lpNorm<Eigen::Infinity>() / K_peak;
 
     TEST_ASSERT(max_rel_error < 0.01, "Kernel reconstruction error should be < 1%");
+    TEST_ASSERT(peak_error < 0.001, "Peak-normalised kernel error should be < 0.1%");
 
     std::cout << "    R² = " << std::fixed << std::setprecision(6) << result.r2 << std::endl;
     std::cout << "    Order = " << result.order << std::endl;
@@ -418,6 +424,51 @@ bool TestR2ThresholdStopping() {
 }
 
 // =============================================================================
+// Test: long, finely sampled kernel is fitted over its full duration
+// =============================================================================
+// RM3-like sampling (0.01 s over 20 s, 2001 samples) is much longer than the
+// 2 * max_hankel_size - 1 = 399 samples a default Hankel matrix spans. The fit
+// must still reproduce the slow tail and the radiation damping it implies,
+// B(w) ~ integral K(t) cos(w t) dt, across the wave band.
+bool TestLongFinelySampledKernel() {
+    std::cout << "  Testing long, finely sampled kernel (20 s at 0.01 s)..." << std::endl;
+
+    const double dt = 0.01;
+    const int N = 2001;
+    Eigen::VectorXd K = GenerateOscillatoryKernel(2.0, 0.25, 1.2, dt, N) +
+                        GenerateSingleExpKernel(0.5, 0.15, dt, N);
+
+    StateSpaceOptions opts;  // defaults, max_hankel_size = 200
+    RadiationStateSpaceFitter fitter(opts);
+    StateSpaceFitResult result = fitter.FitKernel(K, dt);
+    TEST_ASSERT(result.IsValid(), "Fit should be valid");
+
+    Eigen::VectorXd K_fit = RadiationStateSpaceFitter::ReconstructKernel(result, dt, N);
+    const double peak_error = (K - K_fit).lpNorm<Eigen::Infinity>() / K.lpNorm<Eigen::Infinity>();
+
+    double worst_damping_error = 0.0;
+    for (double w : {0.4, 0.8, 1.2, 1.6, 2.4}) {
+        double b_ref = 0.0, b_fit = 0.0;
+        for (int k = 0; k < N; ++k) {
+            const double weight = (k == 0 || k == N - 1) ? 0.5 * dt : dt;  // trapezoid
+            b_ref += weight * K(k) * std::cos(w * k * dt);
+            b_fit += weight * K_fit(k) * std::cos(w * k * dt);
+        }
+        worst_damping_error = std::max(worst_damping_error, std::abs(b_fit / b_ref - 1.0));
+    }
+
+    std::cout << "    Order = " << result.order << ", R² = " << std::setprecision(6) << result.r2
+              << std::endl;
+    std::cout << "    Max abs error = " << std::setprecision(3) << 100.0 * peak_error
+              << "% of peak, worst damping-integral error = " << 100.0 * worst_damping_error
+              << "%" << std::endl;
+    TEST_ASSERT(peak_error < 0.02, "Kernel error over the full 20 s should be < 2% of peak");
+    TEST_ASSERT(worst_damping_error < 0.03, "Damping integral error should be < 3%");
+    std::cout << "  PASSED" << std::endl;
+    return true;
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 int main() {
@@ -445,6 +496,7 @@ int main() {
     run_test("IntegrationWithModel", TestIntegrationWithModel);
     run_test("HelperFunctions", TestHelperFunctions);
     run_test("R2ThresholdStopping", TestR2ThresholdStopping);
+    run_test("LongFinelySampledKernel", TestLongFinelySampledKernel);
 
     std::cout << "\n========================================" << std::endl;
     std::cout << "Results: " << passed << " passed, " << failed << " failed" << std::endl;
