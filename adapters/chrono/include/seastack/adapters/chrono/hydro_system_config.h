@@ -45,6 +45,7 @@ struct HydroSystemConfig {
     seastack::hydro::RadiationMethod radiation_method =
         seastack::hydro::RadiationMethod::kRirfConvolution;
     seastack::hydro::StateSpaceOptions state_space_opts;
+    seastack::hydro::ConstantCoefficientOptions constant_coefficient_opts;
     bool output_kernel_fit = false;
     seastack::hydro::RadiationKernelProcessing kernel_processing;
 

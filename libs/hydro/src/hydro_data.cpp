@@ -1,6 +1,7 @@
 #include <seastack/hydro/hydro_data.h>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace seastack::hydro {
 
@@ -54,6 +55,89 @@ double HydroData::GetExcitationIRFVal(int b, int dof, int s) const {
 
 Eigen::MatrixXd HydroData::GetExcitationIRF(int b) const {
     return irreg_wave_data_[b].excitation_irf_matrix;
+}
+
+namespace {
+
+/// Stack each body's 6 x 6N slice at frequency index k into a 6N x 6N matrix.
+/// Returns the raw (normalized) H5 values.
+template <typename SliceGetter>
+Eigen::MatrixXd StackBodyRowsAtFrequency(int num_bodies, int k, SliceGetter get_tensor,
+                                         const char* what) {
+    const int n_dofs = 6 * num_bodies;
+    Eigen::MatrixXd out(n_dofs, n_dofs);
+    for (int b = 0; b < num_bodies; ++b) {
+        const Eigen::Tensor<double, 3>& t = get_tensor(b);
+        if (t.dimension(0) != 6 || t.dimension(1) != n_dofs || k < 0 || k >= t.dimension(2)) {
+            throw std::runtime_error(
+                std::string("HydroData: ") + what + " for body " + std::to_string(b + 1) +
+                " has shape " + std::to_string(t.dimension(0)) + "x" +
+                std::to_string(t.dimension(1)) + "x" + std::to_string(t.dimension(2)) +
+                "; expected 6x" + std::to_string(n_dofs) + "xNf with frequency index " +
+                std::to_string(k) + " in range.");
+        }
+        for (int i = 0; i < 6; ++i) {
+            for (int j = 0; j < n_dofs; ++j) {
+                out(6 * b + i, j) = t(i, j, k);
+            }
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+bool HydroData::HasFrequencyDomainRadiation() const {
+    const int n = num_bodies();
+    if (n == 0 || reg_wave_data_.empty()) {
+        return false;
+    }
+    const Eigen::Index n_freq = reg_wave_data_[0].freq_list.size();
+    if (n_freq == 0) {
+        return false;
+    }
+    for (const auto& body : body_data_) {
+        for (const auto* t : {&body.added_mass_all, &body.radiation_damping_all}) {
+            if (t->dimension(0) != 6 || t->dimension(1) != 6 * n || t->dimension(2) != n_freq) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+Eigen::VectorXd HydroData::GetBemFrequencies() const {
+    if (reg_wave_data_.empty()) {
+        return Eigen::VectorXd();
+    }
+    return reg_wave_data_[0].freq_list;
+}
+
+Eigen::MatrixXd HydroData::GetAddedMassAtFrequencyIndex(int k) const {
+    // added_mass_all is normalized by rho; A = rho * A_file.
+    Eigen::MatrixXd a = StackBodyRowsAtFrequency(
+        num_bodies(), k, [this](int b) -> const Eigen::Tensor<double, 3>& {
+            return body_data_[b].added_mass_all;
+        },
+        "added_mass/all");
+    return a * sim_data_.rho;
+}
+
+Eigen::MatrixXd HydroData::GetRadiationDampingAtFrequencyIndex(int k) const {
+    // radiation_damping_all is normalized by rho*w; B = rho * w_k * B_file,
+    // using the stored grid frequency w_k.
+    Eigen::MatrixXd b_mat = StackBodyRowsAtFrequency(
+        num_bodies(), k, [this](int b) -> const Eigen::Tensor<double, 3>& {
+            return body_data_[b].radiation_damping_all;
+        },
+        "radiation_damping/all");
+    const Eigen::VectorXd w = GetBemFrequencies();
+    if (k < 0 || k >= w.size()) {
+        throw std::runtime_error("HydroData: frequency index " + std::to_string(k) +
+                                 " is outside the BEM frequency list (size " +
+                                 std::to_string(w.size()) + ").");
+    }
+    return b_mat * (sim_data_.rho * w[k]);
 }
 
 Eigen::VectorXd HydroData::GetRIRFTimeVector() const {

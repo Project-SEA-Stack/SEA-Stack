@@ -15,6 +15,7 @@ add_library(seastack_hydro STATIC
     src/radiation/radiation_rirf_convolution.cpp
     src/radiation/radiation_ss_model.cpp
     src/radiation/radiation_ss_fitter.cpp
+    src/radiation/bem_frequency_match.cpp
     src/geometry/triangle_mesh.cpp
     src/geometry/mesh_io.cpp
     src/geometry/submerged_volume.cpp
@@ -22,6 +23,7 @@ add_library(seastack_hydro STATIC
     src/force_components/nonlinear_hydrostatics_component.cpp
     src/force_components/radiation_component.cpp
     src/force_components/radiation_ss_component.cpp
+    src/force_components/radiation_cc_component.cpp
     src/force_components/excitation_component.cpp
     src/force_components/excitation_irf_component.cpp
     src/force_components/damping_component.cpp

@@ -44,6 +44,10 @@
 #include <seastack/core/mooring_viz_data.h>
 #endif
 
+namespace chrono {
+class ChLoadHydrodynamics;
+}
+
 namespace seastack::hydro {
 class HydrostaticsComponent;
 class ExcitationComponent;
@@ -57,7 +61,8 @@ class ChronoHydroCoupler;
 namespace seastack::chrono {
 
 /// Selects which Chrono-side hydro couplings are active. `HydroSystem` always registers
-/// `ChLoadHydrodynamics` with H5 infinite-frequency added mass when there is at least one body.
+/// `ChLoadHydrodynamics` with H5 infinite-frequency added mass when there is at least one body
+/// (replaced by A(w) for RadiationMethod::kConstantCoefficients).
 struct HydroCouplingOptions {
     /// When true (default), register per-body ChForce callbacks that evaluate SEA-Stack hydro forces.
     bool attach_hydro_force_callbacks = true;
@@ -138,9 +143,18 @@ class HydroSystem {
         ThrowIfModelConstructed("SetRadiationTruncationTime");
         config_.radiation_truncation_time = seconds;
     }
+    /// Select the radiation method. For kConstantCoefficients with a regular
+    /// wave whose frequency is on the BEM grid, the infinite-frequency added
+    /// mass A_inf in the Chrono added-mass load is replaced by A(w).
     void SetRadiationMethod(seastack::hydro::RadiationMethod method) {
         ThrowIfModelConstructed("SetRadiationMethod");
         config_.radiation_method = method;
+        UpdateAddedMassLoad();
+    }
+    void SetConstantCoefficientOptions(const seastack::hydro::ConstantCoefficientOptions& opts) {
+        ThrowIfModelConstructed("SetConstantCoefficientOptions");
+        config_.constant_coefficient_opts = opts;
+        UpdateAddedMassLoad();
     }
     void SetStateSpaceOptions(const seastack::hydro::StateSpaceOptions& opts) {
         ThrowIfModelConstructed("SetStateSpaceOptions");
@@ -249,6 +263,17 @@ class HydroSystem {
     // BEM data
     seastack::hydro::HydroData file_info_;
 
+    /// Which added-mass matrix the Chrono added-mass load currently holds.
+    enum class AddedMassSource {
+        kInfiniteFrequency,     ///< A_inf from H5 (RIRF / state-space methods)
+        kRegularWaveFrequency   ///< A(w_k) at the matched BEM grid point (constant coefficients)
+    };
+
+    // Chrono implicit added-mass load (exactly one is registered in the system)
+    std::shared_ptr<::chrono::ChLoadHydrodynamics> added_mass_load_;
+    AddedMassSource added_mass_source_ = AddedMassSource::kInfiniteFrequency;
+    int added_mass_frequency_index_ = -1;  ///< BEM grid index when source is kRegularWaveFrequency
+
     // Wave model
     std::shared_ptr<seastack::hydro::WaveBase> user_waves_;
 
@@ -268,6 +293,17 @@ class HydroSystem {
 
     /// Lazily construct hydro_model_ and chrono_coupler_ via HydroModelBuilder.
     void EnsureHydroForcesAndCoupler();
+
+    /// Register (or replace) the Chrono added-mass load so that it holds A(w_k)
+    /// when the radiation method is kConstantCoefficients and the wave is a
+    /// regular wave on the BEM grid, and A_inf otherwise. Called from the
+    /// configuration setters, i.e. before the first time step. Never holds
+    /// both matrices. If the frequency cannot be matched, A_inf is kept and
+    /// HydroModelBuilder::Build() reports the error.
+    void UpdateAddedMassLoad();
+
+    /// Replace the registered added-mass load with one built from `blocks`.
+    void ReplaceAddedMassLoad(const std::vector<Eigen::MatrixXd>& blocks);
 
     /// Force evaluation callback provided to ChronoForceAttacher.
     seastack::hydro::BodyForces EvaluateForces(double time);

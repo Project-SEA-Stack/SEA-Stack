@@ -41,6 +41,17 @@ class HydroData {
         Eigen::MatrixXd lin_matrix;                    ///< Hydrostatic stiffness, 6x6. Non-dimensional; scaled by (rho * g) when accessed via GetHydrostaticStiffnessVal().
         Eigen::MatrixXd inf_added_mass;                ///< Infinite-frequency added mass for this body's rows: typically 6×(6N) when BEMIO stores full hydrodynamic coupling (N = number of hydro bodies, nDoF=6N), or 6×6 for a self-block-only export. Already scaled by rho during H5 import. Dimensional [kg or kg.m^2].
         Eigen::Tensor<double, 3> rirf_matrix;          ///< Radiation impulse response. Non-dimensional; scaled by rho when accessed via GetRIRFVal(). 6x6xN tensor indexed by (DOF_i, DOF_j, time_sample).
+        /// Frequency-dependent added mass A(w) for this body's rows, as stored in
+        /// BEMIO H5 (normalized by rho). 6 x 6N x Nf, indexed by (DOF_i, DOF_j,
+        /// frequency index into RegularWaveInfo::freq_list). Empty if the H5 file
+        /// has no hydro_coeffs/added_mass/all. Dimensional access via
+        /// GetAddedMassAtFrequencyIndex().
+        Eigen::Tensor<double, 3> added_mass_all;
+        /// Frequency-dependent radiation damping B(w) for this body's rows, as
+        /// stored in BEMIO H5 (normalized by rho*w). 6 x 6N x Nf. Empty if the H5
+        /// file has no hydro_coeffs/radiation_damping/all. Dimensional access via
+        /// GetRadiationDampingAtFrequencyIndex().
+        Eigen::Tensor<double, 3> radiation_damping_all;
     };
     struct SimulationParameters {
         std::string h5_file_name;                      ///< Source HDF5 file path
@@ -85,6 +96,22 @@ class HydroData {
     int GetRIRFDims(int i) const;
     Eigen::VectorXd GetRIRFTimeVector() const;
     double GetRhoVal() const;
+
+    // ── Frequency-domain radiation coefficients (BEM grid points only) ──
+
+    /// True when every body has added_mass/all and radiation_damping/all with
+    /// shape 6 x 6N x Nf matching the BEM frequency list.
+    bool HasFrequencyDomainRadiation() const;
+    /// BEM frequency grid w_k [rad/s] (simulation_parameters/w).
+    Eigen::VectorXd GetBemFrequencies() const;
+    /// Full coupled added mass A(w_k) [kg, kg.m, kg.m^2], 6N x 6N, at BEM grid
+    /// index k: A = rho * A_file. Row block 6b..6b+5 holds body b's rows; all
+    /// off-diagonal and body-to-body terms are retained.
+    Eigen::MatrixXd GetAddedMassAtFrequencyIndex(int k) const;
+    /// Full coupled radiation damping B(w_k) [N.s/m, N.s, N.m.s/rad], 6N x 6N,
+    /// at BEM grid index k: B = rho * w_k * B_file, using the stored grid
+    /// frequency w_k. Same layout as GetAddedMassAtFrequencyIndex().
+    Eigen::MatrixXd GetRadiationDampingAtFrequencyIndex(int k) const;
 
     // ── Const collection accessors ────────────────────────────────────
 

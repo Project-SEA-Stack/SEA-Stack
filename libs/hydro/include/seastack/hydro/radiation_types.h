@@ -6,6 +6,7 @@
  *   - RadiationMethod: Selects the radiation damping calculation method
  *   - RadiationKernelProcessing: Composable smoothing + tapering for RIRF kernels
  *   - StateSpaceOptions: Settings for state-space radiation approximation
+ *   - ConstantCoefficientOptions: Settings for regular-wave A(w)/B(w) radiation
  *********************************************************************/
 
 #ifndef SEASTACK_HYDRO_RADIATION_TYPES_H
@@ -18,16 +19,49 @@ namespace seastack::hydro {
 /**
  * @brief Radiation damping calculation method.
  * 
- * Selects the overall approach for computing radiation damping forces:
+ * Selects the overall approach for computing radiation forces:
  *   - kRirfConvolution: Direct convolution of RIRF kernels with velocity history (default)
  *   - kStateSpace: State-space approximation using exponential decay modes
+ *   - kConstantCoefficients: Frequency-domain A(w), B(w) at the regular-wave
+ *     frequency (monochromatic regular waves only)
  * 
- * RIRF truncation (SetRadiationTruncationTime) is applied before either method.
- * Kernel processing (smoothing/tapering) is applied only for kRirfConvolution.
+ * RIRF truncation (SetRadiationTruncationTime) and kernel processing
+ * (smoothing/tapering) are applied only for kRirfConvolution. kStateSpace
+ * always fits the full, unprocessed RIRF from the H5 file.
+ *
+ * kConstantCoefficients applies F_rad = -A(w) * xddot - B(w) * xdot with the
+ * full coupled 6N x 6N BEM matrices at the BEM grid point matching the
+ * regular-wave frequency (see ConstantCoefficientOptions). A(w) REPLACES the
+ * infinite-frequency added mass A_inf in the implicit added-mass load; B(w) is
+ * applied as a radiation force, like the other methods. Intended for
+ * steady-state regular-wave runs (RAO, capture width, design screening); not
+ * valid for irregular seas, free decay, or transients.
  */
 enum class RadiationMethod {
-    kRirfConvolution,  ///< Direct RIRF convolution (default, existing method)
-    kStateSpace        ///< State-space approximation (exponential decay modes)
+    kRirfConvolution,      ///< Direct RIRF convolution (default, existing method)
+    kStateSpace,           ///< State-space approximation (exponential decay modes)
+    kConstantCoefficients  ///< A(w), B(w) at the regular-wave frequency (regular waves only)
+};
+
+/**
+ * @brief Options for constant-coefficient (regular-wave) radiation.
+ *
+ * Only applies when RadiationMethod == kConstantCoefficients.
+ */
+struct ConstantCoefficientOptions {
+    /**
+     * @brief Relative tolerance [-] for matching the regular-wave frequency to
+     *        a BEM grid frequency: |w_k - w| / w_k <= frequency_tolerance.
+     *
+     * Accepts numerically equivalent representations of the same grid point
+     * (H5 grids derived from 7-digit periods carry ~5e-7 relative noise;
+     * user-entered periods are typically rounded to 5-7 significant figures)
+     * and rejects frequencies that are genuinely absent from the grid. The
+     * default 1e-4 is ~20x below the finest relative grid spacing in the
+     * bundled BEM assets. A match is also rejected if more than one grid point
+     * lies within the tolerance. Default: 1e-4.
+     */
+    double frequency_tolerance = 1e-4;
 };
 
 /**

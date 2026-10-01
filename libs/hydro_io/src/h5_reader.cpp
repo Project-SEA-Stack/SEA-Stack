@@ -123,6 +123,19 @@ void ParseStringScalarToDouble(const std::string& raw, double& var, const std::s
     }
 }
 
+/// True if `data_name` links to an object in `file`. Uses H5Lexists so a missing
+/// optional dataset does not trigger HDF5-DIAG output on stderr.
+bool OptionalDatasetExists(H5::H5File& file, const std::string& data_name, const std::string& h5_path) {
+    const htri_t link = H5Lexists(file.getId(), data_name.c_str(), H5P_DEFAULT);
+    if (link < 0) {
+        LOG_WARNING("HDF5 H5Lexists failed for " << data_name << " in '" << h5_path
+                                                 << "'; treating it as absent.");
+        H5Eclear2(H5E_DEFAULT);
+        return false;
+    }
+    return link > 0;
+}
+
 }  // namespace
 
 H5FileInfo::H5FileInfo(std::string file, int num_bod) {
@@ -194,6 +207,18 @@ seastack::hydro::HydroData H5FileInfo::ReadH5Data() {
         data_to_init.body_data_[i].inf_added_mass *= rho;
         Init3D(userH5File, bodyName + "/hydro_coeffs/radiation_damping/impulse_response_fun/K",
                data_to_init.body_data_[i].rirf_matrix);
+
+        // Frequency-domain radiation coefficients (optional; used only by the
+        // constant-coefficient radiation method). Stored raw, as in BEMIO:
+        // A/rho and B/(rho*w). HydroData getters apply the scaling.
+        const std::string added_mass_all_name = bodyName + "/hydro_coeffs/added_mass/all";
+        if (OptionalDatasetExists(userH5File, added_mass_all_name, h5_file_name_)) {
+            Init3D(userH5File, added_mass_all_name, data_to_init.body_data_[i].added_mass_all);
+        }
+        const std::string radiation_damping_all_name = bodyName + "/hydro_coeffs/radiation_damping/all";
+        if (OptionalDatasetExists(userH5File, radiation_damping_all_name, h5_file_name_)) {
+            Init3D(userH5File, radiation_damping_all_name, data_to_init.body_data_[i].radiation_damping_all);
+        }
 
         Init1D(userH5File, "simulation_parameters/w", data_to_init.reg_wave_data_[i].freq_list);
         Init3D(userH5File, bodyName + "/hydro_coeffs/excitation/mag",
