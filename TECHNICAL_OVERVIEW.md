@@ -588,6 +588,15 @@ implementation and review—not only for hand-written development.
 
 - Production code: exceptions (`std::runtime_error`, `std::logic_error`, `std::invalid_argument`, `std::out_of_range`) for precondition violations
 - Tests: custom assertion macros
+- Hydro YAML: per-body `linear_damping` / `quadratic_damping` take six
+  values in DOF order [surge, sway, heave, roll, pitch, yaw], either inline
+  (`[a, b, c, d, e, f]`) or as a block list of `- value` lines. A wrong
+  count, a non-numeric entry, an empty key, or an unterminated `[` stops
+  the run with file, line, and body name. Block lists are also accepted for
+  `moordyn.bodies` and `waves.period.values`. Any other `- item` line is an
+  error rather than being ignored. The applied damping is logged per body
+  at startup (`Linear hull damping body1 = [...] (source: hydro YAML)`, or
+  `= none`).
 - Runtime divergence checks on body state and force magnitudes (blow-up
   detector in `ChronoForceAttacher`, not a joint stop). Defaults:
   position 200 m, velocity 20 m/s, angular velocity 5 rad/s, roll/pitch

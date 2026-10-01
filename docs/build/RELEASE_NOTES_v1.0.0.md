@@ -75,6 +75,29 @@ RIRF-convolution results on uniform BEM grids unchanged.
   two-body solve).
 - **Unknown `radiation.method` values now warn.** Previously a typo fell back
   to `rirf_convolution` silently; it still falls back, with a warning.
+- **Block-style hull damping in the hydro YAML is no longer dropped.**
+  `linear_damping` / `quadratic_damping` written as a YAML block list (six
+  `- value` lines under the key) were ignored without a message, so the run
+  had no hull damping. Both the block and the inline `[a, b, c, d, e, f]` form
+  now give the same six values [surge, sway, heave, roll, pitch, yaw]. A wrong
+  value count, a non-numeric entry, an empty key, or an unterminated inline
+  list now stops the run with the file, line and body name; previously these
+  produced zeros or partial vectors. The applied damping is logged per body at
+  startup (`Linear hull damping body1 = [...] (source: hydro YAML)`, or
+  `= none`). All shipped demos use the inline form and are unchanged.
+- **Other hydro YAML inputs that were silently ignored now work or stop the
+  run.** `moordyn.bodies` and `waves.period.values` accept block lists, and
+  `waves.period` accepts an inline list. The nested `waves.period:` block
+  (`values`, `linspace`, `range`) was closed on its own line and never
+  applied; it now works, and the first wave key after it is no longer lost.
+  Inline `hydrostatics: { model: ..., mesh_file: ... }` is now read (it was
+  ignored, although the `nonlinear_hydrostatics` deprecation warning
+  recommends it). A
+  `hydrostatics.model` other than `linear` / `nonlinear` is now an error
+  instead of falling back to linear. Any other unexpected `- item` line, and
+  a body entry that does not start with `- name:`, is now an error. Unknown
+  body keys are logged as warnings. CRLF line endings are handled throughout.
+  No shipped demo uses the affected forms.
 - **Joint reactions are exported for every joint type.** Previously only
   `ChLinkLock` joints were recorded; others, including the `ChLinkUniversal`
   joints in the 5SA articulated WEC demos, were written as zeros.

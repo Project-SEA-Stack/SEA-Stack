@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -610,31 +611,35 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
             }
             if (has_any) {
                 setter(per_body);
-                for (size_t bi = 0; bi < hydro_data.bodies.size(); ++bi) {
-                    bool body_has = false;
-                    for (double c : hydro_data.bodies[bi].*member_ptr) {
-                        if (c != 0.0) { body_has = true; break; }
+            }
+            // One line per body, always, so a dropped or mistyped damping
+            // entry is visible in the run log. Values are SI, per DOF
+            // [surge, sway, heave, roll, pitch, yaw].
+            for (size_t bi = 0; bi < hydro_data.bodies.size(); ++bi) {
+                const auto& coeffs = hydro_data.bodies[bi].*member_ptr;
+                const bool body_has = std::any_of(coeffs.begin(), coeffs.end(),
+                                                  [](double c) { return c != 0.0; });
+                std::ostringstream oss;
+                if (body_has) {
+                    oss << std::setprecision(10) << "[";
+                    for (size_t i = 0; i < coeffs.size(); ++i) {
+                        if (i > 0) oss << " ";
+                        oss << coeffs[i];
                     }
-                    if (body_has) {
-                        std::ostringstream oss;
-                        oss << "[";
-                        for (int i = 0; i < 6; ++i) {
-                            if (i > 0) oss << ", ";
-                            oss << (hydro_data.bodies[bi].*member_ptr)[i];
-                        }
-                        oss << "]";
-                        seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine(
-                            "+", std::string(label) + " (" + hydro_data.bodies[bi].name + ")", oss.str()));
-                    }
+                    oss << "]";
+                } else {
+                    oss << "none";
                 }
+                LOG_INFO(label << " " << hydro_data.bodies[bi].name << " = " << oss.str()
+                               << " (source: hydro YAML)");
             }
         };
 
         extract_damping(&seastack::hydro::HydroBody::linear_damping,
-                        "Linear Damping",
+                        "Linear hull damping",
                         [&](const auto& v) { hydro_system->SetLinearDamping(v); });
         extract_damping(&seastack::hydro::HydroBody::quadratic_damping,
-                        "Quadratic Damping",
+                        "Quadratic hull damping",
                         [&](const auto& v) { hydro_system->SetQuadraticDamping(v); });
     }
 

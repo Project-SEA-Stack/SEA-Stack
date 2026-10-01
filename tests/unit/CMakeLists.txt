@@ -63,6 +63,7 @@ endif()
 # YAML parser tests (Chrono-free, HDF5-free)
 build_unit_test(test_yaml_parser)
 target_link_libraries(test_yaml_parser PRIVATE SEAStack::Hydro)
+target_compile_definitions(test_yaml_parser PRIVATE "SEASTACK_TEST_DATA_DIR=\"${CMAKE_SOURCE_DIR}/data\"")
 set_tests_properties(test_yaml_parser PROPERTIES LABELS "unit;chrono-free")
 
 # Excitation ramp factor for GUI visualization (Chrono-free, HDF5-free)
@@ -276,8 +277,16 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
         "SEASTACK_TEST_SPHERE_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/iea_sphere/assets/hydroData/sphere.h5\""
         "SEASTACK_TEST_RM3_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3/assets/hydroData/rm3.h5\"")
     set_tests_properties(test_radiation_constant_coefficients PROPERTIES LABELS "unit;chrono")
+
+    # Block-style hull damping in hydro YAML reaches the simulation (TALOS-style:
+    # one body, regular waves, constant_coefficients).
+    build_unit_test(test_yaml_damping_regression)
+    target_link_libraries(test_yaml_damping_regression PRIVATE SEAStack::ChronoAdapter)
+    target_compile_definitions(test_yaml_damping_regression PRIVATE
+        "SEASTACK_TEST_SPHERE_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/iea_sphere/assets/hydroData/sphere.h5\"")
+    set_tests_properties(test_yaml_damping_regression PROPERTIES LABELS "unit;chrono")
 else()
-    message(STATUS "Skipping test_radiation_constant_coefficients (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
+    message(STATUS "Skipping test_radiation_constant_coefficients and test_yaml_damping_regression (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
 endif()
 
 # Added mass determinism test (requires Chrono adapter)

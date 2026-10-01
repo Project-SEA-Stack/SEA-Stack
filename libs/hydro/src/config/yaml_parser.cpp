@@ -6,13 +6,145 @@
 
 #include <seastack/hydro/config/yaml_parser.h>
 #include <seastack/infra/logging.h>
+#include <array>
+#include <cmath>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <stdexcept>
 #include <filesystem>
 #include <algorithm>
+#include <vector>
 
 namespace {
+
+/// DOF order of per-body 6-vectors (damping coefficients) in hydro YAML.
+constexpr const char* kSixDofOrder = "[surge, sway, heave, roll, pitch, yaw]";
+
+std::string Trim(const std::string& s) {
+    const size_t first = s.find_first_not_of(" \t");
+    if (first == std::string::npos) {
+        return "";
+    }
+    const size_t last = s.find_last_not_of(" \t");
+    return s.substr(first, last - first + 1);
+}
+
+std::string StripMatchingQuotes(const std::string& s) {
+    if (s.size() >= 2 && ((s.front() == '"' && s.back() == '"') ||
+                          (s.front() == '\'' && s.back() == '\''))) {
+        return s.substr(1, s.size() - 2);
+    }
+    return s;
+}
+
+/// "<file>:<line>: " prefix for error and warning messages.
+std::string Location(const std::string& file, int line) {
+    return file + ":" + std::to_string(line) + ": ";
+}
+
+/// True for a YAML block-sequence item line ("- value" or a bare "-").
+bool IsSequenceItem(const std::string& trimmed) {
+    return trimmed == "-" ||
+           (trimmed.size() >= 2 && trimmed[0] == '-' && (trimmed[1] == ' ' || trimmed[1] == '\t'));
+}
+
+/// Value of a block-sequence item line: the text after "-", without an
+/// inline comment, surrounding whitespace or matching quotes.
+std::string SequenceItemValue(const std::string& trimmed) {
+    std::string v = trimmed.substr(1);
+    const size_t hash_pos = v.find('#');
+    if (hash_pos != std::string::npos) {
+        v = v.substr(0, hash_pos);
+    }
+    return StripMatchingQuotes(Trim(v));
+}
+
+/**
+ * @brief Parse a finite double; throw if the whole token is not a number.
+ *
+ * @param token Text to parse (surrounding whitespace and quotes allowed)
+ * @param what  Message prefix naming the entry, e.g. "file:12: body 'b': linear_damping entry 3"
+ */
+double ParseStrictDouble(const std::string& token, const std::string& what) {
+    const std::string t = StripMatchingQuotes(Trim(token));
+    if (t.empty()) {
+        throw std::runtime_error(what + " is empty");
+    }
+    size_t pos = 0;
+    double v = 0.0;
+    try {
+        v = std::stod(t, &pos);
+    } catch (const std::exception&) {
+        pos = 0;
+    }
+    if (pos == 0 || pos != t.size() || !std::isfinite(v)) {
+        throw std::runtime_error(what + " (\"" + t + "\") is not a finite number");
+    }
+    return v;
+}
+
+/**
+ * @brief Split an inline flow list "[a, b, c]" into trimmed items.
+ *
+ * Throws if the value is not a single-line inline list. An empty entry
+ * (e.g. "[1, , 3]" or a trailing comma) is kept as "" so the caller reports it.
+ *
+ * @param context Message prefix, e.g. "file:12: body 'b': linear_damping"
+ */
+std::vector<std::string> SplitInlineList(const std::string& value, const std::string& context) {
+    const size_t lb = value.find('[');
+    if (lb == std::string::npos || !Trim(value.substr(0, lb)).empty()) {
+        throw std::runtime_error(context + " must be an inline list [a, b, ...] or a block list of '- value' "
+                                 "items on the following lines; got \"" + value + "\"");
+    }
+    const size_t rb = value.find(']', lb);
+    if (rb == std::string::npos) {
+        throw std::runtime_error(context + " has an unterminated inline list (missing ']'); multi-line [...] "
+                                 "lists are not supported, use a block list of '- value' items instead");
+    }
+    if (!Trim(value.substr(rb + 1)).empty()) {
+        throw std::runtime_error(context + " has unexpected text after ']': \"" + value + "\"");
+    }
+    const std::string inner = Trim(value.substr(lb + 1, rb - lb - 1));
+    std::vector<std::string> items;
+    if (inner.empty()) {
+        return items;
+    }
+    std::stringstream ss(inner);
+    std::string token;
+    while (std::getline(ss, token, ',')) {
+        items.push_back(Trim(token));
+    }
+    if (inner.back() == ',') {
+        items.emplace_back();
+    }
+    return items;
+}
+
+/**
+ * @brief Convert exactly six list items to a per-DOF vector [surge, sway, heave, roll, pitch, yaw].
+ *
+ * @param item_lines Line number of each item (block form); empty for inline lists
+ * @param key_line   Line number of the key
+ * @param context    Message context without location, e.g. "body 'b': linear_damping"
+ */
+std::array<double, 6> ParseSixVector(const std::vector<std::string>& items,
+                                     const std::vector<int>& item_lines,
+                                     const std::string& file,
+                                     int key_line,
+                                     const std::string& context) {
+    if (items.size() != 6) {
+        throw std::runtime_error(Location(file, key_line) + context + " has " + std::to_string(items.size()) +
+                                 " values; expected 6 " + kSixDofOrder);
+    }
+    std::array<double, 6> out{};
+    for (size_t i = 0; i < 6; ++i) {
+        const int line = item_lines.empty() ? key_line : item_lines[i];
+        out[i] = ParseStrictDouble(items[i], Location(file, line) + context + " entry " + std::to_string(i + 1));
+    }
+    return out;
+}
 
 /**
  * @brief Get the indentation level of a line.
@@ -163,6 +295,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
     
     std::string line;
     bool in_hydrodynamics = false;
+    bool hydrodynamics_found = false;
     bool in_bodies = false;
     bool in_waves = false;
     bool in_excitation = false;             // excitation: section
@@ -231,8 +364,46 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         return out;
     };
 
+    // Block-sequence support: a recognised list key with an empty value
+    // ("key:") opens a pending list that collects the following "- value"
+    // lines (indented or at the key's own indent). The list is handed to
+    // on_complete at the first other significant line or at end of file.
+    struct PendingBlockList {
+        bool active = false;
+        int key_indent = 0;
+        int key_line = 0;
+        std::vector<std::string> items;
+        std::vector<int> item_lines;
+        std::function<void(const PendingBlockList&)> on_complete;
+    };
+    PendingBlockList pending_list;
+    auto open_block_list = [&](int key_indent, std::function<void(const PendingBlockList&)> on_complete) {
+        pending_list = PendingBlockList();
+        pending_list.active = true;
+        pending_list.key_indent = key_indent;
+        pending_list.key_line = line_number;
+        pending_list.on_complete = std::move(on_complete);
+    };
+    auto finish_block_list = [&]() {
+        if (!pending_list.active) {
+            return;
+        }
+        PendingBlockList done = std::move(pending_list);
+        pending_list = PendingBlockList();
+        done.on_complete(done);
+    };
+
+    // Most recent "key:" line and whether its value was empty; used to name
+    // the parent key when an unsupported "- item" line is found.
+    std::string last_key;
+    bool last_key_empty = false;
+
     while (std::getline(file, line)) {
         line_number++;
+        // Strip CR from CRLF files (std::getline keeps it on POSIX).
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
         
         // Get indentation level
         int indent = GetIndentation(line);
@@ -246,10 +417,28 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         if (trimmed.empty() || trimmed[0] == '#') {
             continue;
         }
+
+        if (pending_list.active) {
+            if (IsSequenceItem(trimmed) && indent >= pending_list.key_indent) {
+                pending_list.items.push_back(SequenceItemValue(trimmed));
+                pending_list.item_lines.push_back(line_number);
+                continue;
+            }
+            finish_block_list();
+        }
+        if (!IsSequenceItem(trimmed)) {
+            std::string k;
+            std::string v;
+            if (ParseYAMLLine(line, k, v)) {
+                last_key = k;
+                last_key_empty = v.empty();
+            }
+        }
         
         // Check for section headers based on indentation
         if (indent == 0 && trimmed == "hydrodynamics:") {
             in_hydrodynamics = true;
+            hydrodynamics_found = true;
             in_bodies = false;
             in_waves = false;
             in_body = false;
@@ -259,6 +448,12 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             in_radiation_smoothing = in_radiation_taper = in_radiation_diagnostics = false;
             in_moordyn = false;
             in_divergence = false;
+            continue;
+        }
+
+        // Any other top-level key ends the hydrodynamics section.
+        if (indent == 0) {
+            in_hydrodynamics = false;
             continue;
         }
         
@@ -415,6 +610,25 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             continue;
         }
 
+        // Any "- item" line not consumed above would be silently dropped.
+        if (IsSequenceItem(trimmed)) {
+            const std::string where = Location(hydro_file_path, line_number);
+            if (in_bodies && trimmed.compare(0, 6, "- name") == 0) {
+                throw std::runtime_error(where + "body list items must be indented by 4 spaces "
+                                         "(\"    - name: <name>\"); got \"" + trimmed + "\"");
+            }
+            if (in_bodies && indent <= 4) {
+                throw std::runtime_error(where + "each body in 'bodies' must start with '- name: <name>'; got \"" +
+                                         trimmed + "\"");
+            }
+            std::string parent;
+            if (last_key_empty && !last_key.empty()) {
+                parent = " under '" + last_key + "'";
+            }
+            throw std::runtime_error(where + "unexpected YAML list item \"" + trimmed + "\"" + parent +
+                                     ": block lists are not supported here; use an inline list [a, b, ...]");
+        }
+
         // Parse key-value pairs
         // - Global hydrodynamics properties at indent == 2
         // - Body properties at indent == 6
@@ -549,21 +763,47 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         in_body_hydrostatics = false;
                     }
 
-                    if (in_body_hydrostatics && indent == 8) {
-                        if (key == "model") {
-                            std::string val_lower = value;
+                    // hydrostatics keys, shared by the block and inline-brace forms
+                    auto apply_hydrostatics_key = [&](const std::string& k, const std::string& v) {
+                        if (k == "model") {
+                            std::string val_lower = v;
                             std::transform(val_lower.begin(), val_lower.end(), val_lower.begin(), ::tolower);
                             if (val_lower == "nonlinear") {
                                 current_body.hydrostatics.model = HydrostaticsModel::kNonlinear;
-                            } else {
+                            } else if (val_lower == "linear") {
                                 current_body.hydrostatics.model = HydrostaticsModel::kLinear;
+                            } else {
+                                throw std::runtime_error(Location(hydro_file_path, line_number) + "body '" +
+                                                         current_body.name + "': hydrostatics.model must be "
+                                                         "'linear' or 'nonlinear'; got \"" + v + "\"");
                             }
-                        } else if (key == "mesh_file") {
-                            current_body.hydrostatics.mesh_file = ResolvePath(value, hydro_file_path);
+                        } else if (k == "mesh_file") {
+                            current_body.hydrostatics.mesh_file = ResolvePath(v, hydro_file_path);
+                        } else {
+                            LOG_WARNING(Location(hydro_file_path, line_number)
+                                        << "unknown key 'hydrostatics." << k << "' in body '"
+                                        << current_body.name << "' ignored");
                         }
+                    };
+
+                    if (in_body_hydrostatics && indent == 8) {
+                        apply_hydrostatics_key(key, value);
                     } else if (key == "hydrostatics" && value.empty()) {
                         in_body_hydrostatics = true;
                         body_had_hydrostatics_block = true;
+                    } else if (key == "hydrostatics") {
+                        // Inline form: hydrostatics: { model: nonlinear, mesh_file: hull.stl }
+                        const auto kv = parse_inline_brace_kv(value);
+                        if (kv.empty()) {
+                            throw std::runtime_error(Location(hydro_file_path, line_number) + "body '" +
+                                                     current_body.name + "': hydrostatics must be a block or an "
+                                                     "inline mapping { model: ..., mesh_file: ... }; got \"" +
+                                                     value + "\"");
+                        }
+                        body_had_hydrostatics_block = true;
+                        for (const auto& [k, v] : kv) {
+                            apply_hydrostatics_key(k, v);
+                        }
                     } else if (key == "name") {
                         current_body.name = value;
                     } else if (key == "h5_file") {
@@ -574,40 +814,35 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         current_body.include_excitation = ParseBool(value, true);
                     } else if (key == "include_radiation") {
                         current_body.include_radiation = ParseBool(value, true);
-                    } else if (key == "linear_damping") {
-                        size_t lb = value.find('[');
-                        size_t rb = value.find(']');
-                        if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
-                            std::string inner = value.substr(lb + 1, rb - lb - 1);
-                            std::istringstream iss(inner);
-                            std::string token;
-                            int idx = 0;
-                            while (std::getline(iss, token, ',') && idx < 6) {
-                                token.erase(0, token.find_first_not_of(" \t"));
-                                token.erase(token.find_last_not_of(" \t") + 1);
-                                if (!token.empty()) {
-                                    current_body.linear_damping[idx] = ParseDouble(token, 0.0);
+                    } else if (key == "linear_damping" || key == "quadratic_damping") {
+                        // Per-DOF hull damping [surge, sway, heave, roll, pitch, yaw], either
+                        // inline "[a, b, c, d, e, f]" or as six "- value" lines. Anything else
+                        // throws: a silently zeroed damping vector changes the physics.
+                        const bool is_linear = (key == "linear_damping");
+                        const std::string context = "body '" + current_body.name + "': " + key;
+                        auto assign = [&current_body, is_linear](const std::array<double, 6>& v) {
+                            (is_linear ? current_body.linear_damping : current_body.quadratic_damping) = v;
+                        };
+                        if (value.empty()) {
+                            open_block_list(indent, [&hydro_file_path, context, assign](const PendingBlockList& list) {
+                                if (list.items.empty()) {
+                                    throw std::runtime_error(
+                                        Location(hydro_file_path, list.key_line) + context +
+                                        " has no value; expected an inline list of 6 values " + kSixDofOrder +
+                                        " or 6 '- value' lines below the key");
                                 }
-                                ++idx;
-                            }
+                                assign(ParseSixVector(list.items, list.item_lines, hydro_file_path,
+                                                      list.key_line, context));
+                            });
+                        } else {
+                            const auto items =
+                                SplitInlineList(value, Location(hydro_file_path, line_number) + context);
+                            assign(ParseSixVector(items, {}, hydro_file_path, line_number, context));
                         }
-                    } else if (key == "quadratic_damping") {
-                        size_t lb = value.find('[');
-                        size_t rb = value.find(']');
-                        if (lb != std::string::npos && rb != std::string::npos && rb > lb) {
-                            std::string inner = value.substr(lb + 1, rb - lb - 1);
-                            std::istringstream iss(inner);
-                            std::string token;
-                            int idx = 0;
-                            while (std::getline(iss, token, ',') && idx < 6) {
-                                token.erase(0, token.find_first_not_of(" \t"));
-                                token.erase(token.find_last_not_of(" \t") + 1);
-                                if (!token.empty()) {
-                                    current_body.quadratic_damping[idx] = ParseDouble(token, 0.0);
-                                }
-                                ++idx;
-                            }
-                        }
+                    } else {
+                        LOG_WARNING(Location(hydro_file_path, line_number)
+                                    << "unknown key '" << key << "' in body '" << current_body.name
+                                    << "' ignored");
                     }
                 } else if (in_waves) {
                     // Parse wave properties
@@ -681,6 +916,11 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         in_waves_partition_item = false;
                         in_waves_partition_spreading = false;
                     }
+                    // A key at or above the period: key's indent ends the period
+                    // block and is itself a waves key (otherwise it was dropped).
+                    if (in_period_block && indent <= period_block_indent) {
+                        in_period_block = false;
+                    }
 
                     if (!in_period_block && key_lower == "type") {
                         data.waves.type = value;
@@ -699,6 +939,19 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                             data.waves.period = ParseDouble(value, 0.0);
                             data.waves.period_values.push_back(data.waves.period);
                             period_set_by_synonym = (key_lower != "period");
+                        } else if (!value.empty() && value.front() == '[') {
+                            // Bare inline list: period: [6.0, 7.0, 8.0] (same as values: [...])
+                            const std::string where = Location(hydro_file_path, line_number);
+                            const auto items = SplitInlineList(value, where + "waves.period");
+                            if (items.empty()) {
+                                throw std::runtime_error(where + "waves.period list is empty");
+                            }
+                            for (size_t i = 0; i < items.size(); ++i) {
+                                data.waves.period_values.push_back(ParseStrictDouble(
+                                    items[i], where + "waves.period entry " + std::to_string(i + 1)));
+                            }
+                            data.waves.period = data.waves.period_values.front();
+                            period_form_values = true;
                         } else {
                             // Inline forms on same line
                             // values inline list inside braces
@@ -721,25 +974,42 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                                 period_block_indent = indent;
                             }
                         }
+                    } else if (in_period_block && key == "values" && value.empty()) {
+                        // period:\n  values:\n    - a\n    - b
+                        open_block_list(indent, [&](const PendingBlockList& list) {
+                            if (list.items.empty()) {
+                                throw std::runtime_error(Location(hydro_file_path, list.key_line) +
+                                                         "waves.period.values has no values");
+                            }
+                            if (period_form_linspace || period_form_range) {
+                                throw std::runtime_error("waves.period: multiple forms specified (values + other)");
+                            }
+                            data.waves.period_values.clear();
+                            for (size_t i = 0; i < list.items.size(); ++i) {
+                                data.waves.period_values.push_back(ParseStrictDouble(
+                                    list.items[i], Location(hydro_file_path, list.item_lines[i]) +
+                                                       "waves.period.values entry " + std::to_string(i + 1)));
+                            }
+                            data.waves.period = data.waves.period_values.front();
+                            period_form_values = true;
+                        });
                     } else if (in_period_block && key == "values") {
                         // period:\n  values: [a, b, c]
-                        auto lb = value.find('['); auto rb = value.find(']');
-                        if (lb == std::string::npos || rb == std::string::npos || rb <= lb) {
-                            // invalid list, ignore
-                        } else {
-                            std::string inner = value.substr(lb + 1, rb - lb - 1);
-                            for (char& ch : inner) if (ch == ',') ch = ' ';
-                            std::istringstream iss(inner);
-                            double v; data.waves.period_values.clear();
-                            while (iss >> v) data.waves.period_values.push_back(v);
-                            if (!data.waves.period_values.empty()) {
-                                data.waves.period = data.waves.period_values.front();
-                                if (period_form_linspace || period_form_range) {
-                                    throw std::runtime_error("waves.period: multiple forms specified (values + other)");
-                                }
-                                period_form_values = true;
-                            }
+                        const std::string where = Location(hydro_file_path, line_number);
+                        const auto items = SplitInlineList(value, where + "waves.period.values");
+                        if (items.empty()) {
+                            throw std::runtime_error(where + "waves.period.values list is empty");
                         }
+                        data.waves.period_values.clear();
+                        for (size_t i = 0; i < items.size(); ++i) {
+                            data.waves.period_values.push_back(ParseStrictDouble(
+                                items[i], where + "waves.period.values entry " + std::to_string(i + 1)));
+                        }
+                        data.waves.period = data.waves.period_values.front();
+                        if (period_form_linspace || period_form_range) {
+                            throw std::runtime_error("waves.period: multiple forms specified (values + other)");
+                        }
+                        period_form_values = true;
                     } else if (in_period_block && key == "linspace") {
                         // linspace: { start: a, stop: b, num: n }
                         auto kv = parse_inline_brace_kv(value);
@@ -875,6 +1145,22 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         data.moordyn_enabled = (val_lower == "true" || val_lower == "1" || val_lower == "yes");
                     } else if (key_lower == "input_file") {
                         data.moordyn_input_file = ResolvePath(value, hydro_file_path);
+                    } else if (key_lower == "bodies" && value.empty()) {
+                        // Block form: bodies: followed by "- body1" lines
+                        open_block_list(indent, [&](const PendingBlockList& list) {
+                            if (list.items.empty()) {
+                                throw std::runtime_error(Location(hydro_file_path, list.key_line) +
+                                                         "moordyn.bodies has no value; expected [body1, ...] "
+                                                         "or '- body1' lines below the key");
+                            }
+                            for (size_t i = 0; i < list.items.size(); ++i) {
+                                if (list.items[i].empty()) {
+                                    throw std::runtime_error(Location(hydro_file_path, list.item_lines[i]) +
+                                                             "moordyn.bodies entry is empty");
+                                }
+                                data.moordyn_body_names.push_back(list.items[i]);
+                            }
+                        });
                     } else if (key_lower == "bodies") {
                         // Parse [body1, body2] list
                         std::string list_str = value;
@@ -926,11 +1212,16 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                 }
             }
         }
-            // Detect leaving the period block when indentation reduces back to waves level
-            if (in_period_block && indent <= period_block_indent) {
+            // Detect leaving the period block when indentation drops below the
+            // period: key (a sibling at the same indent is handled in the waves
+            // branch; "<=" here would close the block on its own opening line).
+            if (in_period_block && indent < period_block_indent) {
                 in_period_block = false;
             }
     }
+
+    // A block list may run to the end of the file.
+    finish_block_list();
     
     // Don't forget to add the last body
     if (in_body && !current_body.name.empty()) {
@@ -996,7 +1287,7 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
     }
 
     // Validate that we found the required sections
-    if (!in_hydrodynamics) {
+    if (!hydrodynamics_found) {
         throw std::runtime_error("No 'hydrodynamics:' section found in hydro file: " + hydro_file_path);
     }
     
