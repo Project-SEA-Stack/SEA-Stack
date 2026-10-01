@@ -12,10 +12,10 @@ hydrodynamics:
     depth: 50.0
     ramp_duration: 40.0
     ramp_type: cosine
-    # Eta-file DFT resolution. Pinned to match the regression baseline; the
-    # eta-import default (1000 Fourier bins) is otherwise applied by
-    # ComponentSampler. See adapters/chrono/src/setup_from_yaml.cpp.
-    nfrequencies: 1000
+    # Eta-file DFT resolution. The 3600 s record has 3597 Fourier bins in the
+    # default band; the eta-import default cap (1000) would keep only every
+    # 4th bin and about 24% of the wave variance. Keep this >= 3597.
+    nfrequencies: 4000
 
   excitation:
     truncation_time: 20.0
