@@ -22,8 +22,9 @@ reference RM3 geometry and mass distribution used in marine energy benchmarks.
 | decay | Two-body free decay in still water, no PTO damping | `decay/rm3_decay.setup.yaml` |
 | decay_nl | Decay with nonlinear hydrostatics on the float | `decay_nl/rm3_decay_nl.setup.yaml` |
 | regular_waves | Regular waves, linear PTO | `regular_waves/rm3_regular_waves.setup.yaml` |
+| regular_waves_cc | Regular waves, constant-coefficient radiation: A(w), B(w) at a BEM grid period | `regular_waves_cc/rm3_regular_waves_cc.setup.yaml` |
 
-**Release package:** `regular_waves` is usually omitted from the downloadable ZIP; use `irregular_waves` as the primary wave example there.
+**Release package:** `regular_waves` and `regular_waves_cc` are usually omitted from the downloadable ZIP; use `irregular_waves` as the primary wave example there.
 
 ## Assets
 

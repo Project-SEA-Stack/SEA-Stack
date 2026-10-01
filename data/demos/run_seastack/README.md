@@ -41,6 +41,7 @@ parameters**, and an **available cases** table (paths below are relative to
 | rm3 | mooring | RM3 WEC with MoorDyn mooring lines, irregular waves (eta import) | `rm3/mooring/rm3_mooring.setup.yaml` |
 | rm3 | decay | RM3 two-body free decay in still water (minimal) | `rm3/decay/rm3_decay.setup.yaml` |
 | rm3 | regular_waves | *(source repo only; omitted from release ZIP)* | `rm3/regular_waves/rm3_regular_waves.setup.yaml` |
+| rm3 | regular_waves_cc | Regular waves, constant-coefficient radiation *(source repo only)* | `rm3/regular_waves_cc/rm3_regular_waves_cc.setup.yaml` |
 | iea_sphere | decay | IEA sphere, free decay (RIRF convolution) | `iea_sphere/decay/iea_sphere_decay.setup.yaml` |
 | iea_sphere | decay_ss | IEA sphere, free decay with state-space radiation | `iea_sphere/decay_ss/iea_sphere_decay_ss.setup.yaml` |
 | iea_sphere | irregular_waves_ss | IEA sphere, irregular waves with state-space radiation | `iea_sphere/irregular_waves_ss/iea_sphere_irregular_waves_ss.setup.yaml` |

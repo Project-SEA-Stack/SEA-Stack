@@ -1,0 +1,23 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/rm3.h5
+    - name: body2
+      h5_file: ../assets/hydroData/rm3.h5
+
+  waves:
+    type: regular
+    height: 2.0
+    # Must be a BEM grid period of rm3.h5 (w = 0.80 rad/s). An off-grid period
+    # stops the run with a list of the available periods.
+    period: 7.853984
+    direction: 0
+    ramp_duration: 20.0
+
+  # Constant-coefficient radiation for regular waves:
+  #   F_rad = -A(w) xddot - B(w) xdot   (full coupled 12x12 matrices)
+  # A(w) replaces A_inf in the added-mass load; there is no memory convolution.
+  # Smoothing/taper/truncation options do not apply and are rejected.
+  radiation:
+    method: constant_coefficients
+    frequency_tolerance: 1.0e-4   # relative |w_k - w| / w_k (default 1e-4)

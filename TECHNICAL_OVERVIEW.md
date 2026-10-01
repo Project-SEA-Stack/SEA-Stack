@@ -517,7 +517,9 @@ a wave energy development campaign.
 The current implementation follows standard linear potential-flow theory:
 
 - **Radiation:** Cummins (1962) impulse-response convolution, or state-space
-  approximation
+  approximation; for regular waves, optionally constant coefficients A(w),
+  B(w) at the wave frequency (A(w) replaces A_inf; see
+  [EXAMPLE_WORKFLOWS.md](docs/usage/EXAMPLE_WORKFLOWS.md#regular-waves-constant-coefficient-radiation))
 - **Excitation:** Convolution of wave elevation with excitation IRF, or
   frequency-domain transfer functions
 - **Hydrostatics:** Linear restoring from BEM stiffness matrices, or
@@ -686,6 +688,8 @@ Optional advanced settings (call on the builder before `Build()`):
 | `.WithExcitationMethod(method)` | Select IRF convolution or frequency-domain excitation |
 | `.WithExcitationInterpolation(interp)` | Cartesian (default) or polar transfer-function interpolation |
 | `.WithRadiationMethod(kStateSpace)` | State-space radiation (O(1) per step) |
+| `.WithRadiationMethod(kConstantCoefficients)` | Regular waves only: F = -B(w) v at a BEM grid frequency (caller applies A(w) in place of A_inf) |
+| `.WithConstantCoefficientOptions(opts)` | Frequency-matching tolerance for constant coefficients |
 | `.WithRadiationTruncationTime(s)` | Truncate RIRF to reduce convolution cost |
 | `.WithRadiationOptions(opts)` | RIRF kernel smoothing / tapering |
 | `.WithExcitationTruncationTime(s)` | Truncate excitation IRF |
@@ -697,7 +701,8 @@ Optional advanced settings (call on the builder before `Build()`):
 
 The builder validates configuration at `Build()` time and throws clear
 errors for common mistakes (e.g. excitation without a wave, body count
-mismatch, state-space radiation with RIRF-only options).
+mismatch, state-space radiation with RIRF-only options, constant-coefficient
+radiation with a non-regular wave or an off-grid period).
 
 #### Expert / component-level workflow
 
