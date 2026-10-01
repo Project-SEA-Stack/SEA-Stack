@@ -11,37 +11,75 @@
  *   6. Empty file → error
  *   7. Missing wave section defaults
  *   8. Multi-body config
+ *   9. Block-list forms (damping, moordyn.bodies, period.values), CRLF,
+ *      loud errors for malformed lists, parse of every shipped hydro YAML
  *********************************************************************/
 
 #include <seastack/hydro/config/yaml_parser.h>
 #include <seastack/hydro/config/hydro_config.h>
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
+#include <vector>
 
 using namespace seastack::hydro;
 
 static constexpr double kTol = 1e-9;
 
-/// Write a string to a temporary file and return the path.
+/// Write a string to a temporary file (bytes written as-is) and return the path.
 static std::string WriteTempYaml(const std::string& content, const std::string& suffix) {
     std::filesystem::path path =
         std::filesystem::temp_directory_path() /
         ("test_yaml_" + suffix + ".yaml");
-    std::ofstream f(path);
+    std::ofstream f(path, std::ios::binary);
     f << content;
     f.close();
     return path.string();
 }
 
+/// Best effort: on Windows another process (e.g. a virus scanner) may briefly
+/// hold a freshly written temp file open.
 static void CleanupFile(const std::string& path) {
-    std::filesystem::remove(path);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+/// Like assert(), but also active in Release builds.
+static void Check(bool condition, const std::string& message) {
+    if (!condition) {
+        throw std::runtime_error("check failed: " + message);
+    }
+}
+
+/// Parse `yaml` and require a std::runtime_error whose message contains every
+/// string in `expected`. Returns the message.
+static std::string ExpectParseError(const std::string& yaml, const std::string& suffix,
+                                    std::initializer_list<std::string> expected) {
+    auto path = WriteTempYaml(yaml, suffix);
+    std::string message;
+    bool threw = false;
+    try {
+        ReadHydroYAML(path);
+    } catch (const std::runtime_error& e) {
+        threw = true;
+        message = e.what();
+    }
+    CleanupFile(path);
+    Check(threw, suffix + ": expected a parse error");
+    for (const auto& s : expected) {
+        Check(message.find(s) != std::string::npos,
+              suffix + ": error message \"" + message + "\" does not contain \"" + s + "\"");
+    }
+    return message;
 }
 
 static std::string Filename(const std::string& path) {
@@ -362,6 +400,423 @@ hydrodynamics:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Test 9: Hull damping, inline vs block lists
+// ─────────────────────────────────────────────────────────────────────────────
+static const std::array<double, 6> kLinearB = {1.0e3, 2.5e3, 3.25e4, 4.0e5, 5.0e5, 6.0e2};
+static const std::array<double, 6> kQuadB = {10.0, 20.0, 30.0, 40.0, 50.0, 60.0};
+
+static void CheckDamping(const YAMLHydroData& data, const std::string& label) {
+    Check(data.bodies.size() == 1, label + ": one body");
+    for (size_t i = 0; i < 6; ++i) {
+        Check(data.bodies[0].linear_damping[i] == kLinearB[i], label + ": linear_damping[" + std::to_string(i) + "]");
+        Check(data.bodies[0].quadratic_damping[i] == kQuadB[i],
+              label + ": quadratic_damping[" + std::to_string(i) + "]");
+    }
+}
+
+static const char* kDampingInlineYaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: hull.h5
+      linear_damping: [1.0e3, 2.5e3, 3.25e4, 4.0e5, 5.0e5, 6.0e2]
+      quadratic_damping: [10, 20, 30, 40, 50, 60]
+  waves:
+    type: no_wave
+)";
+
+// Block form with comments, blank lines, inline comments, quotes, and items
+// at the key's own indentation (all valid YAML).
+static const char* kDampingBlockYaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: hull.h5
+      linear_damping:   # [surge, sway, heave, roll, pitch, yaw]
+        - 1.0e3      # surge
+
+        - 2.5e3
+        # heave next
+        - 3.25e4
+        - 4.0e5
+        - "5.0e5"
+        - 6.0e2
+      quadratic_damping:
+      - 10
+      - 20
+      - 30
+      - 40
+      - 50
+      - 60
+  waves:
+    type: no_wave
+)";
+
+static bool test_damping_inline_and_block_identical() {
+    auto inline_path = WriteTempYaml(kDampingInlineYaml, "damp_inline");
+    auto inline_data = ReadHydroYAML(inline_path);
+    CleanupFile(inline_path);
+    CheckDamping(inline_data, "inline");
+
+    auto block_path = WriteTempYaml(kDampingBlockYaml, "damp_block");
+    auto block_data = ReadHydroYAML(block_path);
+    CleanupFile(block_path);
+    CheckDamping(block_data, "block");
+
+    Check(inline_data.bodies[0].linear_damping == block_data.bodies[0].linear_damping, "linear identical");
+    Check(inline_data.bodies[0].quadratic_damping == block_data.bodies[0].quadratic_damping, "quadratic identical");
+    Check(block_data.waves.type == "no_wave", "keys after the block list still parsed");
+
+    std::cout << "  PASSED: test_damping_inline_and_block_identical\n";
+    return true;
+}
+
+static std::string ToCrlf(const std::string& lf) {
+    std::string out;
+    for (char c : lf) {
+        if (c == '\n') out += '\r';
+        out += c;
+    }
+    return out;
+}
+
+static bool test_damping_crlf() {
+    auto inline_path = WriteTempYaml(ToCrlf(kDampingInlineYaml), "damp_inline_crlf");
+    auto inline_data = ReadHydroYAML(inline_path);
+    CleanupFile(inline_path);
+    CheckDamping(inline_data, "inline CRLF");
+
+    auto block_path = WriteTempYaml(ToCrlf(kDampingBlockYaml), "damp_block_crlf");
+    auto block_data = ReadHydroYAML(block_path);
+    CleanupFile(block_path);
+    CheckDamping(block_data, "block CRLF");
+
+    std::cout << "  PASSED: test_damping_crlf\n";
+    return true;
+}
+
+static bool test_damping_block_multi_body() {
+    std::string yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      h5_file: rm3.h5
+      linear_damping:
+        - 0
+        - 0
+        - 1.5e5
+        - 0
+        - 0
+        - 0
+    - name: spar
+      h5_file: rm3.h5
+  waves:
+    type: no_wave
+)";
+    auto path = WriteTempYaml(yaml, "damp_multi");
+    auto data = ReadHydroYAML(path);
+    CleanupFile(path);
+
+    Check(data.bodies.size() == 2, "two bodies");
+    Check(data.bodies[0].linear_damping[2] == 1.5e5, "float heave damping");
+    for (double c : data.bodies[1].linear_damping) {
+        Check(c == 0.0, "spar has no damping");
+    }
+    std::cout << "  PASSED: test_damping_block_multi_body\n";
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 10: Malformed damping lists throw with file, body, and line
+// ─────────────────────────────────────────────────────────────────────────────
+static bool test_damping_errors() {
+    // Block list with 5 values (key on line 6).
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: hull.h5
+      linear_damping:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+  waves:
+    type: no_wave
+)", "err_block_count", {"test_yaml_err_block_count.yaml:6:", "body 'body1': linear_damping", "has 5 values; expected 6",
+                       "[surge, sway, heave, roll, pitch, yaw]"});
+
+    // Inline list with 7 values.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      linear_damping: [1, 2, 3, 4, 5, 6, 7]
+)", "err_inline_count", {"test_yaml_err_inline_count.yaml:5:", "body 'body1': linear_damping", "has 7 values"});
+
+    // Non-numeric block item (line 10).
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: hull.h5
+      linear_damping:
+        - 1
+        - 2
+        - 3
+        - 4e5x
+        - 5
+        - 6
+)", "err_block_nan", {"test_yaml_err_block_nan.yaml:10:", "body 'body1': linear_damping entry 4", "\"4e5x\"",
+                     "not a finite number"});
+
+    // Non-numeric inline item.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      quadratic_damping: [1, 2, abc, 4, 5, 6]
+)", "err_inline_nan", {"test_yaml_err_inline_nan.yaml:5:", "body 'body1': quadratic_damping entry 3", "\"abc\""});
+
+    // Empty inline entry.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      linear_damping: [1, 2, , 4, 5, 6]
+)", "err_inline_empty_entry", {":5:", "linear_damping entry 3 is empty"});
+
+    // Empty key, no items, followed by another body key.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      linear_damping:
+      h5_file: hull.h5
+)", "err_empty_key", {"test_yaml_err_empty_key.yaml:5:", "body 'body1': linear_damping has no value"});
+
+    // Empty key at end of file.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      quadratic_damping:
+)", "err_empty_key_eof", {":5:", "body 'body1': quadratic_damping has no value"});
+
+    // Unterminated inline list (multi-line flow lists are not supported).
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      linear_damping: [1, 2, 3,
+                       4, 5, 6]
+)", "err_unterminated", {"test_yaml_err_unterminated.yaml:5:", "body 'body1': linear_damping",
+                        "unterminated inline list"});
+
+    // Scalar instead of a list.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      linear_damping: 1000
+)", "err_scalar", {":5:", "must be an inline list"});
+
+    // Quadratic block form with a wrong count, second body.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+    - name: body2
+      quadratic_damping:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
+        - 6
+        - 7
+)", "err_quad_block_count", {":6:", "body 'body2': quadratic_damping has 7 values"});
+
+    std::cout << "  PASSED: test_damping_errors\n";
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 11: Other block lists and list guards
+// ─────────────────────────────────────────────────────────────────────────────
+static bool test_moordyn_bodies_block() {
+    std::string yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+    - name: body2
+  moordyn:
+    enabled: true
+    input_file: lines.txt
+    bodies:
+      - body1
+      - body2   # spar
+    visualization_line_radius: 0.02
+)";
+    auto path = WriteTempYaml(yaml, "moordyn_block");
+    auto data = ReadHydroYAML(path);
+    CleanupFile(path);
+
+    Check(data.moordyn_body_names.size() == 2, "two moordyn bodies");
+    Check(data.moordyn_body_names[0] == "body1" && data.moordyn_body_names[1] == "body2", "moordyn body names");
+    Check(data.moordyn_visualization_line_radius == 0.02, "key after the block list still parsed");
+    std::cout << "  PASSED: test_moordyn_bodies_block\n";
+    return true;
+}
+
+static bool test_period_list_forms() {
+    std::string block_yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+  waves:
+    type: regular
+    height: 1.0
+    period:
+      values:
+        - 6.0
+        - 7.5
+        - 9.0
+    direction: 30.0
+)";
+    auto path = WriteTempYaml(block_yaml, "period_block");
+    auto data = ReadHydroYAML(path);
+    CleanupFile(path);
+    Check(data.waves.period_values == std::vector<double>({6.0, 7.5, 9.0}), "period block values");
+    Check(data.waves.period == 6.0, "period = first value");
+    Check(data.waves.direction == 30.0, "waves key right after the period block is parsed");
+
+    std::string inline_yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+  waves:
+    type: regular
+    height: 1.0
+    period: [6.0, 7.5, 9.0]
+)";
+    path = WriteTempYaml(inline_yaml, "period_inline");
+    data = ReadHydroYAML(path);
+    CleanupFile(path);
+    Check(data.waves.period_values == std::vector<double>({6.0, 7.5, 9.0}), "period inline values");
+
+    std::string linspace_yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+  waves:
+    type: regular
+    height: 1.0
+    period:
+      linspace: { start: 6.0, stop: 9.0, num: 4 }
+)";
+    path = WriteTempYaml(linspace_yaml, "period_linspace");
+    data = ReadHydroYAML(path);
+    CleanupFile(path);
+    Check(data.waves.period_values.size() == 4, "period linspace count");
+    Check(std::abs(data.waves.period_values[1] - 7.0) < kTol && std::abs(data.waves.period_values[3] - 9.0) < kTol,
+          "period linspace values");
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+  waves:
+    type: regular
+    height: 1.0
+    period:
+      values: [6.0, seven, 9.0]
+)", "period_bad_value", {":9:", "waves.period.values entry 2", "\"seven\""});
+
+    std::cout << "  PASSED: test_period_list_forms\n";
+    return true;
+}
+
+static bool test_unsupported_list_items_error() {
+    // Block list under a key that does not accept one.
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      added_mass_scale:
+        - 1.0
+)", "err_unknown_list", {"test_yaml_err_unknown_list.yaml:6:", "unexpected YAML list item", "under 'added_mass_scale'"});
+
+    // Body item that does not start with "- name".
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - h5_file: hull.h5
+      name: body1
+)", "err_body_without_name", {":4:", "must start with '- name: <name>'"});
+
+    std::cout << "  PASSED: test_unsupported_list_items_error\n";
+    return true;
+}
+
+static bool test_hydrostatics_inline_and_model_check() {
+    std::string yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      hydrostatics: { model: nonlinear, mesh_file: hull.obj }
+)";
+    auto path = WriteTempYaml(yaml, "hs_inline");
+    auto data = ReadHydroYAML(path);
+    CleanupFile(path);
+    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kNonlinear, "inline hydrostatics model");
+    Check(Filename(data.bodies[0].hydrostatics.mesh_file) == "hull.obj", "inline hydrostatics mesh_file");
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      hydrostatics:
+        model: nonlinar
+        mesh_file: hull.obj
+)", "err_hs_model", {":6:", "hydrostatics.model must be 'linear' or 'nonlinear'", "\"nonlinar\""});
+
+    std::cout << "  PASSED: test_hydrostatics_inline_and_model_check\n";
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 12: Every shipped hydro YAML still parses
+// ─────────────────────────────────────────────────────────────────────────────
+static bool test_parse_all_shipped_yamls() {
+#ifdef SEASTACK_TEST_DATA_DIR
+    const std::filesystem::path data_dir(SEASTACK_TEST_DATA_DIR);
+    Check(std::filesystem::is_directory(data_dir), "data dir exists: " + data_dir.string());
+    int count = 0;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(data_dir)) {
+        const std::string name = entry.path().filename().string();
+        const std::string suffix = ".hydro.yaml";
+        if (!entry.is_regular_file() || name.size() < suffix.size() ||
+            name.compare(name.size() - suffix.size(), suffix.size(), suffix) != 0) {
+            continue;
+        }
+        try {
+            ReadHydroYAML(entry.path().string());
+        } catch (const std::exception& e) {
+            throw std::runtime_error("failed to parse " + entry.path().string() + ": " + e.what());
+        }
+        ++count;
+    }
+    Check(count > 0, "found shipped hydro YAMLs");
+    std::cout << "  PASSED: test_parse_all_shipped_yamls (" << count << " files)\n";
+#else
+    std::cout << "  SKIPPED: test_parse_all_shipped_yamls (SEASTACK_TEST_DATA_DIR not defined)\n";
+#endif
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 int main() {
@@ -389,6 +844,15 @@ int main() {
     run(test_empty_file_error,      "test_empty_file_error");
     run(test_missing_waves_defaults,"test_missing_waves_defaults");
     run(test_multi_body,            "test_multi_body");
+    run(test_damping_inline_and_block_identical, "test_damping_inline_and_block_identical");
+    run(test_damping_crlf,          "test_damping_crlf");
+    run(test_damping_block_multi_body, "test_damping_block_multi_body");
+    run(test_damping_errors,        "test_damping_errors");
+    run(test_moordyn_bodies_block,  "test_moordyn_bodies_block");
+    run(test_period_list_forms,     "test_period_list_forms");
+    run(test_unsupported_list_items_error, "test_unsupported_list_items_error");
+    run(test_hydrostatics_inline_and_model_check, "test_hydrostatics_inline_and_model_check");
+    run(test_parse_all_shipped_yamls, "test_parse_all_shipped_yamls");
 
     std::cout << "\nResults: " << passed << " passed, " << failed << " failed.\n";
     return (failed > 0) ? 1 : 0;
