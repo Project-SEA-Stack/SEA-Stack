@@ -1,0 +1,5 @@
+model_file: rm3_regular_waves_cc.model.yaml
+simulation_file: rm3_regular_waves_cc.simulation.yaml
+hydro_file: rm3_regular_waves_cc.hydro.yaml
+
+output_directory: outputs

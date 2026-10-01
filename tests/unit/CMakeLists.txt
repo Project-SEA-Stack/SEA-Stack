@@ -262,6 +262,24 @@ build_unit_test(test_excitation_ramp_accumulation)
 target_link_libraries(test_excitation_ramp_accumulation PRIVATE SEAStack::Hydro)
 set_tests_properties(test_excitation_ramp_accumulation PROPERTIES LABELS "unit;chrono-free")
 
+# Excitation TF interpolation on uniform vs non-uniform omega grids (Chrono-free, HDF5-free)
+build_unit_test(test_excitation_nonuniform_grid)
+target_link_libraries(test_excitation_nonuniform_grid PRIVATE SEAStack::Hydro)
+set_tests_properties(test_excitation_nonuniform_grid PROPERTIES LABELS "unit;chrono-free")
+
+# Constant-coefficient (regular-wave) radiation: H5 scaling, matching, builder,
+# component, and Chrono added-mass replacement. Reads bundled sphere/rm3 H5 files.
+if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
+    build_unit_test(test_radiation_constant_coefficients)
+    target_link_libraries(test_radiation_constant_coefficients PRIVATE SEAStack::ChronoAdapter)
+    target_compile_definitions(test_radiation_constant_coefficients PRIVATE
+        "SEASTACK_TEST_SPHERE_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/iea_sphere/assets/hydroData/sphere.h5\""
+        "SEASTACK_TEST_RM3_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3/assets/hydroData/rm3.h5\"")
+    set_tests_properties(test_radiation_constant_coefficients PROPERTIES LABELS "unit;chrono")
+else()
+    message(STATUS "Skipping test_radiation_constant_coefficients (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
+endif()
+
 # Added mass determinism test (requires Chrono adapter)
 if(TARGET seastack_chrono_adapter)
     build_unit_test(test_added_mass_determinism)

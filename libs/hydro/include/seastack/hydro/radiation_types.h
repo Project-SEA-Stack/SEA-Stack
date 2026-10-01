@@ -6,6 +6,7 @@
  *   - RadiationMethod: Selects the radiation damping calculation method
  *   - RadiationKernelProcessing: Composable smoothing + tapering for RIRF kernels
  *   - StateSpaceOptions: Settings for state-space radiation approximation
+ *   - ConstantCoefficientOptions: Settings for regular-wave A(w)/B(w) radiation
  *********************************************************************/
 
 #ifndef SEASTACK_HYDRO_RADIATION_TYPES_H
@@ -18,16 +19,49 @@ namespace seastack::hydro {
 /**
  * @brief Radiation damping calculation method.
  * 
- * Selects the overall approach for computing radiation damping forces:
+ * Selects the overall approach for computing radiation forces:
  *   - kRirfConvolution: Direct convolution of RIRF kernels with velocity history (default)
  *   - kStateSpace: State-space approximation using exponential decay modes
+ *   - kConstantCoefficients: Frequency-domain A(w), B(w) at the regular-wave
+ *     frequency (monochromatic regular waves only)
  * 
- * RIRF truncation (SetRadiationTruncationTime) is applied before either method.
- * Kernel processing (smoothing/tapering) is applied only for kRirfConvolution.
+ * RIRF truncation (SetRadiationTruncationTime) and kernel processing
+ * (smoothing/tapering) are applied only for kRirfConvolution. kStateSpace
+ * always fits the full, unprocessed RIRF from the H5 file.
+ *
+ * kConstantCoefficients applies F_rad = -A(w) * xddot - B(w) * xdot with the
+ * full coupled 6N x 6N BEM matrices at the BEM grid point matching the
+ * regular-wave frequency (see ConstantCoefficientOptions). A(w) REPLACES the
+ * infinite-frequency added mass A_inf in the implicit added-mass load; B(w) is
+ * applied as a radiation force, like the other methods. Intended for
+ * steady-state regular-wave runs (RAO, capture width, design screening); not
+ * valid for irregular seas, free decay, or transients.
  */
 enum class RadiationMethod {
-    kRirfConvolution,  ///< Direct RIRF convolution (default, existing method)
-    kStateSpace        ///< State-space approximation (exponential decay modes)
+    kRirfConvolution,      ///< Direct RIRF convolution (default, existing method)
+    kStateSpace,           ///< State-space approximation (exponential decay modes)
+    kConstantCoefficients  ///< A(w), B(w) at the regular-wave frequency (regular waves only)
+};
+
+/**
+ * @brief Options for constant-coefficient (regular-wave) radiation.
+ *
+ * Only applies when RadiationMethod == kConstantCoefficients.
+ */
+struct ConstantCoefficientOptions {
+    /**
+     * @brief Relative tolerance [-] for matching the regular-wave frequency to
+     *        a BEM grid frequency: |w_k - w| / w_k <= frequency_tolerance.
+     *
+     * Accepts numerically equivalent representations of the same grid point
+     * (H5 grids derived from 7-digit periods carry ~5e-7 relative noise;
+     * user-entered periods are typically rounded to 5-7 significant figures)
+     * and rejects frequencies that are genuinely absent from the grid. The
+     * default 1e-4 is ~20x below the finest relative grid spacing in the
+     * bundled BEM assets. A match is also rejected if more than one grid point
+     * lies within the tolerance. Default: 1e-4.
+     */
+    double frequency_tolerance = 1e-4;
 };
 
 /**
@@ -43,7 +77,9 @@ enum class RadiationMethod {
 struct RadiationKernelProcessing {
     /// Smoothing type: "none" (default), "sg" (Savitzky-Golay), or "moving_average"
     std::string smoothing_type = "none";
-    int smoothing_window = 5;              ///< Smoothing window length (odd, >= 3)
+    /// Smoothing window length in RIRF samples (odd, >= 3). Used by
+    /// "moving_average" only; "sg" always uses a fixed 5-point window.
+    int smoothing_window = 5;
 
     /// Tapering: when enabled, applies a half-cosine taper window near the end of the RIRF
     bool taper_enabled = false;
@@ -86,7 +122,7 @@ struct RadiationKernelProcessing {
  * 
  * TUNING GUIDE:
  *   - For faster fitting: reduce max_hankel_size (e.g., 100)
- *   - For better accuracy: increase max_hankel_size (e.g., 500) and r2_threshold (e.g., 0.99)
+ *   - For finer time resolution of the fit: increase max_hankel_size (e.g., 500)
  *   - For faster simulations: increase max_order (more modes = better fit = lower residual)
  */
 struct StateSpaceOptions {
@@ -100,29 +136,29 @@ struct StateSpaceOptions {
     int max_order = 10;
     
     /**
-     * @brief Minimum R² (coefficient of determination) threshold for fit acceptance.
+     * @brief R² threshold. Currently NOT used to select or reject fits.
      * 
-     * The fitter tries all orders up to max_order and keeps the best R².
-     * Higher orders can add fast-decaying poles that improve transient accuracy.
-     * Values closer to 1.0 require better fits but may need more modes.
-     * Typical values: 0.90-0.99. Default: 0.95.
+     * The fitter always tries every order up to max_order and keeps the one
+     * with the best R² (higher orders can add fast-decaying poles that improve
+     * transient accuracy). This value is only range-checked (0, 1]; it is kept
+     * so existing configurations remain valid. Default: 0.95.
      */
     double r2_threshold = 0.95;
     
     /**
-     * @brief Maximum size of Hankel matrix for SVD decomposition.
+     * @brief Maximum size n of the n x n Hankel matrix used for the SVD.
      * 
-     * CRITICAL PERFORMANCE PARAMETER: SVD is O(n³), so this directly controls
-     * fitting time. Larger values give better accuracy but slower fitting.
+     * SVD cost is O(n³) per DOF pair, so this controls fitting time.
+     * The fit always covers the full RIRF duration: an n x n Hankel matrix
+     * spans 2n - 1 samples, and longer RIRFs are decimated uniformly (step
+     * stride * dt_rirf) to fit. This value therefore sets the time
+     * resolution of the fit, not how much of the kernel is seen.
+     * Example: RM3 RIRF, 2001 samples at 0.01 s -> stride 6 (0.06 s).
      * 
-     * Guidelines:
-     *   - 100: Very fast fitting (~50ms), may reduce accuracy for complex kernels
-     *   - 200: Good balance (default), ~300ms fitting, suitable for most cases
-     *   - 500: High accuracy, ~2-5s fitting, for demanding applications
-     *   - 1000: Maximum accuracy, ~20-60s fitting, rarely needed
-     * 
-     * If RIRF has fewer samples than this value, all samples are used.
-     * Default: 200.
+     * Larger values give finer resolution but slower fitting. Measured total
+     * fitting time for RM3 (144 DOF pairs): ~1 s at 200, ~25 s at 500,
+     * ~3 min at 1000.
+     * Minimum 2. Default: 200.
      */
     int max_hankel_size = 200;
     

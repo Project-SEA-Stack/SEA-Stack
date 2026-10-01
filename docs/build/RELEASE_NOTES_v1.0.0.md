@@ -1,8 +1,13 @@
 # SEA-Stack v1.0.0 release notes
 
 v1.0.0 is the v1.0.0-beta.4 feature set plus fixes that make the advertised
-functionality trustworthy, installable, and defensible. There are no new
-features and no changes to the physics models.
+functionality trustworthy, installable, and defensible. It adds one opt-in
+radiation option for regular waves, fixes excitation interpolation on
+non-uniform BEM frequency grids, and fixes the state-space radiation fit for
+finely sampled impulse responses. **State-space (`radiation.method:
+state_space`) results change**, and so do the `rm3/mooring` demo results
+(its wave input was truncated, see below). These fixes leave other
+RIRF-convolution results on uniform BEM grids unchanged.
 
 ## Requirements
 
@@ -15,6 +20,61 @@ features and no changes to the physics models.
 
 ## Changes since v1.0.0-beta.4
 
+- **Constant-coefficient radiation for regular waves (opt-in).**
+  `radiation.method: constant_coefficients` applies
+  `F_rad = -A(w) xddot - B(w) xdot` with the full coupled BEM matrices at the
+  wave frequency, read from `added_mass/all` and `radiation_damping/all`.
+  A(w) replaces A_inf in the added-mass load (no double counting); B(w)
+  replaces the RIRF convolution. Use it with coarse BEM grids, where the
+  RIRF cannot reproduce A(w) and B(w). Only regular waves at a BEM grid period
+  are accepted (relative tolerance `radiation.frequency_tolerance`, default
+  `1e-4`); there is no interpolation or extrapolation, and other sea states,
+  free decay and RIRF-only options stop the run with an explicit error. The
+  default remains `rirf_convolution`. See
+  [EXAMPLE_WORKFLOWS.md](../usage/EXAMPLE_WORKFLOWS.md#regular-waves-constant-coefficient-radiation)
+  and the `rm3/regular_waves_cc` demo (source tree).
+- **Excitation on non-uniform BEM frequency grids is now correct.**
+  Frequency-domain excitation assumed evenly spaced frequencies. On grids
+  that are not (for example uniform in period, T = 3..15 s), it read
+  coefficients at the wrong frequency: on a 13-period grid, heave excitation
+  was off by tens of percent between the end points (+68% magnitude and
+  12 degrees phase at T = 8 s in one case). Such grids now use a bracket
+  search. Grids evenly spaced in omega, including all shipped demo `.h5`
+  files, keep the previous code path and give bit-identical results.
+- **State-space radiation now fits the whole impulse response.** The fitter
+  built its Hankel matrix from at most 2 x `max_hankel_size` - 1 = 399 samples
+  of the RIRF, so for finely sampled kernels it saw only the start: 4 s of the
+  20 s RM3 kernel (0.01 s sampling). RM3 heave was then off by up to 11% and
+  PTO power by up to 22% in regular waves. Long kernels are now decimated
+  uniformly so the fit spans their full duration at the same cost;
+  `max_hankel_size` now sets the time resolution of the fit, not its length.
+  RM3 state-space results now agree with the coupled frequency-domain
+  solution within 0.1% (heave) and 0.2% (power). The bundled sphere and OSWEC
+  state-space results move 4-12x closer to RIRF convolution (OSWEC decay: from
+  45% to 3.6% maximum difference), and their regression baselines (and the
+  two sphere state-space demo `expected/baseline.h5` files) were updated.
+  RIRFs of at most 399 samples are fitted exactly as before.
+- **New warnings for silently reduced inputs.** Eta-file imports now warn when
+  the component cap (`waves.discretization.n_omega`, default 1000 Fourier
+  bins) drops bins, and report the fraction of the measured variance retained;
+  previously a record longer than about 1000 s lost most of its energy
+  silently. Frequency-domain excitation now warns when wave components lie
+  outside the BEM frequency range (their coefficients are clamped to the
+  nearest grid end) and reports the share of wave energy affected.
+- **RM3 mooring demo now uses its full wave record.** Its 3600 s eta file has
+  3597 Fourier bins, but the demo capped the import at 1000, so every 4th bin
+  was kept and only 24% of the measured wave variance reached the model (the
+  reconstructed elevation correlated 0.41 with the record). The demo now sets
+  `nfrequencies: 4000` (correlation 0.97), so its results change and its
+  `expected/baseline.h5` was regenerated. The WEC-Sim/MoorDyn verification
+  test and the RM3 mooring benchmark read the eta table directly and were not
+  affected.
+- **New comparison-report cases.** The comparison report now includes the
+  sphere and RM3 in regular waves, comparing RIRF convolution, state space
+  and constant coefficients against frequency-domain solutions (RM3: coupled
+  two-body solve).
+- **Unknown `radiation.method` values now warn.** Previously a typo fell back
+  to `rirf_convolution` silently; it still falls back, with a warning.
 - **Joint reactions are exported for every joint type.** Previously only
   `ChLinkLock` joints were recorded; others, including the `ChLinkUniversal`
   joints in the 5SA articulated WEC demos, were written as zeros.
@@ -68,6 +128,19 @@ features and no changes to the physics models.
 
 ## Known issues and limitations
 
+- **Constant-coefficient radiation is steady-state only.** Its start-up
+  transient decays at a rate set by B(w) at the wave frequency, which can be
+  slow when B(w) is small. Ramp the excitation, run long enough, and discard
+  the transient.
+- **Some radiation and wave options are narrower than their names suggest.**
+  State-space radiation ignores `radiation.truncation_time` and kernel
+  smoothing/tapering (it fits the full RIRF from the `.h5`).
+  `state_space.r2_threshold` is accepted but not used: the fitter always keeps
+  the best-R² order up to `max_order`. Savitzky-Golay smoothing (`sg`) always
+  uses a 5-point window; `window_length` applies to `moving_average` only.
+  Eta-file imports keep at most 1000 Fourier bins unless
+  `waves.discretization.n_omega` is raised (a warning says when bins are
+  dropped).
 - **Radiation overlay is qualitative.** The GUI "Radiation (approx.)" overlay
   uses an empirical amplitude model (no Kochin functions). Use it to see where
   and when bodies radiate, not to read wave heights. It never affects physics

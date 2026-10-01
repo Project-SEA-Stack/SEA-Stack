@@ -21,6 +21,8 @@
 #include <seastack/hydro/force_components/nonlinear_hydrostatics_component.h>
 #include <seastack/hydro/force_components/radiation_component.h>
 #include <seastack/hydro/force_components/radiation_ss_component.h>
+#include <seastack/hydro/force_components/radiation_cc_component.h>
+#include <seastack/hydro/radiation/bem_frequency_match.h>
 #include <seastack/hydro/force_components/excitation_component.h>
 #include <seastack/hydro/force_components/excitation_irf_component.h>
 #include <seastack/hydro/force_components/damping_component.h>
@@ -30,6 +32,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <sstream>
 
@@ -169,6 +172,12 @@ HydroModelBuilder& HydroModelBuilder::WithRadiationOptions(
 HydroModelBuilder& HydroModelBuilder::WithStateSpaceOptions(
     const StateSpaceOptions& opts) {
     state_space_opts_ = opts;
+    return *this;
+}
+
+HydroModelBuilder& HydroModelBuilder::WithConstantCoefficientOptions(
+    const ConstantCoefficientOptions& opts) {
+    constant_coefficient_opts_ = opts;
     return *this;
 }
 
@@ -338,7 +347,44 @@ HydroModel HydroModelBuilder::Build() {
     }
 
     // ── 4. Validate radiation configuration ─────────────────────────
-    if (enable_radiation_) {
+    std::optional<BemFrequencyMatch> cc_match;
+    if (enable_radiation_ && radiation_method_ == RadiationMethod::kConstantCoefficients) {
+        // Constant-coefficient radiation: A(w), B(w) at the regular-wave
+        // frequency. Only meaningful for a single monochromatic regular wave.
+        const WaveMode mode = wave ? wave->GetWaveMode() : WaveMode::kNoWave;
+        const auto* wave_comps = wave ? wave->GetWaveComponents() : nullptr;
+        if (mode != WaveMode::kRegular || !wave_comps || wave_comps->size() != 1) {
+            const char* mode_str = (mode == WaveMode::kNoWave)
+                ? "no wave (still water / free decay)"
+                : (mode == WaveMode::kIrregular ? "irregular" : "regular without a single wave component");
+            throw std::runtime_error(
+                std::string("HydroModelBuilder::Build(): radiation method constant_coefficients "
+                            "is only valid for a monochromatic regular wave, but the wave is ") +
+                mode_str + ". Use rirf_convolution or state_space for irregular seas, "
+                "free-decay tests and transients.");
+        }
+        if (kernel_processing_.RequiresProcessing()) {
+            throw std::runtime_error(
+                "HydroModelBuilder::Build(): kernel processing (smoothing/tapering) "
+                "applies only to RIRF convolution, not constant_coefficients radiation. "
+                "Remove radiation.smoothing / radiation.taper or switch to rirf_convolution.");
+        }
+        if (radiation_truncation_time_ > 0.0) {
+            throw std::runtime_error(
+                "HydroModelBuilder::Build(): radiation truncation_time applies only to "
+                "RIRF-based radiation, not constant_coefficients. Remove "
+                "radiation.truncation_time or switch to rirf_convolution / state_space.");
+        }
+        if (!data_->HasFrequencyDomainRadiation()) {
+            throw std::runtime_error(
+                "HydroModelBuilder::Build(): constant_coefficients radiation requires "
+                "hydro_coeffs/added_mass/all and hydro_coeffs/radiation_damping/all "
+                "(6 x 6N x Nf, matching simulation_parameters/w) for every body in the "
+                "H5 file; they are missing or have an unexpected shape.");
+        }
+        cc_match = MatchBemFrequency(data_->GetBemFrequencies(), (*wave_comps)[0].omega,
+                                     constant_coefficient_opts_.frequency_tolerance);
+    } else if (enable_radiation_) {
         Eigen::VectorXd rirf_time = data_->GetRIRFTimeVector();
         if (rirf_time.size() == 0) {
             throw std::runtime_error(
@@ -437,7 +483,14 @@ HydroModel HydroModelBuilder::Build() {
     }
 
     if (enable_radiation_) {
-        if (radiation_method_ == RadiationMethod::kStateSpace) {
+        if (radiation_method_ == RadiationMethod::kConstantCoefficients) {
+            const Eigen::MatrixXd b_w = data_->GetRadiationDampingAtFrequencyIndex(cc_match->index);
+            LOG_DEBUG("Hydro radiation: method=constant_coefficients, BEM index "
+                      << cc_match->index << ", w = " << cc_match->omega_matched
+                      << " rad/s, B(w) diagonal = " << b_w.diagonal().transpose());
+            components.push_back(
+                std::make_unique<RadiationConstantCoefficientComponent>(num_bodies, b_w));
+        } else if (radiation_method_ == RadiationMethod::kStateSpace) {
             components.push_back(
                 std::make_unique<RadiationStateSpaceComponent>(
                     *data_, num_bodies, state_space_opts_));

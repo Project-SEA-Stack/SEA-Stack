@@ -512,7 +512,25 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
         seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine("•", "SS R² Threshold", std::to_string(ss_opts.r2_threshold)));
         seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine("•", "SS Max Hankel Size", std::to_string(ss_opts.max_hankel_size)));
         seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine("•", "SS R² Samples", std::to_string(ss_opts.r2_num_samples)));
+    } else if (method == "constant_coefficients") {
+        // Options first: SetRadiationMethod() selects A(w) for the added-mass
+        // load using the configured frequency tolerance.
+        seastack::hydro::ConstantCoefficientOptions cc_opts;
+        cc_opts.frequency_tolerance = hydro_data.radiation_frequency_tolerance;
+        hydro_system->SetConstantCoefficientOptions(cc_opts);
+        hydro_system->SetRadiationMethod(seastack::hydro::RadiationMethod::kConstantCoefficients);
+        seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine(
+            "•", "Radiation Method", "Constant coefficients A(w), B(w) (regular waves)"));
+        seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine(
+            "•", "Frequency Tolerance", std::to_string(cc_opts.frequency_tolerance) + " (relative)"));
     } else {
+        if (!method.empty() && method != "rirf_convolution") {
+            seastack::infra::cli::LogWarning(
+                std::string("Unknown hydrodynamics.radiation.method '") +
+                hydro_data.radiation_method +
+                "'; using rirf_convolution. Valid values: rirf_convolution, state_space, "
+                "constant_coefficients.");
+        }
         hydro_system->SetRadiationMethod(seastack::hydro::RadiationMethod::kRirfConvolution);
         seastack::infra::debug::LogDebug("Radiation method: RIRF Convolution (default)");
     }

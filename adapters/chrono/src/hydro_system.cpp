@@ -17,11 +17,16 @@
 #include <seastack/hydro/force_components/radiation_ss_component.h>
 #include <seastack/hydro/hydro_forces.h>
 #include <seastack/hydro/hydro_model_builder.h>
+#include <seastack/hydro/radiation/bem_frequency_match.h>
 #include <seastack/hydro/waves/wave_base.h>
+#include <seastack/core/math_constants.h>
 #include <seastack/hydro_io/h5_reader.h>
 #include <seastack/infra/debug_trace.h>
 #include <seastack/infra/logging.h>
 
+#include <cmath>
+#include <iomanip>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -78,19 +83,113 @@ HydroSystem::HydroSystem(std::vector<std::shared_ptr<ChBody>> user_bodies,
         coupling.divergence);
 
     // Apply infinite-frequency added mass via Chrono's built-in ChLoadHydrodynamics.
+    // Replaced by A(w) in UpdateAddedMassLoad() for constant-coefficient radiation.
     if (num_bodies_ > 0) {
         const auto& body_info = file_info_.GetBodyInfos();
-        ::chrono::ChBodyAddedMassBlocks body_blocks;
+        std::vector<Eigen::MatrixXd> blocks;
         for (int i = 0; i < num_bodies_; i++) {
-            body_blocks.push_back({bodies_[i], body_info[i].inf_added_mass});
+            blocks.push_back(body_info[i].inf_added_mass);
         }
-        auto hydro_load = chrono_types::make_shared<::chrono::ChLoadHydrodynamics>(body_blocks);
-        hydro_load->SetVerbose(false);
-        bodies_[0]->GetSystem()->Add(hydro_load);
+        ReplaceAddedMassLoad(blocks);
+        added_mass_source_ = AddedMassSource::kInfiniteFrequency;
     }
 
     user_waves_ = waves;
     AddWaves(user_waves_);
+}
+
+void HydroSystem::ReplaceAddedMassLoad(const std::vector<Eigen::MatrixXd>& blocks) {
+    auto* system = bodies_[0]->GetSystem();
+    if (added_mass_load_) {
+        system->Remove(added_mass_load_);
+        added_mass_load_.reset();
+    }
+    ::chrono::ChBodyAddedMassBlocks body_blocks;
+    for (int i = 0; i < num_bodies_; i++) {
+        body_blocks.push_back({bodies_[i], blocks[i]});
+    }
+    auto hydro_load = chrono_types::make_shared<::chrono::ChLoadHydrodynamics>(body_blocks);
+    hydro_load->SetVerbose(false);
+    system->Add(hydro_load);
+    added_mass_load_ = hydro_load;
+}
+
+void HydroSystem::UpdateAddedMassLoad() {
+    if (num_bodies_ <= 0 || !added_mass_load_) {
+        return;
+    }
+
+    // Resolve the BEM grid point for constant-coefficient radiation. Any
+    // invalid configuration (non-regular wave, off-grid frequency, missing
+    // A(w)/B(w)) keeps A_inf here; HydroModelBuilder::Build() reports it.
+    std::optional<seastack::hydro::BemFrequencyMatch> match;
+    if (config_.radiation_method == seastack::hydro::RadiationMethod::kConstantCoefficients &&
+        user_waves_ && user_waves_->GetWaveMode() == seastack::hydro::WaveMode::kRegular &&
+        file_info_.HasFrequencyDomainRadiation()) {
+        const auto* comps = user_waves_->GetWaveComponents();
+        if (comps && comps->size() == 1) {
+            try {
+                match = seastack::hydro::MatchBemFrequency(
+                    file_info_.GetBemFrequencies(), (*comps)[0].omega,
+                    config_.constant_coefficient_opts.frequency_tolerance);
+            } catch (const std::exception& e) {
+                LOG_DEBUG("Constant-coefficient radiation: keeping A_inf for now; " << e.what());
+            }
+        }
+    }
+
+    if (match) {
+        if (added_mass_source_ == AddedMassSource::kRegularWaveFrequency &&
+            added_mass_frequency_index_ == match->index) {
+            return;
+        }
+        const Eigen::MatrixXd a_w = file_info_.GetAddedMassAtFrequencyIndex(match->index);
+        std::vector<Eigen::MatrixXd> blocks;
+        for (int i = 0; i < num_bodies_; i++) {
+            blocks.push_back(a_w.middleRows(kDofPerBody * i, kDofPerBody));
+        }
+        ReplaceAddedMassLoad(blocks);
+        added_mass_source_ = AddedMassSource::kRegularWaveFrequency;
+        added_mass_frequency_index_ = match->index;
+
+        const Eigen::MatrixXd b_w = file_info_.GetRadiationDampingAtFrequencyIndex(match->index);
+        const auto& body_info = file_info_.GetBodyInfos();
+        LOG_INFO("Constant-coefficient radiation: regular wave T = " << std::setprecision(10)
+                 << kTwoPi / match->omega_requested << " s (w = " << match->omega_requested
+                 << " rad/s) matched BEM grid point " << match->index << ": T = "
+                 << kTwoPi / match->omega_matched << " s (w = " << match->omega_matched
+                 << " rad/s), |dw| = " << std::setprecision(3)
+                 << std::abs(match->omega_matched - match->omega_requested)
+                 << " rad/s (relative " << match->relative_difference << ", tolerance "
+                 << config_.constant_coefficient_opts.frequency_tolerance << ").");
+        for (int i = 0; i < num_bodies_; i++) {
+            const int r = kDofPerBody * i;
+            LOG_INFO("  " << body_info[i].body_name << " diag A(w)   = "
+                     << a_w.diagonal().segment(r, kDofPerBody).transpose());
+            LOG_INFO("  " << body_info[i].body_name << " diag B(w)   = "
+                     << b_w.diagonal().segment(r, kDofPerBody).transpose());
+            if (body_info[i].inf_added_mass.cols() >= r + kDofPerBody) {
+                LOG_INFO("  " << body_info[i].body_name << " diag A_inf = "
+                         << body_info[i].inf_added_mass.block(0, r, kDofPerBody, kDofPerBody)
+                                .diagonal().transpose()
+                         << " (NOT applied)");
+            }
+        }
+        LOG_INFO("Constant-coefficient radiation: full coupled A(w) ("
+                 << a_w.rows() << "x" << a_w.cols()
+                 << ") REPLACES A_inf in the Chrono added-mass load; B(w) is applied as "
+                    "the radiation force.");
+    } else if (added_mass_source_ != AddedMassSource::kInfiniteFrequency) {
+        const auto& body_info = file_info_.GetBodyInfos();
+        std::vector<Eigen::MatrixXd> blocks;
+        for (int i = 0; i < num_bodies_; i++) {
+            blocks.push_back(body_info[i].inf_added_mass);
+        }
+        ReplaceAddedMassLoad(blocks);
+        added_mass_source_ = AddedMassSource::kInfiniteFrequency;
+        added_mass_frequency_index_ = -1;
+        LOG_DEBUG("Added-mass load restored to infinite-frequency added mass A_inf.");
+    }
 }
 
 void HydroSystem::AddWaves(std::shared_ptr<WaveBase> waves) {
@@ -107,6 +206,8 @@ void HydroSystem::AddWaves(std::shared_ptr<WaveBase> waves) {
     user_waves_->UpdateEnvironment(sim.g, user_waves_->GetWaterDepth());
 
     user_waves_->Initialize();
+
+    UpdateAddedMassLoad();
 }
 
 void HydroSystem::SetExcitationTruncationTime(double seconds) {
@@ -157,6 +258,7 @@ void HydroSystem::EnsureHydroForcesAndCoupler() {
            .WithRadiationMethod(config_.radiation_method)
            .WithRadiationOptions(config_.kernel_processing)
            .WithStateSpaceOptions(config_.state_space_opts)
+           .WithConstantCoefficientOptions(config_.constant_coefficient_opts)
            .WithRadiationTruncationTime(config_.radiation_truncation_time)
            .WithExcitationTruncationTime(config_.excitation_truncation_time);
 
@@ -185,6 +287,33 @@ void HydroSystem::EnsureHydroForcesAndCoupler() {
 #endif
 
     hydro_model_ = std::make_unique<seastack::hydro::HydroModel>(builder.Build());
+
+    // The added-mass load must hold A(w) for constant-coefficient radiation and
+    // A_inf otherwise -- never both, never the wrong one. Build() has already
+    // validated the constant-coefficient configuration.
+    if (num_bodies_ > 0) {
+        const bool cc = config_.radiation_method ==
+                        seastack::hydro::RadiationMethod::kConstantCoefficients;
+        int expected_index = -1;
+        if (cc) {
+            expected_index = seastack::hydro::MatchBemFrequency(
+                                 file_info_.GetBemFrequencies(),
+                                 (*user_waves_->GetWaveComponents())[0].omega,
+                                 config_.constant_coefficient_opts.frequency_tolerance)
+                                 .index;
+        }
+        const bool consistent =
+            cc ? (added_mass_source_ == AddedMassSource::kRegularWaveFrequency &&
+                  added_mass_frequency_index_ == expected_index)
+               : (added_mass_source_ == AddedMassSource::kInfiniteFrequency);
+        if (!consistent) {
+            hydro_model_.reset();
+            throw std::logic_error(
+                "HydroSystem: added-mass load does not match the radiation method "
+                "(expected " + std::string(cc ? "A(w)" : "A_inf") +
+                "). This is an internal error; please report it.");
+        }
+    }
 
     chrono_coupler_ = std::make_unique<seastack::chrono::ChronoHydroCoupler>(
         hydro_model_->GetForces(), bodies_);

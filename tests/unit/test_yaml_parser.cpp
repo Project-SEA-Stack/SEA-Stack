@@ -6,7 +6,7 @@
  *   1. Minimal valid regular-wave config
  *   2. Irregular wave with JONSWAP spectrum
  *   3. Body linear damping
- *   4. Radiation method selection (state_space)
+ *   4. Radiation method selection (state_space, constant_coefficients)
  *   5. MoorDyn coupling section
  *   6. Empty file → error
  *   7. Missing wave section defaults
@@ -201,6 +201,38 @@ hydrodynamics:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Test 4b: Radiation method = constant_coefficients (+ frequency_tolerance)
+// ─────────────────────────────────────────────────────────────────────────────
+static bool test_radiation_constant_coefficients() {
+    std::string yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: wec.h5
+  waves:
+    type: regular
+    height: 1.0
+    period: 6.0
+  radiation:
+    method: constant_coefficients
+    frequency_tolerance: 2.5e-5
+)";
+    auto path = WriteTempYaml(yaml, "cc");
+    auto data = ReadHydroYAML(path);
+    CleanupFile(path);
+
+    if (data.radiation_method != "constant_coefficients") return false;
+    if (std::abs(data.radiation_frequency_tolerance - 2.5e-5) > 1e-18) return false;
+
+    // Omitted key keeps the default relative tolerance (1e-4).
+    YAMLHydroData defaults;
+    if (defaults.radiation_frequency_tolerance != 1e-4) return false;
+
+    std::cout << "  PASSED: test_radiation_constant_coefficients\n";
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Test 5: MoorDyn coupling section
 // ─────────────────────────────────────────────────────────────────────────────
 static bool test_moordyn_section() {
@@ -351,6 +383,7 @@ int main() {
     run(test_body_linear_damping,    "test_body_linear_damping");
     run(test_body_quadratic_damping, "test_body_quadratic_damping");
     run(test_radiation_state_space,  "test_radiation_state_space");
+    run(test_radiation_constant_coefficients, "test_radiation_constant_coefficients");
     run(test_moordyn_section,       "test_moordyn_section");
     run(test_moordyn_visualization_radii, "test_moordyn_visualization_radii");
     run(test_empty_file_error,      "test_empty_file_error");

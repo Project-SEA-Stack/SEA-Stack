@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "tag": "v1.0-beta",
-  "git_commit": "unknown",
-  "git_commit_short": "unknown",
-  "git_describe": "unknown",
-  "git_dirty": null,
-  "generated_at": "2026-03-20T19:13:38Z",
+  "tag": "v1.0.0",
+  "git_commit": "29a6f069a306a63f1fe886c51c92e0a58050e07c",
+  "git_commit_short": "29a6f06",
+  "git_describe": "v1.0.0-beta.4-15-g29a6f06-dirty",
+  "git_dirty": true,
+  "generated_at": "2026-10-01T12:23:25Z",
   "platform": "Windows 11 (AMD64)",
   "compiler": "unknown",
   "build_type": "Release",
@@ -28,7 +28,7 @@
         "Time (s)",
         "Heave (m)"
       ],
-      "md5": "ab169a90b2fd5627f10eb07c428ba335"
+      "md5": "c8c5ac279114fc3693918ef307ba8300"
     },
     "sphere/ss_ref_sphere_irreg_waves.txt": {
       "source_result": "results_sphere_irreg_waves.txt",
@@ -46,7 +46,7 @@
         "Time (s)",
         "Heave (m)"
       ],
-      "md5": "f295e3f078af8f711d8400525a149929"
+      "md5": "a2e2e864442d1d3fb78b04c88e401ded"
     },
     "sphere/ss_ref_sphere_irreg_waves_eta.txt": {
       "source_result": "results_sphere_irreg_waves_eta.txt",
@@ -174,7 +174,7 @@
         "Time (s)",
         "Flap Rotation y (radians)Flap Rotation y (degrees)"
       ],
-      "md5": "93ad17d9b9252128c7f7b1f7ed05836f"
+      "md5": "2a146b120db7063c52345a44eefb38ee"
     },
     "oswec/ss_ref_oswec_irreg_waves.txt": {
       "source_result": "results_oswec_irreg_waves.txt",
@@ -192,7 +192,7 @@
         "Time (s)",
         "Flap Rotation y (radians)Flap Rotation y (degrees)"
       ],
-      "md5": "849ce2594f7633baea7fa8f134da30e3"
+      "md5": "69102605c38c8821af8c80e3be6e9054"
     },
     "oswec/ss_ref_oswec_reg_waves_1.txt": {
       "source_result": "results_oswec_reg_waves_1.txt",
@@ -383,9 +383,5 @@
       ],
       "md5": "b806c45dfaada4c3751df95768e51389"
     }
-  },
-  "known_failures": [
-    "test_regr_sphere_sphere_irreg_waves_eta_consistency",
-    "test_regr_sphere_sphere_irreg_waves_eta_consistency_ref"
-  ]
+  }
 }

@@ -189,6 +189,14 @@ class HydroModelBuilder {
     /// Only applies when radiation method is kStateSpace.
     HydroModelBuilder& WithStateSpaceOptions(const StateSpaceOptions& opts);
 
+    /// Configure constant-coefficient radiation (frequency matching tolerance).
+    /// Only applies when radiation method is kConstantCoefficients. The
+    /// builder adds the -B(w)*xdot force component only; the caller is
+    /// responsible for applying A(w) in place of A_inf in the added-mass
+    /// load (HydroSystem does this).
+    HydroModelBuilder& WithConstantCoefficientOptions(
+        const ConstantCoefficientOptions& opts);
+
     /// Truncate radiation RIRF to [0, T] seconds. 0 = use full RIRF.
     HydroModelBuilder& WithRadiationTruncationTime(double seconds);
 
@@ -234,6 +242,9 @@ class HydroModelBuilder {
     ///   - Radiation enabled but RIRF data is empty
     ///   - Body count mismatch between data and damping coefficients
     ///   - State-space radiation with RIRF-only kernel processing
+    ///   - Constant-coefficient radiation without a regular wave, with
+    ///     RIRF-only settings, without A(w)/B(w) data, or at a wave frequency
+    ///     absent from the BEM grid
     HydroModel Build();
 
   private:
@@ -268,6 +279,7 @@ class HydroModelBuilder {
         RadiationMethod::kRirfConvolution;
     RadiationKernelProcessing kernel_processing_;
     StateSpaceOptions state_space_opts_;
+    ConstantCoefficientOptions constant_coefficient_opts_;
     double radiation_truncation_time_  = 0.0;
     double excitation_truncation_time_ = 0.0;
     double ramp_duration_              = 0.0;

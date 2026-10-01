@@ -169,7 +169,11 @@ struct YAMLHydroData {
     // ─────────────────────────────────────────────────────────────────────────
     // Radiation method selection (system-wide)
     // ─────────────────────────────────────────────────────────────────────────
-    std::string radiation_method = "rirf_convolution";  ///< "rirf_convolution" or "state_space"
+    std::string radiation_method = "rirf_convolution";  ///< "rirf_convolution", "state_space", or "constant_coefficients"
+
+    /// Relative frequency-matching tolerance [-] for constant_coefficients
+    /// (radiation.frequency_tolerance). Default: ConstantCoefficientOptions default.
+    double radiation_frequency_tolerance = ConstantCoefficientOptions{}.frequency_tolerance;
     
     // ─────────────────────────────────────────────────────────────────────────
     // Radiation kernel processing (smoothing + tapering, composable)

@@ -456,6 +456,9 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         data.radiation_method = value;
                     } else if (key == "truncation_time") {
                         data.radiation_truncation_time = ParseDouble(value, 0.0);
+                    } else if (key == "frequency_tolerance") {
+                        data.radiation_frequency_tolerance =
+                            ParseDouble(value, data.radiation_frequency_tolerance);
                     } else if (key == "smoothing") {
                         if (!value.empty()) {
                             data.radiation_kernel_processing.smoothing_type = value;
