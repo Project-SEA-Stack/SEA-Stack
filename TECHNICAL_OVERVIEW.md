@@ -1065,6 +1065,7 @@ flowchart TB
         H5Load["H5FileInfo::ReadH5Data()<br/>BEMIO coefficients"]
         WaveSetup["CreateWaveFromSettings()<br/>Regular / Irregular / Directional"]
         HydroSetup["SetupHydroFromYAML()<br/>HydroSystem construction"]
+        BuildModel["HydroSystem::BuildModel()<br/>validate + build force model"]
         InfAddedMass["ChLoadHydrodynamics<br/>inf_added_mass 6×nDoF blocks<br/>(nDoF = 6·N bodies)"]
         CompAssembly["HydroForces components:<br/>Hydrostatics + Radiation +<br/>Excitation + Damping + Mooring"]
     end
@@ -1092,7 +1093,8 @@ flowchart TB
     WaveSetup --> HydroSetup
     HydroSetup --> InfAddedMass
     H5Load --> InfAddedMass
-    InfAddedMass --> CompAssembly
+    HydroSetup --> BuildModel
+    BuildModel --> CompAssembly
 
     CompAssembly --> DoStep
     DoStep --> Callbacks

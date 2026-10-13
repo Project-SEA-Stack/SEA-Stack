@@ -269,6 +269,14 @@ example. See `ChronoHydroCoupler` for the **`SystemState` / `BodyForces`**
 bridge, `HydroSystem` for **`ChLoadHydrodynamics`** and added mass, and
 `PTOForceFunctor` for PTO integration.
 
+**`HydroSystem` lifecycle:** after constructing `HydroSystem` and applying
+configuration setters (`SetRadiationMethod`, `AddWaves`, damping, etc.), call
+**`BuildModel()`** before the first Chrono **`DoStepDynamics`**. That validates
+the configuration and builds the force model outside the Chrono callback.
+Skipping `BuildModel()` leaves construction until the first force evaluation,
+where exceptions cannot be caught reliably on every platform (notably macOS).
+`run_seastack` / `RunSingleCase` already call `BuildModel()` after YAML setup.
+
 See also [TECHNICAL_OVERVIEW.md](../../TECHNICAL_OVERVIEW.md) Appendix F.3
 (subsections F.3.1–F.3.4) and F.4 (F.4.1–F.4.3) for Chrono diagrams, the
 `run_seastack` lifecycle flowchart, and alternate-solver / light-target patterns.

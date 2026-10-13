@@ -93,7 +93,14 @@ using seastack::hydro::kDofPerBody;
  * Composed of:
  *   - HydroSystemConfig — accumulates settings (maps 1:1 to HydroModelBuilder)
  *   - ChronoForceAttacher — manages per-DOF force callbacks, caching, divergence
- *   - HydroModel + ChronoHydroCoupler — lazily constructed force engine
+ *   - HydroModel + ChronoHydroCoupler — force engine (see BuildModel())
+ *
+ * **Lifecycle (required for C++ API users):** apply all configuration setters,
+ * then call BuildModel() before the first Chrono DoStepDynamics. Invalid
+ * hydro configuration (for example an off-grid constant-coefficient period)
+ * throws from BuildModel(). Exceptions thrown later from inside the Chrono
+ * force callback cannot be caught reliably on every platform (notably macOS).
+ * run_seastack / RunSingleCase already call BuildModel() after YAML setup.
  *
  * @see HydroForces, ChronoForceAttacher, HydroSystemConfig
  */
@@ -226,6 +233,13 @@ class HydroSystem {
     // ─────────────────────────────────────────────────────────────────────────
 
     bool HasDiverged() const;
+
+    /// Construct the hydro force model now instead of on the first timestep.
+    /// Throws on invalid configuration (e.g. a constant-coefficient period that
+    /// is not on the BEM grid). Call after all configuration and before the
+    /// first DoStepDynamics: exceptions thrown inside the Chrono force callback
+    /// cannot be caught reliably on every platform. Idempotent.
+    void BuildModel();
 
     /// Per-body, per-DOF force from the last cached evaluation.
     /// @param body 1-based body index.

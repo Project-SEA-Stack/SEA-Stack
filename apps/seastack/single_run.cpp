@@ -585,6 +585,25 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     hydro_forces->SetProfilingEnabled(true);
                 }
 
+                // Build now so invalid configurations stop the run cleanly instead
+                // of throwing from inside the Chrono force callback.
+                if (hydro_forces) {
+                    try {
+                        hydro_forces->BuildModel();
+                    } catch (const std::exception& e) {
+                        seastack::infra::cli::LogError(
+                            std::string("Invalid hydrodynamic configuration: ") + e.what());
+                        result.error_message = e.what();
+                        return result;
+                    } catch (...) {
+                        seastack::infra::cli::LogError(
+                            "Invalid hydrodynamic configuration: unexpected exception while "
+                            "building the hydro model.");
+                        result.error_message = "Unexpected exception while building the hydro model.";
+                        return result;
+                    }
+                }
+
                 // Wave CLI widgets are verbose; show only with --debug
                 if (config.debug_mode) {
                     if (!hydro_data.waves.partitions.empty() ||

@@ -9,8 +9,8 @@
  *   1. Non-uniform grid: exact values at every grid point and linear-in-
  *      omega interpolation between grid points (Cartesian and polar).
  *   2. Out-of-range omega clamps to the end values.
- *   3. Uniform grid (with WEC-Sim-like rounding noise): results are
- *      bit-identical to the original linear index map.
+ *   3. Uniform grid (with WEC-Sim-like rounding noise): results match
+ *      the original linear index map to floating-point rounding.
  *********************************************************************/
 
 #include <seastack/hydro/excitation_transfer.h>
@@ -138,7 +138,7 @@ void TestNonUniformGrid() {
 }
 
 void TestUniformGridBitIdentical() {
-    std::cout << "\n[2] Uniform grid: bit-identical to the original index map\n";
+    std::cout << "\n[2] Uniform grid: matches the original index map to rounding\n";
     const int n = 240;
     Eigen::VectorXd w(n);
     std::vector<double> mag(n), phase(n);
@@ -154,16 +154,23 @@ void TestUniformGridBitIdentical() {
     for (double x = 0.01; x < 12.5; x += 0.0137) omegas.push_back(x);
     const auto tf = seastack::hydro::InterpolateExcitationTransfer(
         Components(omegas), data, Eigen::VectorXd::Zero(1), ExcitationInterpolation::kCartesian);
+    // Not exact ==: the compiler may contract/reorder the same arithmetic
+    // differently in each translation unit (observed: 1 ULP on Apple Clang).
+    auto close = [](double a, double b) {
+        constexpr double atol = 1e-14;
+        constexpr double rtol = 1e-14;
+        return std::abs(a - b) <= atol + rtol * std::abs(b);
+    };
     bool identical = true;
     for (std::size_t i = 0; i < omegas.size(); ++i) {
         for (int d = 0; d < 6; ++d) {
             double re = 0.0, im = 0.0;
             LegacyCartesian(data[0], omegas[i], d, re, im);
-            identical = identical && tf.re[0](d, static_cast<Eigen::Index>(i)) == re &&
-                        tf.im[0](d, static_cast<Eigen::Index>(i)) == im;
+            identical = identical && close(tf.re[0](d, static_cast<Eigen::Index>(i)), re) &&
+                        close(tf.im[0](d, static_cast<Eigen::Index>(i)), im);
         }
     }
-    Check(identical, "uniform grid with rounding noise: results bit-identical to legacy map");
+    Check(identical, "uniform grid with rounding noise: matches legacy map (atol=rtol=1e-14)");
 }
 
 }  // namespace

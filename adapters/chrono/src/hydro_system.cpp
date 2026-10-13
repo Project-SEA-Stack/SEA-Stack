@@ -325,6 +325,10 @@ void HydroSystem::EnsureHydroForcesAndCoupler() {
     model_constructed_ = true;
 }
 
+void HydroSystem::BuildModel() {
+    EnsureHydroForcesAndCoupler();
+}
+
 seastack::hydro::BodyForces HydroSystem::EvaluateForces(double time) {
     EnsureHydroForcesAndCoupler();
 

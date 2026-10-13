@@ -425,17 +425,17 @@ void TestChronoAddedMass() {
     Check((AddedMassInSystem(*s2) - a_w).norm() < 1e-9 * scale,
           "AddWaves(regular) after SetRadiationMethod: A(w) applied");
 
-    // Off-grid wave: A_inf kept, and the first force evaluation fails clearly.
+    // Off-grid wave: A_inf kept, and model construction fails clearly.
     auto s3 = MakeRm3Chrono(MakeRegularWave(kTwoPi / 8.0, 2), true);
     s3->hydro->SetRadiationMethod(RadiationMethod::kConstantCoefficients);
-    std::string msg = ThrownMessage([&] { s3->sys.DoStepDynamics(0.01); });
+    std::string msg = ThrownMessage([&] { s3->hydro->BuildModel(); });
     Check(Contains(msg, "has no matching hydrodynamic coefficient"),
-          "off-grid period: first step throws the frequency-matching error");
+          "off-grid period: BuildModel throws the frequency-matching error");
 
     // Irregular wave: rejected at model construction.
     auto s4 = MakeRm3Chrono(MakeIrregularWave(2), true);
     s4->hydro->SetRadiationMethod(RadiationMethod::kConstantCoefficients);
-    msg = ThrownMessage([&] { s4->sys.DoStepDynamics(0.01); });
+    msg = ThrownMessage([&] { s4->hydro->BuildModel(); });
     Check(Contains(msg, "only valid for a monochromatic regular wave"),
           "irregular wave + constant_coefficients rejected");
 

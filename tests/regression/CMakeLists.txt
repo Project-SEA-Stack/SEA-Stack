@@ -371,3 +371,40 @@ set_tests_properties(${CTEST_OSWEC_REG_FULL} PROPERTIES
     LABELS "regression;oswec;execute;reg_waves_full"
     ENVIRONMENT "SEASTACK_DATA_DIR=${SEASTACK_BUILD_DATA}"
     COST 800)
+
+# Constant-coefficient radiation through the real run_seastack / RunSingleCase
+# funnel: on-grid success and off-grid configuration rejection before stepping.
+if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
+    add_test(
+        NAME test_constant_coefficients_funnel
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_constant_coefficients_funnel.py"
+            --exe $<TARGET_FILE:run_seastack>
+    )
+    set_tests_properties(test_constant_coefficients_funnel PROPERTIES
+        LABELS "regression;chrono;rm3;execute"
+        COST 5
+    )
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        get_filename_component(_cc_funnel_pydir "${Python3_EXECUTABLE}" DIRECTORY)
+        set(_cc_funnel_run_dirs
+            "$<TARGET_FILE_DIR:run_seastack>" "${_cc_funnel_pydir}")
+        if(TARGET Chrono::Chrono_core)
+            list(APPEND _cc_funnel_run_dirs "$<TARGET_FILE_DIR:Chrono::Chrono_core>")
+        endif()
+        if(TARGET hdf5::hdf5-shared)
+            list(APPEND _cc_funnel_run_dirs "$<TARGET_FILE_DIR:hdf5::hdf5-shared>")
+        elseif(TARGET HDF5::HDF5)
+            list(APPEND _cc_funnel_run_dirs "$<TARGET_FILE_DIR:HDF5::HDF5>")
+        endif()
+        if(VSG_DLL_DIR)
+            list(APPEND _cc_funnel_run_dirs "${VSG_DLL_DIR}")
+        endif()
+        if(SEASTACK_ENABLE_MOORING AND TARGET moordyn)
+            list(APPEND _cc_funnel_run_dirs "$<TARGET_FILE_DIR:moordyn>")
+        endif()
+        list(JOIN _cc_funnel_run_dirs "|" _cc_funnel_run_path)
+        set_tests_properties(test_constant_coefficients_funnel PROPERTIES
+            ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+    endif()
+endif()
