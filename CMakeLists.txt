@@ -185,6 +185,52 @@ if(SEASTACK_ENABLE_CHRONO)
         endif()
     endif()
 
+    # Non-MSVC Eigen ABI contract: SEAStack::Core pins EIGEN_MAX_ALIGN_BYTES=16
+    # and EIGEN_MAX_STATIC_ALIGN_BYTES=16. That is only safe against a Chrono
+    # install built the same way (CH_USE_SIMD=OFF + those Eigen definitions).
+    # Chrono built with -march=native keeps a 32-byte Eigen DEFAULT alignment
+    # inside Chrono-facing TUs and in libChrono itself — mixing that with the
+    # Core pin reintroduces heap corruption. Warn loudly; do not strip Chrono's
+    # flags here (that would not fix a Chrono binary already built native).
+    if(NOT MSVC AND TARGET Chrono::Chrono_core)
+        set(_seastack_chrono_abi_warn FALSE)
+        set(_seastack_chrono_abi_reasons "")
+        foreach(_chrono_abi_tgt IN ITEMS Chrono::Chrono_core Chrono::Chrono_parsers Chrono::Chrono_vsg)
+            if(TARGET ${_chrono_abi_tgt})
+                get_target_property(_chrono_abi_opts ${_chrono_abi_tgt} INTERFACE_COMPILE_OPTIONS)
+                if(_chrono_abi_opts AND "${_chrono_abi_opts}" MATCHES "(-march=native|-mtune=native)")
+                    set(_seastack_chrono_abi_warn TRUE)
+                    string(APPEND _seastack_chrono_abi_reasons
+                        "  ${_chrono_abi_tgt} INTERFACE_COMPILE_OPTIONS contains -march=native/-mtune=native\n")
+                endif()
+                get_target_property(_chrono_abi_defs ${_chrono_abi_tgt} INTERFACE_COMPILE_DEFINITIONS)
+                if(_chrono_abi_defs AND "${_chrono_abi_defs}" MATCHES "EIGEN_MAX_ALIGN_BYTES=32")
+                    set(_seastack_chrono_abi_warn TRUE)
+                    string(APPEND _seastack_chrono_abi_reasons
+                        "  ${_chrono_abi_tgt} exports EIGEN_MAX_ALIGN_BYTES=32\n")
+                endif()
+            endif()
+        endforeach()
+        if(_seastack_chrono_abi_warn)
+            message(WARNING
+                "Chrono appears inconsistent with SEA-Stack's portable Eigen ABI "
+                "(EIGEN_MAX_ALIGN_BYTES=16 / EIGEN_MAX_STATIC_ALIGN_BYTES=16 on "
+                "non-MSVC). Mixing this Chrono with SEAStack::Core can cause "
+                "double-free / heap corruption when Eigen objects cross Chrono "
+                "and Chrono-free translation units.\n"
+                "${_seastack_chrono_abi_reasons}"
+                "Rebuild Chrono with CH_USE_SIMD=OFF and "
+                "-DEIGEN_MAX_ALIGN_BYTES=16 -DEIGEN_MAX_STATIC_ALIGN_BYTES=16 "
+                "(see docs/build/BUILD_CHRONO.md). Do not add -march=native to "
+                "SEA-Stack.")
+        else()
+            message(STATUS
+                "SEA-Stack: Chrono INTERFACE has no -march=native/-mtune=native; "
+                "expected portable Eigen ABI is EIGEN_MAX_ALIGN_BYTES=16 / "
+                "EIGEN_MAX_STATIC_ALIGN_BYTES=16 (see docs/build/BUILD_CHRONO.md)")
+        endif()
+    endif()
+
     # Chrono v10's exported targets carry
     #   INTERFACE_LINK_OPTIONS "$<$<COMPILE_LANGUAGE:CXX>:-Wl,-no_compact_unwind>"
     # which Chrono uses only to silence linker warnings in its own build. On

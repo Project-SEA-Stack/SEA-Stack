@@ -62,7 +62,9 @@ static Eigen::MatrixXd BuildAddedMass() {
         }
     }
     Eigen::MatrixXd A = L * L.transpose();
-    A = (A + A.transpose()) * 0.5;  // enforce exact symmetry
+    // .eval() avoids Eigen aliasing on A = f(A, A.transpose()); without it,
+    // portable (non-AVX) builds can leave ~1e-13 asymmetry and trip the check.
+    A = ((A + A.transpose()) * 0.5).eval();
 
     constexpr double boost[N] = {500.0, 800.0, 1200.0};
     for (int i = 0; i < N; ++i)

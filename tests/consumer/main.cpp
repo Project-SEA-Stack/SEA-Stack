@@ -31,6 +31,24 @@ int main(int argc, char** argv) {
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif
     std::printf("consumer EIGEN_MAX_ALIGN_BYTES=%d\n", EIGEN_MAX_ALIGN_BYTES);
+    std::printf("consumer EIGEN_MAX_STATIC_ALIGN_BYTES=%d\n",
+                EIGEN_MAX_STATIC_ALIGN_BYTES);
+#if defined(_MSC_VER)
+    constexpr int kExpectedMaxAlign = 32;
+    constexpr int kExpectedStaticAlign = 32;
+#else
+    // SEAStack::Core exports the portable 16/16 contract on non-MSVC.
+    constexpr int kExpectedMaxAlign = 16;
+    constexpr int kExpectedStaticAlign = 16;
+#endif
+    if (EIGEN_MAX_ALIGN_BYTES != kExpectedMaxAlign ||
+        EIGEN_MAX_STATIC_ALIGN_BYTES != kExpectedStaticAlign) {
+        std::cerr << "consumer Eigen ABI contract mismatch: expected "
+                  << "EIGEN_MAX_ALIGN_BYTES=" << kExpectedMaxAlign
+                  << " EIGEN_MAX_STATIC_ALIGN_BYTES=" << kExpectedStaticAlign
+                  << " (inherited from SEAStack::Core)\n";
+        return 4;
+    }
     if (argc < 2) {
         std::cerr << "usage: consumer_check <rm3.h5>\n";
         return 2;

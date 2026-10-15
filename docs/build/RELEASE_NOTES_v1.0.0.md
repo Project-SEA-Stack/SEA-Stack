@@ -128,6 +128,15 @@ RIRF-convolution results on uniform BEM grids unchanged.
   MSVC are now compiled with AVX2. The MSVC STL macro
   `_ENABLE_EXTENDED_ALIGNED_STORAGE`, previously misspelled and therefore
   ignored, is now also defined and exported.
+- **Linux/macOS Eigen ABI is pinned on `SEAStack::Core` (portable 16/16).**
+  Non-MSVC builds export `EIGEN_MAX_ALIGN_BYTES=16` and
+  `EIGEN_MAX_STATIC_ALIGN_BYTES=16` so Chrono-free and Chrono-facing
+  translation units share one Eigen heap protocol. This requires Chrono 10
+  built with `CH_USE_SIMD=OFF` and the same Eigen definitions (see
+  [BUILD_CHRONO.md](BUILD_CHRONO.md)); do not mix this pin with a Chrono that
+  exports `-march=native`. Configure warns if Chrono’s INTERFACE looks
+  inconsistent. A two-TU allocator ABI test and the downstream consumer check
+  assert the contract.
 - **Radiation overlay scales consistently with body size.** The GUI
   overlay over-amplified small (lab-scale) bodies; a 1:100 model showed
   radiated waves about 7x larger, relative to its motion, than the same
@@ -168,9 +177,11 @@ RIRF-convolution results on uniform BEM grids unchanged.
   uses an empirical amplitude model (no Kochin functions). Use it to see where
   and when bodies radiate, not to read wave heights. It never affects physics
   or exported results.
-- **Linux: crash at exit.** On Linux, `run_seastack` can abort with
-  `double free` (exit code 134) after the run has completed and results are
-  written. Windows and macOS exit cleanly.
+- **Linux: Chrono must match the portable Eigen ABI.** Building against a
+  Chrono install that enables SIMD / `-march=native` (the Chrono default on
+  many machines) while SEA-Stack pins Eigen 16/16 can still abort with
+  `double free` at teardown. Use the official portable Chrono recipe in
+  [BUILD_CHRONO.md](BUILD_CHRONO.md).
 - **Centre of mass and hydrodynamic reference point must agree.**
   SEA-Stack assumes the body centre of mass in the model YAML, the Chrono body
   position, the hydrodynamic reference point (`cg` in the BEM `.h5` file), and

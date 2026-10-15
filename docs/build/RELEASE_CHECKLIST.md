@@ -153,10 +153,11 @@ launch path (needs Python 3 on `PATH`; `python3` alone is fine on macOS/Linux):
 
 Installs a Chrono-free Debug SDK to a temporary prefix, builds
 [`tests/consumer`](../../tests/consumer) against it with
-`find_package(SEAStack)`, and runs it. On MSVC it also checks that the consumer
-inherits `/arch:AVX2` and `_ENABLE_EXTENDED_ALIGNED_STORAGE` from
-`SEAStack::Core` and runs under the CRT debug heap, which catches Eigen
-alignment mismatches between the libraries and downstream code.
+`find_package(SEAStack)`, and runs it. It asserts the Eigen ABI contract from
+`SEAStack::Core` (`/arch:AVX2` and `_ENABLE_EXTENDED_ALIGNED_STORAGE` on MSVC;
+`EIGEN_MAX_ALIGN_BYTES=16` / `EIGEN_MAX_STATIC_ALIGN_BYTES=16` on Linux/macOS).
+On MSVC it also runs under the CRT debug heap, which catches Eigen alignment
+mismatches between the libraries and downstream code.
 
 ```powershell
 .\scripts\windows\run_consumer_check.ps1    # VS x64 developer shell

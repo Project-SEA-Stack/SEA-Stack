@@ -92,27 +92,87 @@ If you do **not** use the vcpkg toolchain when configuring Chrono, you must stil
 
 ---
 
-## macOS / Linux example
+## Linux: official portable Chrono 10 recipe (required for SEA-Stack)
 
-Same logical options; install Eigen (and HDF5 if `CH_ENABLE_HDF5=ON`) via your package manager or vcpkg, then:
+On Linux, SEA-Stack pins a **portable Eigen ABI** on `SEAStack::Core`:
+
+- `EIGEN_MAX_ALIGN_BYTES=16`
+- `EIGEN_MAX_STATIC_ALIGN_BYTES=16`
+
+Chrono’s shared libraries and exported INTERFACE options must use the **same**
+contract. A Chrono build that enables SIMD / `-march=native` keeps a 32-byte
+Eigen default alignment inside Chrono-facing code even if you later try to pin
+`EIGEN_MAX_ALIGN_BYTES=16` in SEA-Stack alone; that split causes double-free /
+heap corruption when Eigen objects cross Chrono and Chrono-free translation
+units.
+
+**Do not** add `-march=native` (or `-mtune=native`) to Chrono or SEA-Stack for
+the official Linux dependency stack.
+
+Required Chrono features for the stock SEA-Stack stack: **Parsers**, **HDF5**,
+**OpenMP**, and **VSG** (when you build SEA-Stack with VSG / GUI support).
+
+Example (adjust paths; install Eigen, HDF5, OpenMP, and Chrono’s VSG
+prerequisites first):
+
+```bash
+cmake -S /path/to/chrono-src -B /path/to/chrono-build \
+  -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/path/to/chrono-install \
+  -DCMAKE_PREFIX_PATH=/path/to/vsg-install \
+  -DCMAKE_CXX_FLAGS='-DEIGEN_MAX_ALIGN_BYTES=16 -DEIGEN_MAX_STATIC_ALIGN_BYTES=16' \
+  -DBUILD_SHARED_LIBS=ON \
+  -DBUILD_TESTING=OFF \
+  -DBUILD_DEMOS=OFF \
+  -DCH_ENABLE_MODULE_PARSERS=ON \
+  -DCH_ENABLE_HDF5=ON \
+  -DCH_ENABLE_OPENMP=ON \
+  -DCH_ENABLE_MODULE_VSG=ON \
+  -DCH_USE_SIMD=OFF
+cmake --build /path/to/chrono-build --parallel
+cmake --install /path/to/chrono-build
+```
+
+Notes:
+
+- **`CH_USE_SIMD=OFF`** is what keeps `-march=native` out of Chrono objects and
+  out of `ChronoTargets.cmake` `INTERFACE_COMPILE_OPTIONS`.
+- The two **`EIGEN_MAX_*_ALIGN_BYTES=16`** definitions must be present when
+  Chrono itself is compiled (via `CMAKE_CXX_FLAGS` as above, or an equivalent
+  cache entry), not only when configuring SEA-Stack.
+- SEA-Stack configure prints a **WARNING** if Chrono’s imported targets still
+  export `-march=native` / `-mtune=native` (or an explicit 32-byte Eigen pin).
+- For a headless Chrono without VSG, set `-DCH_ENABLE_MODULE_VSG=OFF` and build
+  SEA-Stack without `--vsg` / `-VSG`. The Eigen / `CH_USE_SIMD=OFF` rules stay
+  the same.
+
+### macOS / Linux example (generic)
+
+Same logical feature options as Windows; install Eigen (and HDF5 if
+`CH_ENABLE_HDF5=ON`) via your package manager or vcpkg. On **Linux**, prefer the
+official portable recipe above. A minimal Chrono without VSG:
 
 ```bash
 cmake -S /path/to/chrono-src -B /path/to/chrono-build \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX=/path/to/chrono-install \
+  -DCMAKE_CXX_FLAGS='-DEIGEN_MAX_ALIGN_BYTES=16 -DEIGEN_MAX_STATIC_ALIGN_BYTES=16' \
   -DBUILD_SHARED_LIBS=ON \
   -DCH_ENABLE_MODULE_PARSERS=ON \
   -DCH_ENABLE_HDF5=ON \
   -DCH_ENABLE_OPENMP=ON \
   -DCH_ENABLE_MODULE_VSG=OFF \
+  -DCH_USE_SIMD=OFF \
   -DBUILD_TESTING=OFF \
   -DBUILD_DEMOS=OFF
 cmake --build /path/to/chrono-build --parallel
 cmake --install /path/to/chrono-build
 ```
 
-Use **`-DCH_ENABLE_MODULE_VSG=ON`** only if you will build SEA-Stack with **`--vsg` / `-VSG`** and have installed Chrono’s VSG prerequisites per upstream docs.
-
+Use **`-DCH_ENABLE_MODULE_VSG=ON`** only if you will build SEA-Stack with
+**`--vsg` / `-VSG`** and have installed Chrono’s VSG prerequisites per upstream
+docs.
 ### macOS release packages
 
 If you will build a redistributable macOS ZIP (`--package`), add these two options to the Chrono configure:
@@ -136,5 +196,9 @@ Use a separate Chrono build directory for this configuration and point `ChronoDi
 3. **OpenMP** available to the SEA-Stack configure (same compiler family as Chrono).
 4. If **HydroIO** is ON: HDF5 found for SEA-Stack (and compatible with Chrono if Chrono was built with HDF5).
 5. If **`-VSG`**: Chrono was built with **`CH_ENABLE_MODULE_VSG=ON`** and VSG dependencies are installed.
+6. On **Linux**: Chrono built with **`CH_USE_SIMD=OFF`** and explicit
+   **`EIGEN_MAX_ALIGN_BYTES=16` / `EIGEN_MAX_STATIC_ALIGN_BYTES=16`** (see the
+   official portable recipe above). Confirm Chrono’s installed
+   `ChronoTargets.cmake` does **not** export `-march=native`.
 
 Run **`.\scripts\windows\build.ps1 -Doctor`** (or **`./scripts/unix/build.sh --doctor`**) to sanity-check paths before a full configure.

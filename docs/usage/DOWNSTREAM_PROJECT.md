@@ -112,7 +112,7 @@ available:
 
 | Target | Type | Dependencies |
 |--------|------|-------------|
-| `SEAStack::Core` | INTERFACE (header-only) | Eigen3 |
+| `SEAStack::Core` | INTERFACE (header-only) | Eigen3; exports the Eigen ABI contract (`/arch:AVX2` on MSVC, `EIGEN_MAX_ALIGN_BYTES=16` / `EIGEN_MAX_STATIC_ALIGN_BYTES=16` on Linux/macOS) |
 | `SEAStack::Infra` | STATIC | C++ stdlib |
 | `SEAStack::Hydro` | STATIC | Core, Infra, OpenMP (optional) |
 | `SEAStack::HydroIO` | STATIC | Hydro, HDF5 |

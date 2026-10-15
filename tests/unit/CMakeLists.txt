@@ -268,6 +268,49 @@ build_unit_test(test_excitation_nonuniform_grid)
 target_link_libraries(test_excitation_nonuniform_grid PRIVATE SEAStack::Hydro)
 set_tests_properties(test_excitation_nonuniform_grid PROPERTIES LABELS "unit;chrono-free")
 
+# Two-TU Eigen allocator ABI: Core-style TU vs Chrono-facing TU must share the
+# same Eigen heap protocol (allocate in one, destroy in the other, both ways).
+# OBJECT libraries keep Chrono INTERFACE flags off the Core TU.
+if(TARGET Chrono::Chrono_core AND TARGET SEAStack::Core)
+    add_library(test_eigen_allocator_abi_core_tu OBJECT
+        test_eigen_allocator_abi_core_tu.cpp)
+    target_include_directories(test_eigen_allocator_abi_core_tu PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(test_eigen_allocator_abi_core_tu PUBLIC SEAStack::Core)
+    target_compile_features(test_eigen_allocator_abi_core_tu PUBLIC cxx_std_17)
+    seastack_apply_compile_settings(test_eigen_allocator_abi_core_tu)
+
+    add_library(test_eigen_allocator_abi_chrono_tu OBJECT
+        test_eigen_allocator_abi_chrono_tu.cpp)
+    target_include_directories(test_eigen_allocator_abi_chrono_tu PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(test_eigen_allocator_abi_chrono_tu PUBLIC
+        SEAStack::Core Chrono::Chrono_core)
+    target_compile_features(test_eigen_allocator_abi_chrono_tu PUBLIC cxx_std_17)
+    seastack_apply_compile_settings(test_eigen_allocator_abi_chrono_tu)
+
+    add_executable(test_eigen_allocator_abi test_eigen_allocator_abi_main.cpp)
+    target_include_directories(test_eigen_allocator_abi PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}")
+    # Linking the OBJECT libs pulls in their .o files and usage requirements.
+    # Chrono INTERFACE flags apply to the Chrono OBJECT TU and to main.cpp, not
+    # to the Core OBJECT TU (compiled only against SEAStack::Core).
+    target_link_libraries(test_eigen_allocator_abi PRIVATE
+        test_eigen_allocator_abi_core_tu
+        test_eigen_allocator_abi_chrono_tu
+        Chrono::Chrono_core)
+    target_compile_features(test_eigen_allocator_abi PRIVATE cxx_std_17)
+    seastack_apply_compile_settings(test_eigen_allocator_abi)
+    add_test(
+        NAME test_eigen_allocator_abi
+        WORKING_DIRECTORY "$<TARGET_FILE_DIR:test_eigen_allocator_abi>"
+        COMMAND $<TARGET_FILE:test_eigen_allocator_abi>)
+    set_tests_properties(test_eigen_allocator_abi PROPERTIES LABELS "unit;chrono" COST 1)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND DEFINED TEST_ENVIRONMENT)
+        set_tests_properties(test_eigen_allocator_abi PROPERTIES ENVIRONMENT "${TEST_ENVIRONMENT}")
+    endif()
+endif()
+
 # Constant-coefficient (regular-wave) radiation: H5 scaling, matching, builder,
 # component, and Chrono added-mass replacement. Reads bundled sphere/rm3 H5 files.
 if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
