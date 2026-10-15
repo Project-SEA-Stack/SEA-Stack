@@ -7,6 +7,7 @@ Usage:
 Called from scripts/unix/build.sh and scripts/windows/build.ps1 after cmake --install
 and before or after cpack (prefix is the same tree that is archived).
 On macOS it also runs scripts/check_macho_portability.py on the prefix.
+On Linux it also runs scripts/check_elf_portability.py on the prefix.
 
 If macOS packaged runs show NaNs while Windows passes, compare otool -L on run_seastack,
 bundled lib/*.dylib, OpenMP, and BLAS linkage against a local non-packaged Release build.
@@ -62,6 +63,12 @@ def main() -> int:
         macho_check = Path(__file__).resolve().parent / "check_macho_portability.py"
         if subprocess.run([sys.executable, str(macho_check), str(root)]).returncode != 0:
             print("[FAIL] Mach-O portability check failed (see scripts/check_macho_portability.py)",
+                  file=sys.stderr)
+            return 1
+    if sys.platform.startswith("linux"):
+        elf_check = Path(__file__).resolve().parent / "check_elf_portability.py"
+        if subprocess.run([sys.executable, str(elf_check), str(root)]).returncode != 0:
+            print("[FAIL] ELF portability check failed (see scripts/check_elf_portability.py)",
                   file=sys.stderr)
             return 1
     print(f"[OK] Release install prefix checks passed ({root})")

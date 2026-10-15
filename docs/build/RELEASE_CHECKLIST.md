@@ -69,6 +69,22 @@ python3 scripts/check_macho_portability.py /tmp/seastack-unpacked
 Expect `[OK] All Mach-O dependencies and rpaths resolve inside the package`.
 Record the `minos` summary it prints; that is the minimum macOS version.
 
+**Linux packaging.** Packaging stages Chrono/VSG (and transitive) shared libs via
+`RUNTIME_DEPENDENCIES` with `DIRECTORIES` from the Chrono/VSG install prefixes,
+excludes Chrono/SEA-Stack build trees, then rewrites RUNPATH on `bin/run_seastack`
+(`$ORIGIN/../lib`) and every staged `lib/*.so*` (`$ORIGIN`). Check the install
+prefix and an unpacked ZIP:
+
+```bash
+python3 scripts/verify_release_install_prefix.py build/install
+python3 scripts/check_elf_portability.py build/install
+mkdir -p /tmp/seastack-unpacked && unzip -q build/SEAStack-<version>-linux-x64.zip -d /tmp/seastack-unpacked
+python3 scripts/check_elf_portability.py /tmp/seastack-unpacked
+```
+
+Expect `[OK] Package-relative RUNPATHs; Chrono/VSG stack resolves from the package`.
+Relocated runs must work with **no** `LD_LIBRARY_PATH`.
+
 **macOS clean-machine test.** Build-machine paths still exist on the build
 machine, so a normal run can hide a missing library. Run the unpacked package
 under a sandbox that denies reads of the source tree, Homebrew, and the Vulkan

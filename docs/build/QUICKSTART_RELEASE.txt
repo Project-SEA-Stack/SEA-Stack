@@ -65,7 +65,8 @@ macOS troubleshooting (packaged build diverges or NaNs while Windows passes):
   use otool -L on bin/run_seastack and lib/*.dylib, confirm bundled libraries load
   (not mixed system copies), and check OpenMP/BLAS linkage. Release packaging
   verification after install: scripts/verify_release_install_prefix.py
-  (on macOS this also runs scripts/check_macho_portability.py).
+  (on macOS this also runs scripts/check_macho_portability.py;
+   on Linux it also runs scripts/check_elf_portability.py).
 
 Support (source builds):
   Windows:      scripts\windows\build.ps1 -Doctor

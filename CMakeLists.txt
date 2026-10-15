@@ -700,6 +700,61 @@ if(TARGET run_seastack)
             # Transitive Chrono/SWIG stacks may reference Python; SEA-Stack does not ship it.
             "Python3\\.framework"
             "Python\\.framework")
+        # Linux: Chrono/VSG install libs often have empty RUNPATH, so the dependency
+        # walk needs DIRECTORIES from the intended install prefixes. Never pull from
+        # Chrono/SEA-Stack build trees (PRE_EXCLUDE).
+        set(_seastack_runtime_dep_dirs "")
+        set(_seastack_dep_pre_exclude "")
+        if(NOT APPLE)
+            foreach(_dep_tgt IN ITEMS
+                    Chrono::Chrono_core
+                    Chrono::Chrono_parsers
+                    Chrono::Chrono_vsg
+                    Chrono::yaml-cpp
+                    vsg::vsg
+                    vsgImGui::vsgImGui
+                    vsgXchange::vsgXchange)
+                if(TARGET ${_dep_tgt})
+                    set(_loc "")
+                    foreach(_cfg IN ITEMS RELEASE RELWITHDEBINFO MINSIZEREL DEBUG)
+                        get_target_property(_cand ${_dep_tgt} IMPORTED_LOCATION_${_cfg})
+                        if(_cand)
+                            set(_loc "${_cand}")
+                            break()
+                        endif()
+                    endforeach()
+                    if(NOT _loc)
+                        get_target_property(_cand ${_dep_tgt} IMPORTED_LOCATION)
+                        if(_cand)
+                            set(_loc "${_cand}")
+                        endif()
+                    endif()
+                    if(_loc)
+                        get_filename_component(_dir "${_loc}" DIRECTORY)
+                        if(_dir AND NOT _dir IN_LIST _seastack_runtime_dep_dirs)
+                            list(APPEND _seastack_runtime_dep_dirs "${_dir}")
+                        endif()
+                    endif()
+                endif()
+            endforeach()
+            # Exclude Chrono/VSG/SEA-Stack build trees and this build directory.
+            # Escape CMAKE_BINARY_DIR for regex use.
+            string(REPLACE "+" "\\+" _seastack_bindir_re "${CMAKE_BINARY_DIR}")
+            string(REPLACE "." "\\." _seastack_bindir_re "${_seastack_bindir_re}")
+            list(APPEND _seastack_dep_pre_exclude
+                ".*/chrono-.*-build/.*"
+                ".*/vsg-.*-build/.*"
+                ".*/SEA-Stack.*/build[^/]*/bin/.*"
+                ".*/SEA-Stack.*/build[^/]*/lib/.*"
+                "${_seastack_bindir_re}/.*")
+            if(_seastack_runtime_dep_dirs)
+                message(STATUS "Linux runtime dependency DIRECTORIES: ${_seastack_runtime_dep_dirs}")
+            else()
+                message(WARNING
+                    "Linux packaging: no Chrono/VSG import lib dirs found for "
+                    "RUNTIME_DEPENDENCIES DIRECTORIES; dependency discovery may fail.")
+            endif()
+        endif()
         if(APPLE)
             install(TARGETS run_seastack
                 RUNTIME_DEPENDENCIES
@@ -711,12 +766,16 @@ if(TARGET run_seastack)
         else()
             install(TARGETS run_seastack
                 RUNTIME_DEPENDENCIES
+                    DIRECTORIES ${_seastack_runtime_dep_dirs}
+                    PRE_EXCLUDE_REGEXES ${_seastack_dep_pre_exclude}
                     POST_EXCLUDE_REGEXES ${_seastack_dep_exclude}
                 CONFIGURATIONS Release
                 RUNTIME DESTINATION bin COMPONENT runtime
                 LIBRARY DESTINATION lib COMPONENT runtime)
         endif()
         unset(_seastack_dep_exclude)
+        unset(_seastack_runtime_dep_dirs)
+        unset(_seastack_dep_pre_exclude)
     endif()
 endif()
 
@@ -984,7 +1043,6 @@ endif()
 
 # macOS: make run_seastack and every bundled dylib relocatable (@rpath), strip absolute rpaths,
 # re-sign. Must stay after every install rule that stages files into lib/.
-# (Linux would need patchelf/chrpath; RPATH $ORIGIN/../lib on the exe covers many layouts.)
 if(TARGET run_seastack AND APPLE)
     if(SEASTACK_ENABLE_VSG)
         install(CODE "set(SEASTACK_FIXUP_REQUIRE_MOLTENVK ON)" COMPONENT runtime)
@@ -992,6 +1050,12 @@ if(TARGET run_seastack AND APPLE)
         install(CODE "set(SEASTACK_FIXUP_REQUIRE_MOLTENVK OFF)" COMPONENT runtime)
     endif()
     install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/SeaStackMacOSBundleFixup.cmake" COMPONENT runtime)
+endif()
+
+# Linux: rewrite RUNPATH on run_seastack and every staged lib/*.so* to package-relative
+# tokens only ($ORIGIN/../lib and $ORIGIN). Must stay after RUNTIME_DEPENDENCIES copies.
+if(TARGET run_seastack AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/SeaStackLinuxBundleFixup.cmake" COMPONENT runtime)
 endif()
 
 set(CPACK_GENERATOR "ZIP")
