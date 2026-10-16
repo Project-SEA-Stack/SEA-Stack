@@ -2,7 +2,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 Open-source simulation software for offshore and marine energy systems—built for innovating, fast design exploration and engineering workflows.
 
