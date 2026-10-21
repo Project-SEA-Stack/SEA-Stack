@@ -30,6 +30,7 @@ from report_generator import (
 VERIFICATION_TEST_GROUPS = (
     "sphere_decay_multicode",
     "sphere_rao_sweep",
+    "sphere_rao_sweep_nl",
     "oswec_decay_wecsim",
     "oswec_rao_sweep",
     "f3of_decay_multicode",

@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0",
+  "model": "sphere_rao_sweep_nl",
+  "description": "IEA OES Task 10 sphere heave RAO at steepness S = H/(g T^2) = 0.01, free body and optimum PTO damping (10 wave periods). Reference for the nonlinear Froude-Krylov verification (docs/theory/NONLINEAR_FROUDE_KRYLOV.md, section 10).",
+
+  "sources": [
+    {
+      "tool": "InWave-HOTINT",
+      "version": "unknown",
+      "raw_files": ["../sphere_rao_sweep/raw/RAO_dat.xlsx"],
+      "notes": "Sheets noPTO_S=0.01 and PTO_S=0.01, column InWave-HOTINT"
+    },
+    {
+      "tool": "InWave (Linear)",
+      "version": "unknown",
+      "raw_files": ["../sphere_rao_sweep/raw/RAO_dat.xlsx"],
+      "notes": "Sheets noPTO_S=0.01 and PTO_S=0.01, column InWave (Lin)"
+    },
+    {
+      "tool": "Marin aNySIM (Nonlinear)",
+      "version": "unknown",
+      "raw_files": ["../sphere_rao_sweep/raw/RAO_dat.xlsx"],
+      "notes": "Sheets noPTO_S=0.01 and PTO_S=0.01, column Marin (NLin)"
+    },
+    {
+      "tool": "NREL WEC-Sim (Nonlinear)",
+      "version": "unknown",
+      "raw_files": ["../sphere_rao_sweep/raw/RAO_dat.xlsx"],
+      "notes": "Sheets noPTO_S=0.01 and PTO_S=0.01, column NREL (NLin)"
+    },
+    {
+      "tool": "ProteusDS (Linear)",
+      "version": "unknown",
+      "raw_files": ["../sphere_rao_sweep/raw/RAO_dat.xlsx"],
+      "notes": "Sheets noPTO_S=0.01 and PTO_S=0.01, column ProteusDS (Lin)"
+    }
+  ],
+
+  "normalized_datasets": [
+    {
+      "file": "normalized/<source>/heave_rao_free.txt",
+      "format": "rao",
+      "quantity": "heave_rao_free",
+      "units": {"omega": "rad/s", "heave_rao": "m/m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive up"
+    },
+    {
+      "file": "normalized/<source>/heave_rao_pto.txt",
+      "format": "rao",
+      "quantity": "heave_rao_pto",
+      "units": {"omega": "rad/s", "heave_rao": "m/m"},
+      "coordinate_frame": "global, Z-up",
+      "sign_convention": "positive up"
+    }
+  ],
+
+  "simulation_parameters": {
+    "wave_steepness_definition": "S = H / (g T^2), Wendt et al. (2019) eq. 5",
+    "wave_steepness": 0.01,
+    "wave_periods_s": [3, 4, 4.4, 5, 6, 7, 8, 9, 10, 11],
+    "pto": "optimum resistive damping sqrt(B^2 + (w (m + A) - K / w)^2) per period"
+  }
+}

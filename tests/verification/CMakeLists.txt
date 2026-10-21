@@ -179,6 +179,7 @@ message(STATUS "Add SEA-Stack verification tests (ordered: sphere decay/rao, osw
 
 build_verification_test(sphere_decay_multicode  sphere_decay_multicode)
 build_rao_verification_test(sphere_rao_sweep  sphere_rao_sweep  sphere_reg_waves_full  sphere)
+build_verification_test(sphere_rao_sweep_nl     sphere_rao_sweep_nl)
 build_verification_test(oswec_decay_wecsim      oswec_decay_wecsim)
 build_rao_verification_test(oswec_rao_sweep   oswec_rao_sweep   oswec_reg_waves_full   oswec)
 if(SEASTACK_ENABLE_MOORING)
@@ -192,6 +193,7 @@ build_verification_test(f3of_decay_multicode    f3of_decay_multicode)
 set(ALL_VERIFICATION_DEPENDS
     test_verification_sphere_decay_multicode_verification
     test_verification_sphere_rao_sweep_verification
+    test_verification_sphere_rao_sweep_nl_verification
     test_verification_oswec_decay_wecsim_verification
     test_verification_oswec_rao_sweep_verification
 )

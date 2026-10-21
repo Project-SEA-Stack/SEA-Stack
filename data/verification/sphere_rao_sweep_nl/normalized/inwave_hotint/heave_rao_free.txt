@@ -1,0 +1,18 @@
+# SEA-Stack Verification Data
+# format: rao
+# source: inwave_hotint
+# model: sphere_rao_sweep_nl
+# quantity: heave_rao_free
+# units: rad/s, m/m
+# columns: Omega(rad/s) HeaveRAO(m/m)
+# sheet: noPTO_S=0.01 (S = H/(g T^2) = 0.01)
+2.094395e+00 1.166442e-01
+1.570796e+00 1.069058e+00
+1.427997e+00 1.874226e+00
+1.256637e+00 1.490174e+00
+1.047198e+00 1.149657e+00
+8.975979e-01 1.063146e+00
+7.853982e-01 1.032971e+00
+6.981317e-01 1.021805e+00
+6.283185e-01 1.015188e+00
+5.711987e-01 1.017089e+00
