@@ -28,6 +28,72 @@ YAML and assets live under [`data/demos/run_seastack/`](../../data/demos/run_sea
 Preconfigured models (RM3, 5SA, OSWEC, IEA sphere, F3OF, and others) with
 documented command lines: [demo suite README](../../data/demos/run_seastack/README.md).
 
+## Large waves: nonlinear Froude-Krylov
+
+With `froude_krylov: nonlinear` on a body, SEA-Stack integrates the static
+and incident-wave pressure over the part of the hull that is below the wave
+surface at each time step. It then subtracts the linear Froude-Krylov force
+that the BEM excitation already contains, so only diffraction and radiation
+stay linear. Use it when heave or relative motion is a sizeable fraction of
+the draft or freeboard. In that range, nonlinear hydrostatics alone (buoyancy
+against the calm waterplane plus linear excitation) can throw the body clear
+of the water. Example:
+[`iea_sphere/regular_waves_nlfk`](../../data/demos/run_seastack/iea_sphere/regular_waves_nlfk/).
+
+```yaml
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/sphere.h5
+      mesh_file: ../assets/geometry/sphere.obj   # closed hull, body frame
+      hydrostatics: nonlinear                    # required with nonlinear FK
+      froude_krylov: nonlinear                   # default: linear
+      froude_krylov_pressure: airy_wheeler       # default; or hydrostatic
+```
+
+| Key | Values | Meaning |
+|---|---|---|
+| `mesh_file` | path | Closed hull mesh, shared by nonlinear hydrostatics and nonlinear Froude-Krylov |
+| `hydrostatics` | `linear` (default), `nonlinear` | Buoyancy from the BEM stiffness or from the mesh |
+| `froude_krylov` | `linear` (default), `nonlinear` | Incident-wave pressure on the mean hull (from the BEM excitation) or on the instantaneous wetted hull |
+| `froude_krylov_pressure` | `airy_wheeler` (default), `hydrostatic` | Airy pressure with Wheeler stretching, or the long-wave approximation `p = rho g (eta - z)` |
+
+Pick `hydrostatic` only for long waves: it ignores the decay of the wave
+pressure with depth, so its error grows with wavenumber times draft (about
+4% heave for the IEA sphere at T = 4.2 s).
+
+Rules (checked at start-up; each stops the run with an explicit error):
+
+- `hydrostatics: nonlinear` and a `mesh_file` are required.
+- `include_excitation` must stay `true`: the diffraction force still comes
+  from the BEM excitation.
+- The wave must be defined by discrete components (regular or spectral).
+  Eta-file imports are rejected.
+- If both the body-level `mesh_file` and `hydrostatics.mesh_file` are given,
+  they must be the same file.
+
+In still water the force equals nonlinear hydrostatics. The force ramps in
+with the same ramp as the excitation. A warning is logged if a body starts
+away from its BEM position (the subtracted linear force is phased for that
+position) or if it leaves the water completely.
+
+Verification: unit, comparison and external tests are listed in
+[docs/theory/NONLINEAR_FROUDE_KRYLOV.md](../theory/NONLINEAR_FROUDE_KRYLOV.md),
+section 9 onwards. Against the IEA OES Task 10 weakly nonlinear codes
+(MARIN, NREL) at steepness H/(gT²) = 0.01, the sphere heave RAO lies within
+1% of the range spanned by the two codes at every period, free and with
+optimum PTO.
+
+Limits:
+
+- Radiation and diffraction stay linear, about the mean position. The
+  incident wave is not disturbed by the body. Slamming, breaking and green
+  water are not modelled.
+- Cost scales with the number of mesh faces: about 0.6 ms per time step for
+  the 8064-face IEA sphere mesh (15 times faster than real time at
+  `dt = 0.01 s`, benchmark `test_benchmark_sphere_reg_nlfk`). Use the
+  coarsest mesh that resolves the waterline.
+
 ## Regular waves: constant-coefficient radiation
 
 For a regular wave, `radiation.method: constant_coefficients` applies the

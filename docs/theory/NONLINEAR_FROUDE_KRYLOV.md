@@ -97,8 +97,12 @@ vertices dominates.
   $$\eta(\mathbf{x},t) = r(t)\sum_i a_i \cos(\mathbf{k}_i\cdot\mathbf{x} - \omega_i t + \phi_i),
   \qquad \mathbf{k}_i = k_i(\cos\beta_i, \sin\beta_i).$$
 
-  - $r(t)$ is the excitation ramp, $\tfrac12(1-\cos(\pi t/T_r))$ for
-    $t < T_r$ and 1 after.
+  - $r(t)$ is the excitation ramp, with the same shape as the excitation
+    component it corrects: $\tfrac12(1-\cos(\pi t/T_r))$ for
+    frequency-domain excitation, $t/T_r$ for excitation IRF convolution, and 1
+    for $t \ge T_r$. The IRF component ramps $\eta(t-\tau)$ inside the
+    convolution, while NL FK applies $r(t)$; the two differ only during the
+    ramp.
   - **The ramp is applied to both $\eta$ and the wave pressure**, so clipping,
     pressure and the subtracted linear FK all follow the same envelope as the
     BEM excitation. (`WaveBase::GetElevation` itself stays unramped; the
@@ -242,8 +246,10 @@ Radiation and excitation components are unchanged and cover all bodies.
 - At each vertex, evaluate $\eta_v = \eta(x_v, y_v, t)$ and the signed height
   $d_v = z_v - \eta_v$.
 - Triangles with all $d_v < 0$ are wet; those with all $d_v \ge 0$ are dry.
-  Cut triangles are split on their edges by linear interpolation of $d$,
-  reusing the clipping logic in `MeshSubmergedVolume`.
+  Cut triangles are split on their edges by linear interpolation of $d$.
+  `WettedSurfacePressureIntegrator` does this with its own clipping.
+  `MeshSubmergedVolume` is left untouched so that nonlinear hydrostatics
+  results stay bit-identical.
 - This is exact when $\eta$ is linear along each edge, and second order in edge
   length otherwise.
 - No waterplane cap is needed, because the pressure is zero on the free
@@ -265,7 +271,20 @@ with $\mathbf{M}_T = -\big(\int_T p\,(\mathbf{r} - \mathbf{r}_{CG})\,dS\big)\tim
 - **Dynamic part second order** in panel size divided by wavelength and by the
   decay length $1/k$. The mesh convergence test measures it.
 - **Cost:** each wave component is evaluated once per vertex per force call,
-  and the values are shared by clipping and pressure.
+  and the values are shared by clipping and pressure. Every vertex needs its
+  true $\eta_v$, wet or dry, because a dry vertex at the end of a cut edge
+  sets where the clip point falls.
+
+**Precomputed linear FK.** $A_i$ and $B_i$ use the same integrator on the
+mesh at its BEM position, clipped at $z = 0$. Wet vertices carry the linear
+pressure shape $\rho g Z_i(z_v)\cos(\mathbf{k}_i\cdot\mathbf{x}_v)$ (and the
+sine). Clip points, which lie on $z = 0$, carry the surface value
+$\rho g\cos(\mathbf{k}_i\cdot\mathbf{x})$, interpolated along the cut edge. This
+is the first-order change of the nonlinear integral as the clip points move
+with $\eta$, so the mesh linear FK is the exact linearisation of the discrete
+nonlinear force and the difference is $O(a^2)$ (U5). Setting zero at the clip
+points instead would leave an $O(a)$ error of order panel size times
+waterline length.
 
 **Deviations from WEC-Sim `nonlinearHydro = 2`, and why:**
 
@@ -309,7 +328,7 @@ written reason in this file.
 | C4 | Runaway case (H = 10 m, T = 8 s) | NL FK heave stays within ±(draft + amplitude); calm-water NL case still warns |
 | C5 | RM3, NL FK on the float only, spar linear, small steepness | ≤ 1% of all-linear |
 | C6 | Four-model regular-wave sweep (linear, calm-water NL, NL FK long-wave, NL FK Airy) | informational; long-wave minus Airy difference grows with $kd$ |
-| C7 | Still-water decay, all three NL variants | bit-identical |
+| C7 | Still-water decay, all three NL variants | NL FK Airy and long-wave bit-identical; NL FK vs calm-water NL hydrostatics: max heave difference ≤ 1e-6 m |
 
 **Changes after the Python reference (stage 2a).** The reference
 (`tests/verification/utilities/nlfk_reference.py`) showed three criteria were
@@ -330,6 +349,15 @@ mis-set. No C++ results existed when these were changed.
   models of 0.10% / 0.62% at $kR$ = 0.14 ($a$ = 0.5 / 1.5 m) and 1.31% at
   $kR$ = 0.31, $a$ = 1.5 m. The criterion is limited to $kR \le 0.15$ so the
   model gap uses at most a third of the 2% budget.
+- **C7 (changed in stage 2b, before any C7 run):** "bit-identical" assumed
+  NL FK reuses the volume calculation of nonlinear hydrostatics. It does not:
+  NL FK integrates the static pressure over the surface, while nonlinear
+  hydrostatics uses the divergence theorem on the clipped volume. The two
+  agree to round-off (U3, ≤ 1e-9 relative), not bit for bit. In still water
+  both NL FK pressure models take the same code path, so they stay
+  bit-identical. Against nonlinear hydrostatics the decay must agree to
+  1e-6 m: far above round-off growth in a damped decay, far below any
+  physical effect.
 - **C2:** the free sphere at ω = 0.8 rad/s follows the wave (RAO ≈ 1.03), so
   its wetted surface barely changes and NL FK stays within 0.1% of linear. A
   1% amplitude check alone could not tell a working NL FK from a linear one.
@@ -357,6 +385,19 @@ for both pressure models (C4 limit ±10 m); linear gives ±5.3 m.
 
 Reproduce with `nlfk_reference.py selftest | regular | runaway | gr-compare`.
 
+**C++ results (stage 2b).** All unit and comparison criteria pass. Run
+`ctest -C Release -R "nonlinear_froude_krylov|compare_nlfk"`.
+
+| # | Result |
+|---|---|
+| C1 | NL FK − linear ≤ +0.46% amplitude, ≤ 0.19° phase. The +0.2% offset at small amplitude is the mesh waterplane stiffness against the H5 value |
+| C2 | All checked models within 0.6% and 0.3° of the reference. PTO, $a$ = 2.5 m: NL FK − linear −2.73% (reference −2.75%) Airy, −2.47% (reference −2.54%) long-wave |
+| C3 | RMS vs Giorgi & Ringwood ≤ 0.74% of range; vs the Python Airy + Wheeler reference ≤ 0.19% |
+| C4 | NL FK −5.41 to +5.04 m (Airy), −5.30 to +5.18 m (long-wave). Calm-water NL reaches −31.3 m and trips the divergence guard at 24.7 s; the guard then zeroes all hydro forces, so later heave is not reported |
+| C5 | Float and plate within 0.39% and 0.49° of all-linear |
+| C6 | Long-wave − Airy: +0.03% at $kd$ = 0.18, −0.40% at 0.80, −3.8% at 1.15 |
+| C7 | Airy and long-wave bit-identical; NL FK vs calm-water NL identical to the 1e-9 m print resolution |
+
 ## 10. External verification
 
 | Case | Data | Pass criterion |
@@ -369,6 +410,28 @@ Reproduce with `nlfk_reference.py selftest | regular | runaway | gr-compare`.
 
 The experimental criteria are provisional until the data has been inspected.
 Any change goes through review and is recorded here.
+
+**Status (stage 2b).**
+
+- **`sphere_rao_sweep_nl`: pass, all 20 points.** Test
+  `tests/verification/sphere_rao_sweep_nl`, data
+  `data/verification/sphere_rao_sweep_nl` (normalised from the existing
+  `RAO_dat.xlsx`, sheets `noPTO_S=0.01` and `PTO_S=0.01`). Wendt et al.
+  define steepness as $S = H/(gT^2)$ (their eq. 5), so $H = 0.01\,gT^2$ and
+  $a = H/2$, from 0.44 m at 3 s to 5.94 m at 11 s. With optimum PTO, both
+  nonlinear codes fall well below linear at long periods. NL FK follows them:
+  at 11 s the RAO is 0.577 (MARIN 0.575, NREL 0.574, SEA-Stack linear 0.700).
+  11 of the 20 points lie between MARIN and NREL; the largest distance
+  outside their range is 0.95% (optimum PTO, 7 s), against the 5% allowed.
+- **Sphere 5 m decay:** covered by C7. In still water NL FK reproduces
+  nonlinear hydrostatics to 1e-9 m, so the existing NL hydrostatics decay
+  cases (`iea_sphere/decay_nl_5m` regression baseline) apply unchanged.
+- **`sphere_decay_aau_experiment`:** not done. The dataset is not in the
+  repository. In still water NL FK equals nonlinear hydrostatics, so this case
+  tests the hydrostatics and radiation, not the FK term.
+- **`ccp_wsi_bt3_float`:** not done; waiting on the licence check.
+- **WEC-Sim ellipsoid:** not done here; planned as a demo with the user
+  documentation.
 
 ## 11. Validity and limits
 
