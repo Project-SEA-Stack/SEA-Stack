@@ -13,7 +13,9 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "utilities"))
+sys.path.append(str(Path(__file__).parent.parent.parent / "verification" / "utilities"))
 from compare_template_internal import write_comparison_status
+from verification_plot import create_verification_rao_plot
 
 import numpy as np
 
@@ -22,6 +24,7 @@ N_FIT_PERIODS = 10
 AMP_TOL_PCT = 1.0
 PHASE_TOL_DEG = 1.0
 BODIES = ["float", "plate"]
+N_FREQUENCIES = 9  # w = 0.4 to 1.2 rad/s, see test_compare_nlfk_float_rm3_reg.cpp
 
 
 def read_header_value(path, key):
@@ -55,8 +58,9 @@ def main():
     lines = ["| w (rad/s) | Body | Linear amp (m) | Float NL FK amp (m) | Amp diff (%) | Phase diff (deg) |",
              "|---|---|---|---|---|---|"]
     linear_files = sorted(base_dir.glob("w*_linear.txt"))
-    if len(linear_files) != 3:
-        failures.append(f"expected 3 frequencies, found {len(linear_files)}")
+    if len(linear_files) != N_FREQUENCIES:
+        failures.append(f"expected {N_FREQUENCIES} frequencies, found {len(linear_files)}")
+    rao_points = {body: [] for body in BODIES}  # (omega, linear RAO, NL FK RAO)
     for lin_path in linear_files:
         nl_path = base_dir / lin_path.name.replace("_linear", "_float_nlfk")
         if not nl_path.exists():
@@ -64,7 +68,9 @@ def main():
             continue
         w, z_lin = fit(lin_path)
         _, z_nl = fit(nl_path)
+        a = read_header_value(lin_path, "wave_amplitude_m")
         for body, zl, zn in zip(BODIES, z_lin, z_nl):
+            rao_points[body].append((w, zl / a, zn / a))
             amp_err = 100.0 * (abs(zn) / abs(zl) - 1.0)
             ph_err = float(np.degrees(np.angle(zn / zl)))
             key = f"{lin_path.stem.split('_')[0]}_{body}"
@@ -77,6 +83,27 @@ def main():
     summary = "\n".join(lines)
     print(summary)
     (base_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
+
+    for body, pts in rao_points.items():
+        if not pts:
+            continue
+        pts.sort(key=lambda p: p[0])
+        w = np.array([p[0] for p in pts])
+        z_lin = np.array([p[1] for p in pts])
+        z_nl = np.array([p[2] for p in pts])
+        create_verification_rao_plot(
+            w, np.abs(z_lin), np.angle(z_lin), w, np.abs(z_nl), np.angle(z_nl),
+            title=f"C5: RM3 {body.capitalize()} Heave RAO, Steepness 0.0005 — Float NL FK vs All Linear",
+            amp_label=f"{body.capitalize()} heave RAO (m/m)",
+            output_path=str(base_dir / "plots" / f"c5_{body}_heave_rao.png"),
+            ref_label="SEA-Stack all linear",
+            sim_label="SEA-Stack float NL FK (Airy + Wheeler)",
+            amp_errors=np.abs(np.abs(z_nl) / np.abs(z_lin) - 1.0),
+            phase_errors=np.abs(np.angle(z_nl / z_lin)),
+            ref_file_path=str(base_dir),
+            test_file_path=str(base_dir),
+            error_thresholds=(AMP_TOL_PCT / 100.0, 2.0 * AMP_TOL_PCT / 100.0),
+        )
     passed = not failures
     payload = write_comparison_status(str(base_dir), TEST_NAME, metrics, passed=passed)
     if failures:

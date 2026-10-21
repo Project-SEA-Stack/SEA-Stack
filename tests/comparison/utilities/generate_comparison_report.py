@@ -20,11 +20,36 @@ from typing import Optional
 # Import shared report generation infrastructure
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "utilities"))
 from report_generator import (
+    display_name,
     embed_plot_image,
     generate_pdf as shared_generate_pdf,
     generate_report_header,
     results_tests_search_bases,
 )
+
+# Section titles for cases whose generated name is not descriptive enough.
+# C1-C7 are the NL FK checks in docs/theory/NONLINEAR_FROUDE_KRYLOV.md.
+CASE_TITLES = {
+    "compare_nlfk_rao_sphere_reg":
+        "NL FK C1 and C6: Sphere RAO, Small Steepness and Four-Model Sweep",
+    "compare_nlfk_vs_reference_sphere_reg":
+        "NL FK C2: Sphere in Regular Waves vs Python Reference",
+    "compare_nlfk_prescribed_heave_sphere":
+        "NL FK C3: Prescribed Heave Force vs Giorgi & Ringwood",
+    "compare_nlfk_runaway_sphere_reg":
+        "NL FK C4: Sphere Runaway Case (H = 10 m, T = 8 s)",
+    "compare_nlfk_float_rm3_reg":
+        "NL FK C5: RM3 with NL FK on the Float Only",
+    "compare_nlfk_variants_sphere_decay":
+        "NL FK C7: Still-Water Decay, All Nonlinear Variants",
+}
+
+
+def case_title(test_name):
+    """Report heading for a comparison case directory name."""
+    if test_name in CASE_TITLES:
+        return CASE_TITLES[test_name]
+    return display_name(test_name.removeprefix("compare_"))
 
 
 def infer_config_from_output_dir(output_dir: Path) -> Optional[str]:
@@ -122,10 +147,7 @@ def generate_report(build_dir, output_dir, html_styling=False, config=None):
             "**Failed** — one or more method comparisons exceeded failure thresholds."
         )
     else:
-        outcome_line = (
-            "**Passed** — all comparisons completed successfully "
-            "(diagnostic summaries are not shown in this report)."
-        )
+        outcome_line = "**Passed** — all comparisons completed successfully."
 
     content = []
 
@@ -142,22 +164,22 @@ def generate_report(build_dir, output_dir, html_styling=False, config=None):
     content.append("")
 
     if tests:
-        content.append("## Results")
-        content.append("")
-
         for model in sorted(tests.keys()):
             content.append("\\clearpage")
             content.append("")
-            content.append(f"### {model.capitalize()}")
+            content.append(f"## {display_name(model)}")
             content.append("")
             content.append("\\nopagebreak")
             content.append("")
 
-            test_names = sorted(tests[model].keys())
+            test_names = sorted(tests[model].keys(), key=case_title)
             for ti, test_name in enumerate(test_names):
                 if ti > 0:
                     content.append("\\clearpage")
                     content.append("")
+
+                content.append(f"### {case_title(test_name)}")
+                content.append("")
 
                 test_data = tests[model][test_name]
                 status = test_data["status"]
@@ -181,15 +203,17 @@ def generate_report(build_dir, output_dir, html_styling=False, config=None):
                     )
                     content.append("")
 
-                if plots:
-                    for plot_file in plots:
-                        rel_path = embed_plot_image(plot_file, output_dir)
-                        stem_caption = plot_file.stem.replace("_", " ").title()
-                        caption = f"{model.upper()} — {stem_caption}"
-                        content.append(f"![{caption}]({rel_path})")
-                        content.append("")
-                elif status != "FAIL":
-                    content.append("*No plots available.*")
+                content.append(f"Status: **{status}** (`{model}/{test_name}`)")
+                content.append("")
+
+                for plot_file in plots:
+                    rel_path = embed_plot_image(plot_file, output_dir)
+                    caption = f"{display_name(model)} — {display_name(plot_file.stem)}"
+                    content.append(f"![{caption}]({rel_path})")
+                    content.append("")
+
+                if not plots and status != "FAIL":
+                    content.append("*No plots were written for this case.*")
                     content.append("")
 
     content.append("---")

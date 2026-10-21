@@ -25,12 +25,11 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "utilities"))
-from compare_template_internal import HAS_MATPLOTLIB, write_comparison_status
+sys.path.append(str(Path(__file__).parent.parent.parent / "verification" / "utilities"))
+from compare_template_internal import HAS_MATPLOTLIB, plot_comparison, write_comparison_status
+from verification_plot import create_verification_rao_plot
 
 import numpy as np
-
-if HAS_MATPLOTLIB:
-    import matplotlib.pyplot as plt
 
 TEST_NAME = "compare_radiation_methods_rm3_reg"
 N_FIT_PERIODS = 10
@@ -39,10 +38,9 @@ PHASE_TOL_DEG = 1.0
 POWER_TOL_PCT = 2.0
 
 METHODS = [
-    {"tag": "constant_coefficients", "label": "Constant coefficients", "marker": "o", "color": "#d62728",
-     "line": dict(ls="-", lw=3.0, alpha=0.5)},
-    {"tag": "rirf", "label": "RIRF convolution", "marker": "s", "color": "#1f77b4", "line": dict(ls="--", lw=1.5)},
-    {"tag": "state_space", "label": "State space", "marker": "^", "color": "#2ca02c", "line": dict(ls="-.", lw=1.5)},
+    {"tag": "constant_coefficients", "label": "Constant coefficients"},
+    {"tag": "rirf", "label": "RIRF convolution"},
+    {"tag": "state_space", "label": "State space"},
 ]
 
 
@@ -183,95 +181,89 @@ def main():
     sys.exit(0 if passed else 1)
 
 
-def method_points(rows, tag, fn):
-    pts = [(r["period"], fn(r[tag])) for r in rows if tag in r]
-    return (np.array([p[0] for p in pts]), np.array([p[1] for p in pts])) if pts else (None, None)
-
-
 def make_plots(base_dir, rows, series, curve, amp):
+    """Standard RAO pages (constant coefficients vs coupled frequency domain,
+    other methods overlaid) and a standard time-series page of the PTO stroke."""
     plot_dir = base_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
-    periods = np.array([r["period"] for r in rows])
+    for old in plot_dir.glob("*.png"):
+        old.unlink()
+    checked = "constant_coefficients"
+    rows_cc = sorted((r for r in rows if checked in r), key=lambda r: r["omega"])
+    if not rows_cc:
+        return
+    w = np.array([r["omega"] for r in rows_cc])
+    periods = 2 * np.pi / w
     t_lo, t_hi = 0.9 * periods.min(), 1.1 * periods.max()
-    curve = sorted((c for c in curve if t_lo <= c["period"] <= t_hi), key=lambda c: c["period"])
-    curve_t = [c["period"] for c in curve]
+    curve = sorted((c for c in curve if t_lo <= c["period"] <= t_hi), key=lambda c: c["omega"])
+    w_curve = np.array([c["omega"] for c in curve])
 
-    # Response vs period
-    panels = [
-        ("Float heave RAO |Z1|/a (m/m)", lambda r: abs(r["z_ref"][0]) / amp, lambda r: abs(r["z_unc"][0]) / amp,
-         lambda d: abs(d["z"][0]) / amp),
-        ("Plate heave RAO |Z2|/a (m/m)", lambda r: abs(r["z_ref"][1]) / amp, lambda r: abs(r["z_unc"][1]) / amp,
-         lambda d: abs(d["z"][1]) / amp),
-        ("Mean PTO power (kW)", lambda r: r["p_ref"] / 1e3, lambda r: r["p_unc"] / 1e3, lambda d: d["p"] / 1e3),
+    # (file stem, title, y label, reference value, uncoupled value, simulated value,
+    #  pass tolerance %, legend location clear of the data, quantity name if not an RAO)
+    pages = [
+        ("rm3_float_heave_rao", "RM3 Float Heave RAO", "Float heave RAO (m/m)",
+         lambda r: r["z_ref"][0] / amp, lambda r: r["z_unc"][0] / amp, lambda d: d["z"][0] / amp,
+         AMP_TOL_PCT, "lower right", None),
+        ("rm3_plate_heave_rao", "RM3 Plate Heave RAO", "Plate heave RAO (m/m)",
+         lambda r: r["z_ref"][1] / amp, lambda r: r["z_unc"][1] / amp, lambda d: d["z"][1] / amp,
+         AMP_TOL_PCT, "upper left", None),
+        ("rm3_mean_pto_power", "RM3 Mean PTO Power", "Mean PTO power (kW)",
+         lambda r: r["p_ref"] / 1e3, lambda r: r["p_unc"] / 1e3, lambda d: d["p"] / 1e3,
+         POWER_TOL_PCT, "upper right", "Mean PTO Power"),
     ]
-    fig, axes = plt.subplots(3, 1, figsize=(10, 11), sharex=True)
-    for ax, (label, f_ref, f_unc, f_sim) in zip(axes, panels):
-        ax.plot(curve_t, [f_ref(r) for r in curve], "k-", lw=1.5,
-                label="Coupled frequency domain (reference, all BEM grid points)")
-        ax.plot(curve_t, [f_unc(r) for r in curve], color="0.5", ls="--", lw=1.2,
-                label="Frequency domain without body-to-body radiation terms")
+    for stem, title, y_label, f_ref, f_unc, f_sim, tol, legend_loc, quantity in pages:
+        v_ref = np.array([f_ref(r) for r in rows_cc])
+        v_cc = np.array([f_sim(r[checked]) for r in rows_cc])
+        is_complex = np.iscomplexobj(v_ref)
+        extra = {
+            "Coupled FD, all BEM points":
+                (w_curve, np.abs([f_ref(c) for c in curve]), None),
+            "FD without body coupling":
+                (w_curve, np.abs([f_unc(c) for c in curve]), None),
+        }
         for m in METHODS:
-            p, y = method_points(rows, m["tag"], f_sim)
-            if p is not None:
-                ax.plot(p, y, ls="none", marker=m["marker"], color=m["color"], mfc="none", ms=9, mew=1.5,
-                        label=m["label"])
-        ax.set_ylabel(label)
-        ax.grid(True, alpha=0.3)
-    axes[0].set_title("RM3 two-body heave in regular waves: radiation methods vs coupled frequency domain")
-    axes[0].legend(fontsize=8)
-    axes[-1].set_xlabel("Wave period (s)")
-    fig.tight_layout()
-    fig.savefig(plot_dir / "rm3_response_vs_period.png", dpi=150)
-    plt.close(fig)
+            pts = sorted((r for r in rows if m["tag"] in r), key=lambda r: r["omega"])
+            if m["tag"] != checked and pts:
+                extra[m["label"]] = (np.array([r["omega"] for r in pts]),
+                                     np.abs([f_sim(r[m["tag"]]) for r in pts]), None)
+        create_verification_rao_plot(
+            w, np.abs(v_ref), np.angle(v_ref) if is_complex else None,
+            w, np.abs(v_cc), np.angle(v_cc) if is_complex else None,
+            title=f"{title} — Radiation Methods vs Coupled Frequency Domain",
+            amp_label=y_label,
+            output_path=str(plot_dir / f"{stem}.png"),
+            ref_label="Coupled FD, simulated periods",
+            sim_label="Constant coefficients",
+            amp_errors=np.abs(np.abs(v_cc) / np.abs(v_ref) - 1.0),
+            phase_errors=np.abs(np.angle(v_cc / v_ref)) if is_complex else None,
+            ref_file_path=str(base_dir / "reference.txt"),
+            test_file_path=str(base_dir),
+            extra_sources=extra,
+            error_thresholds=(tol / 100.0, 2.0 * tol / 100.0),
+            # The power curves cross every corner of the panel, so that legend
+            # sits in the gap under the panel. The RAO panels have an empty corner.
+            legend_kwargs=(dict(loc="upper center", bbox_to_anchor=(0.5, -0.08),
+                                ncol=3, fontsize=8) if quantity else
+                           dict(loc=legend_loc, ncol=2, fontsize=8)),
+            quantity=quantity,
+            connect_points=False,
+            show_extra_errors=True,
+        )
 
-    # Errors vs period
-    panels = [
-        ("float_amp_err_pct", "Float heave amplitude error (%)", AMP_TOL_PCT),
-        ("plate_amp_err_pct", "Plate heave amplitude error (%)", AMP_TOL_PCT),
-        ("float_phase_err_deg", "Float heave phase error (deg)", PHASE_TOL_DEG),
-        ("plate_phase_err_deg", "Plate heave phase error (deg)", PHASE_TOL_DEG),
-        ("power_err_pct", "Mean PTO power error (%)", POWER_TOL_PCT),
-    ]
-    fig, axes = plt.subplots(len(panels), 1, figsize=(10, 14), sharex=True)
-    for ax, (key, label, tol) in zip(axes, panels):
-        for m in METHODS:
-            p, y = method_points(rows, m["tag"], lambda d: d[key])
-            if p is not None:
-                ax.plot(p, y, marker=m["marker"], color=m["color"], mfc="none", ms=8, label=m["label"])
-        ax.axhspan(-tol, tol, color="#d62728", alpha=0.08, label=f"CC pass band (±{tol:g})")
-        ax.axhline(0.0, color="k", lw=0.8)
-        ax.set_ylabel(label, fontsize=9)
-        ax.grid(True, alpha=0.3)
-    axes[0].set_title("RM3 two-body heave: error relative to the coupled frequency-domain solution")
-    axes[0].legend(fontsize=8)
-    axes[-1].set_xlabel("Wave period (s)")
-    fig.tight_layout()
-    fig.savefig(plot_dir / "rm3_errors_vs_coupled_frequency_domain.png", dpi=150)
-    plt.close(fig)
-
-    # Relative heave (PTO stroke) time series at the largest-power period
-    row = rows[int(np.argmax([r["p_ref"] for r in rows]))]
-    w, k = row["omega"], row["k"]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    t_ref = None
-    for m in METHODS:
-        if (k, m["tag"]) not in series:
-            continue
-        t, s = series[(k, m["tag"])]
+    row = rows_cc[int(np.argmax([r["p_ref"] for r in rows_cc]))]
+    if (row["k"], checked) in series:
+        t, s = series[(row["k"], checked)]
         sel = t >= t[-1] - 4 * row["period"]
-        ax.plot(t[sel], s[sel], color=m["color"], label=m["label"], **m["line"])
-        t_ref = t[sel]
-    if t_ref is not None:
-        s_ss = np.real((row["z_ref"][0] - row["z_ref"][1]) * np.exp(1j * w * t_ref))
-        ax.plot(t_ref, s_ss, "k:", lw=1.5, label="Coupled frequency domain (steady state)")
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Relative heave float - plate (m)")
-    ax.set_title(f"RM3 PTO stroke, last 4 periods at T = {row['period']:.2f} s (largest power)")
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=9)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "rm3_pto_stroke_time_series_largest_power.png", dpi=150)
-    plt.close(fig)
+        s_ss = np.real((row["z_ref"][0] - row["z_ref"][1]) * np.exp(1j * row["omega"] * t[sel]))
+        plot_comparison(
+            t[sel], s_ss, s[sel],
+            label_a="Coupled frequency domain (steady state)",
+            label_b="Constant coefficients",
+            title=f"RM3 PTO Stroke, Last 4 Periods at T = {row['period']:.2f} s (Largest Power)",
+            y_label="Relative heave float - plate (m)",
+            output_path=str(plot_dir / "rm3_pto_stroke_time_series_largest_power.png"),
+            test_name_full=TEST_NAME,
+        )
 
 
 if __name__ == "__main__":

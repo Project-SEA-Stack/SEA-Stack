@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "utilities"))
-from compare_template_internal import write_comparison_status
+from compare_template_internal import plot_comparison, write_comparison_status
 
 import numpy as np
 
@@ -31,7 +31,7 @@ def main():
         sys.exit(1)
     base_dir = Path(sys.argv[1])
     metrics, failures = {}, []
-    lines = ["| Case | Airy vs long-wave | max |NL FK - NL hydrostatics| (m) | Heave range (m) |",
+    lines = ["| Case | Airy vs long-wave | Max abs(NL FK - NL hydrostatics) (m) | Heave range (m) |",
              "|---|---|---|---|"]
     for case in CASES:
         paths = {m: base_dir / f"{case}_{m}_heave.txt"
@@ -42,8 +42,19 @@ def main():
             continue
         identical = (paths["nlfk_airy_wheeler"].read_text(encoding="utf-8").splitlines()[5:]
                      == paths["nlfk_hydrostatic"].read_text(encoding="utf-8").splitlines()[5:])
-        z = {m: np.loadtxt(p, comments="#")[:, 1] for m, p in paths.items()}
+        data = {m: np.loadtxt(p, comments="#") for m, p in paths.items()}
+        z = {m: d[:, 1] for m, d in data.items()}
         diff = float(np.max(np.abs(z["nlfk_airy_wheeler"] - z["nl_hydrostatics"])))
+        plot_comparison(
+            data["nl_hydrostatics"][:, 0], z["nl_hydrostatics"], z["nlfk_airy_wheeler"],
+            label_a="NL hydrostatics (calm water)",
+            label_b="NL FK (Airy + Wheeler)",
+            title=(f"C7: Decay from {case.split('_')[1][:-1]} m, NL FK vs NL Hydrostatics "
+                   f"(Long-Wave {'Identical' if identical else 'DIFFERENT'})"),
+            y_label="Heave (m)",
+            output_path=str(base_dir / "plots" / f"c7_{case}_heave.png"),
+            test_name_full=TEST_NAME,
+        )
         metrics[f"{case}_nlfk_vs_nl_hydrostatics_max_diff_m"] = diff
         metrics[f"{case}_airy_vs_long_wave_identical"] = identical
         lines.append(f"| {case} | {'identical' if identical else 'DIFFERENT'} | {diff:.2e} | "

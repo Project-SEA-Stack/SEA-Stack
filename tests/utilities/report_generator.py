@@ -235,6 +235,36 @@ def find_plot_files(
     return records
 
 
+# Words in test and model identifiers that are acronyms or proper names.
+_DISPLAY_WORDS = {
+    "rm3": "RM3",
+    "f3of": "F3OF",
+    "oswec": "OSWEC",
+    "wecsim": "WEC-Sim",
+    "rao": "RAO",
+    "pto": "PTO",
+    "nlfk": "NL FK",
+    "nl": "NL",
+    "hs": "Hydrostatics",
+    "irf": "IRF",
+    "fd": "FD",
+    "dft": "DFT",
+    "reg": "Regular Waves",
+    "irreg": "Irregular Waves",
+    "vs": "vs",
+}
+
+
+def display_name(identifier):
+    """Readable title for a snake_case test or model identifier.
+
+    ``rm3_mooring`` -> ``RM3 Mooring``, ``f3of_decay_multicode`` ->
+    ``F3OF Decay Multicode``. Plain ``str.title()`` gives ``Rm3`` and ``F3Of``.
+    """
+    words = [w for w in str(identifier).split("_") if w]
+    return " ".join(_DISPLAY_WORDS.get(w.lower(), w.capitalize()) for w in words)
+
+
 def generate_report_header(suite_name, description, timestamp=None):
     """Generate standard markdown report header.
     
@@ -318,10 +348,10 @@ def generate_test_section(test_name, status, metrics, plots, output_dir, model=N
     content = []
     
     # Test header
-    display_name = test_name.replace('_', ' ').title()
+    title = display_name(test_name)
     if model:
-        display_name = f"{model.upper()} - {display_name}"
-    content.append(f"### {display_name}")
+        title = f"{model.upper()} - {title}"
+    content.append(f"### {title}")
     content.append("")
     content.append(f"**Status:** {status}")
     content.append("")
@@ -445,6 +475,9 @@ def generate_pdf(
         str(markdown_abs),
         '-o', str(output_abs),
         '--standalone',
+        '--toc',
+        '--toc-depth=3',
+        '-V', 'geometry:margin=2.2cm',
         '--metadata', f'title={doc_title}',
         '--metadata', f'date={datetime.now().strftime("%B %d, %Y")}',
     ]
@@ -461,6 +494,9 @@ def generate_pdf(
                 '% SEA-Stack: keep figures in Markdown source order in PDF output.\n'
                 '\\usepackage{float}\n'
                 '\\floatplacement{figure}{H}\n'
+                '% Start the report body on a new page after the table of contents.\n'
+                '\\let\\SeaStackOldToc\\tableofcontents\n'
+                '\\renewcommand{\\tableofcontents}{\\SeaStackOldToc\\clearpage}\n'
             )
         include_header = ['--include-in-header', header_path]
 

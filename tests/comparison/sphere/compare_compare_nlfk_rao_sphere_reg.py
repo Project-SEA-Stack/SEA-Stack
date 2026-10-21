@@ -15,7 +15,9 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "utilities"))
+sys.path.append(str(Path(__file__).parent.parent.parent / "verification" / "utilities"))
 from compare_template_internal import write_comparison_status
+from verification_plot import create_verification_rao_plot
 
 import numpy as np
 
@@ -26,6 +28,50 @@ PHASE_TOL_DEG = 1.0
 DRAFT_M = 5.0  # sphere centre on the mean surface at equilibrium
 
 MODELS = ["linear", "nl_hydrostatics", "nlfk_airy_wheeler", "nlfk_hydrostatic"]
+MODEL_LABELS = {
+    "linear": "SEA-Stack linear",
+    "nl_hydrostatics": "SEA-Stack NL hydrostatics (calm water)",
+    "nlfk_airy_wheeler": "SEA-Stack NL FK (Airy + Wheeler)",
+    "nlfk_hydrostatic": "SEA-Stack NL FK (long-wave)",
+}
+
+
+def write_rao_plot(base_dir, results, title, file_name, error_thresholds, legend_kwargs=None):
+    """Standard RAO page: NL FK (Airy + Wheeler) against linear, others overlaid.
+
+    results: {omega tag: {model: fit tuple}}.
+    """
+    rows = sorted(results.values(), key=lambda res: res["linear"][0])
+    rows = [res for res in rows if "nlfk_airy_wheeler" in res]
+    if not rows:
+        return
+
+    def series(model):
+        return (np.array([res[model][0] for res in rows]),
+                np.array([res[model][2] for res in rows]),
+                np.radians([res[model][3] for res in rows]))
+
+    w_lin, rao_lin, ph_lin = series("linear")
+    w_nl, rao_nl, ph_nl = series("nlfk_airy_wheeler")
+    phase_err = np.abs(np.angle(np.exp(1j * (ph_nl - ph_lin))))
+    extra = {MODEL_LABELS[m]: series(m) for m in MODELS[1:]
+             if m != "nlfk_airy_wheeler" and all(m in res for res in rows)}
+    create_verification_rao_plot(
+        w_lin, rao_lin, ph_lin, w_nl, rao_nl, ph_nl,
+        title=title,
+        amp_label="Heave RAO (m/m)",
+        output_path=str(base_dir / "plots" / file_name),
+        ref_label=MODEL_LABELS["linear"],
+        sim_label=MODEL_LABELS["nlfk_airy_wheeler"],
+        amp_errors=np.abs(rao_nl / rao_lin - 1.0),
+        phase_errors=phase_err,
+        ref_file_path=str(base_dir),
+        test_file_path=str(base_dir),
+        extra_sources=extra,
+        error_thresholds=error_thresholds,
+        legend_kwargs=legend_kwargs,
+        show_extra_errors=True,
+    )
 
 
 def read_header_value(path, key):
@@ -106,6 +152,13 @@ def main():
     summary = "\n".join(lines)
     print(summary)
     (base_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
+
+    write_rao_plot(base_dir, c1, "C1: Sphere Heave RAO, Steepness 0.0005 — NL FK vs Linear",
+                   "c1_heave_rao_small_steepness.png",
+                   error_thresholds=(AMP_TOL_PCT / 100.0, 2.0 * AMP_TOL_PCT / 100.0))
+    write_rao_plot(base_dir, c6, "C6: Sphere Heave RAO, a = 1 m — Four Hydrostatic and FK Models",
+                   "c6_heave_rao_four_models.png", error_thresholds=(0.10, 0.25),
+                   legend_kwargs=dict(loc="upper right", ncol=2))
 
     passed = not failures
     payload = write_comparison_status(str(base_dir), TEST_NAME, metrics, passed=passed)

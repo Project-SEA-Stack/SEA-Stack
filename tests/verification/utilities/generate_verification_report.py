@@ -19,6 +19,7 @@ from typing import Optional
 # Import shared report generation infrastructure
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "utilities"))
 from report_generator import (
+    display_name,
     find_status_files,
     find_plot_files as shared_find_plot_files,
     generate_report_header,
@@ -36,6 +37,12 @@ VERIFICATION_TEST_GROUPS = (
     "f3of_decay_multicode",
     "rm3_mooring",
 )
+
+# Section titles for groups whose generated name is not descriptive enough.
+GROUP_TITLES = {
+    "sphere_rao_sweep_nl":
+        "Sphere RAO Sweep, Nonlinear Froude-Krylov (IEA Task 10, Steepness 0.01)",
+}
 
 
 def infer_config_from_output_dir(output_dir: Path) -> Optional[str]:
@@ -161,20 +168,18 @@ def generate_report(build_dir, output_dir, config=None, html_styling=False):
             # Keep the section title with its first figure in PDF output.
             content.append("\\clearpage")
             content.append("")
-            display_name = group.replace("_", " ").title().replace("Wecsim", "WEC-Sim")
-            content.append(f"### {display_name}")
+            title = GROUP_TITLES.get(group, display_name(group))
+            content.append(f"### {title}")
             content.append("")
             content.append("\\nopagebreak")
             content.append("")
             for pf in plot_files:
                 rel = embed_plot_image(pf, output_dir)
-                caption = (
-                    pf.stem.replace("_", " ")
-                    .replace("comparison", "")
-                    .replace("verification", "")
-                    .replace("overlay", "")
-                    .strip()
-                )
+                stem_words = [
+                    w for w in pf.stem.split("_")
+                    if w not in ("comparison", "verification", "overlay")
+                ]
+                caption = display_name("_".join(stem_words))
                 content.append(f"![{caption}]({rel})")
                 content.append("")
 

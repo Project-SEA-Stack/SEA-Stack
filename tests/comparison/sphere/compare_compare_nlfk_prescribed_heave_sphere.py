@@ -19,7 +19,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.append(str(HERE.parent / "utilities"))
 sys.path.append(str(HERE.parent.parent / "verification" / "utilities"))
-from compare_template_internal import write_comparison_status
+from compare_template_internal import plot_comparison, write_comparison_status
 
 import numpy as np
 
@@ -65,6 +65,7 @@ def main():
     files = sorted(base_dir.glob("*_T*_a*.txt"))
     if len(files) != 12:
         failures.append(f"expected 12 result files, found {len(files)}")
+    worst = {}  # body -> (RMS vs G&R, plot inputs) of the checked case with the largest RMS
     for path in files:
         h = read_header(path)
         body = bodies[h["body"]]
@@ -86,10 +87,24 @@ def main():
                      f"{rms_aw:.2f} | {'yes' if checked else 'info'} |")
         if checked and rms_gr > RMS_TOL_PCT:
             failures.append(f"{key}: RMS vs G&R {rms_gr:.2f}% > {RMS_TOL_PCT}%")
+        if checked and rms_gr > worst.get(h["body"], (-1.0,))[0]:
+            worst[h["body"]] = (rms_gr, key, h, t, f_gr, fz)
 
     summary = "\n".join(lines)
     print(summary)
     (base_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
+
+    for body, (rms_gr, key, h, t, f_gr, fz) in sorted(worst.items()):
+        plot_comparison(
+            t, f_gr / 1e3, fz / 1e3,
+            label_a="Giorgi & Ringwood (2017)",
+            label_b="SEA-Stack NL FK (mesh)",
+            title=(f"C3: {body.capitalize()}, T = {h['period_s']:g} s, a = {h['wave_amplitude_m']:g} m, "
+                   f"Heave {h['heave_amplitude_m']:g} m (RMS {rms_gr:.2f}% of Range)"),
+            y_label="Vertical pressure force (kN)",
+            output_path=str(base_dir / "plots" / f"c3_{key}_force.png"),
+            test_name_full=TEST_NAME,
+        )
     passed = not failures
     payload = write_comparison_status(str(base_dir), TEST_NAME, metrics, passed=passed)
     if failures:

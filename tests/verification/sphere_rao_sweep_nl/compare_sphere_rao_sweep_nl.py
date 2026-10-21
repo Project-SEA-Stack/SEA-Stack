@@ -23,6 +23,9 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'regression', 'utilities'))
 from compare_template import write_status_file
 
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'utilities'))
+from verification_plot import create_verification_rao_plot
+
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'verification'))
 from normalize_utils import load_standard
 
@@ -70,28 +73,36 @@ def load_ref(normalized_dir, source, config):
     return data[:, 0], data[:, 1]
 
 
-def write_plot(output_dir, config, ref, sim):
-    try:
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return
-    fig, ax = plt.subplots(figsize=(7, 4))
-    for name, (w, rao) in ref.items():
-        ax.plot(2 * np.pi / w, rao, "o--" if name in NONLINEAR_REFS else "x:", label=name)
-    for name, (w, rao) in sim.items():
-        ax.plot(2 * np.pi / w, rao, "s-", label=f"SEA-Stack {name}")
-    ax.set_xlabel("Wave period (s)")
-    ax.set_ylabel("Heave RAO (m/m)")
-    ax.set_title(f"IEA sphere, S = 0.01, {'free' if config == 'free' else 'optimum PTO'}")
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    plots = output_dir / "plots"
-    plots.mkdir(parents=True, exist_ok=True)
-    fig.savefig(plots / f"sphere_rao_sweep_nl_{config}.png", dpi=120)
-    plt.close(fig)
+def write_plot(output_dir, normalized_dir, config, ref, sim):
+    """Standard verification RAO page: NL FK (Airy + Wheeler) vs MARIN."""
+    w_ref, rao_ref = ref["marin"]
+    w_sim, rao_sim = sim[CHECKED_MODEL]
+    rao_sim_at_ref = np.interp(w_ref, w_sim[::-1], rao_sim[::-1])
+    amp_errors = np.abs(rao_sim_at_ref / rao_ref - 1.0)
+    extra_sources = {
+        "NREL (WEC-Sim, nonlinear)": (*ref["nrel"], None),
+        "InWave (linear)": (*ref[LINEAR_REF], None),
+    }
+    if "linear" in sim:
+        extra_sources["SEA-Stack linear"] = (*sim["linear"], None)
+    if "nlfk_hydrostatic" in sim:
+        extra_sources["SEA-Stack NL FK (long-wave)"] = (*sim["nlfk_hydrostatic"], None)
+    body = "Free Body" if config == "free" else "Optimum PTO"
+    create_verification_rao_plot(
+        w_ref, rao_ref, None,
+        w_sim, rao_sim, None,
+        title=f"Sphere Heave RAO, Steepness 0.01, {body} — NL FK vs MARIN",
+        amp_label="Heave RAO (m/m)",
+        output_path=str(output_dir / "plots" / f"sphere_rao_sweep_nl_{config}.png"),
+        ref_label="MARIN (aNySIM, nonlinear)",
+        sim_label="SEA-Stack NL FK (Airy + Wheeler)",
+        amp_errors=amp_errors,
+        ref_file_path=str(normalized_dir / "marin" / f"heave_rao_{config}.txt"),
+        test_file_path=str(output_dir),
+        extra_sources=extra_sources,
+        error_thresholds=(BAND_WIDENING, 2.0 * BAND_WIDENING),
+        legend_kwargs=dict(loc="lower right", ncol=2),
+    )
 
 
 def main():
@@ -145,7 +156,7 @@ def main():
                 failures.append(f"{config} T = {period:.1f} s: NL FK RAO {vals[CHECKED_MODEL]:.4f} "
                                 f"outside [{lo:.4f}, {hi:.4f}]")
         lines.append("")
-        write_plot(results_dir, config, ref, sim)
+        write_plot(results_dir, normalized_dir, config, ref, sim)
 
     summary = "\n".join(lines)
     print(summary)

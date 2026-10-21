@@ -1,7 +1,8 @@
 /**
  * C5 (docs/theory/NONLINEAR_FROUDE_KRYLOV.md, section 9): RM3 in small regular
  * waves (steepness H / lambda = 0.0005), two heave DOFs with a linear PTO
- * damper, constant-coefficient radiation, at w = 0.6, 0.8, 1.0 rad/s.
+ * damper, constant-coefficient radiation, at w = 0.4 to 1.2 rad/s in steps of
+ * 0.1 rad/s (wave periods 5.2 to 15.7 s, inside the rm3.h5 BEM range).
  *
  * Runs: all linear, and float with nonlinear hydrostatics + NL FK (Airy +
  * Wheeler) while the plate stays linear (per-body toggle). At this steepness
@@ -154,7 +155,7 @@ int main(int /*argc*/, char* /*argv*/[]) {
     const std::string out_dir = seastack::chrono::GetTestOutDir() + "/" + RESULTS_DIR_NAME;
     std::filesystem::create_directories(out_dir);
 
-    for (double omega : {0.6, 0.8, 1.0}) {
+    for (double omega : {0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2}) {
         // Deep-water wavelength: the default sea state is deep water.
         const double amplitude = 0.5 * kSteepness * 2.0 * CH_PI * kG / (omega * omega);
         for (bool nlfk : {false, true}) {

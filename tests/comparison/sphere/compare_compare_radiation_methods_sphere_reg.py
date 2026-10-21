@@ -21,12 +21,11 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "utilities"))
-from compare_template_internal import HAS_MATPLOTLIB, write_comparison_status
+sys.path.append(str(Path(__file__).parent.parent.parent / "verification" / "utilities"))
+from compare_template_internal import HAS_MATPLOTLIB, plot_comparison, write_comparison_status
+from verification_plot import create_verification_rao_plot
 
 import numpy as np
-
-if HAS_MATPLOTLIB:
-    import matplotlib.pyplot as plt
 
 TEST_NAME = "compare_radiation_methods_sphere_reg"
 N_FIT_PERIODS = 10
@@ -34,10 +33,9 @@ AMP_TOL_PCT = 1.0
 PHASE_TOL_DEG = 1.0
 
 METHODS = [
-    {"tag": "constant_coefficients", "label": "Constant coefficients", "marker": "o", "color": "#d62728",
-     "line": dict(ls="-", lw=3.0, alpha=0.5)},
-    {"tag": "rirf", "label": "RIRF convolution", "marker": "s", "color": "#1f77b4", "line": dict(ls="--", lw=1.5)},
-    {"tag": "state_space", "label": "State space", "marker": "^", "color": "#2ca02c", "line": dict(ls="-.", lw=1.5)},
+    {"tag": "constant_coefficients", "label": "Constant coefficients"},
+    {"tag": "rirf", "label": "RIRF convolution"},
+    {"tag": "state_space", "label": "State space"},
 ]
 
 
@@ -154,85 +152,65 @@ def main():
 
 
 def make_plots(base_dir, rows, series, curve, amp):
+    """Standard RAO page (constant coefficients vs frequency domain, other
+    methods overlaid) and standard time-series page at the largest response."""
     plot_dir = base_dir / "plots"
     plot_dir.mkdir(parents=True, exist_ok=True)
-    periods = np.array([r["period"] for r in rows])
-    z_ref = np.array([r["z_ref"] for r in rows])
+    for old in plot_dir.glob("*.png"):
+        old.unlink()
+    rows = sorted(rows, key=lambda r: r["omega"])
+    checked = "constant_coefficients"
+    rows_cc = [r for r in rows if checked in r]
+    if not rows_cc:
+        return
+    w = np.array([r["omega"] for r in rows_cc])
+    z_ref = np.array([r["z_ref"] for r in rows_cc])
+    z_cc = np.array([r[checked]["z"] for r in rows_cc])
+
+    periods = 2 * np.pi / w
     t_lo, t_hi = 0.9 * periods.min(), 1.1 * periods.max()
     curve = sorted(c for c in curve if t_lo <= c[0] <= t_hi)
-    curve_t = np.array([c[0] for c in curve])
-    curve_z = np.array([c[1] for c in curve])
-
-    # RAO amplitude and phase vs period
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-    ref_label = "Frequency domain (reference, all BEM grid points)"
-    ax1.plot(curve_t, np.abs(curve_z) / amp, "k-", lw=1.5, label=ref_label)
-    ax2.plot(curve_t, np.degrees(np.angle(curve_z)), "k-", lw=1.5, label=ref_label)
+    extra = {"Frequency domain (all BEM grid points)": (
+        2 * np.pi / np.array([c[0] for c in curve]),
+        np.abs([c[1] for c in curve]) / amp, None)}
     for m in METHODS:
-        pts = [(r["period"], r[m["tag"]]["z"]) for r in rows if m["tag"] in r]
-        if not pts:
-            continue
-        p, z = np.array([q[0] for q in pts]), np.array([q[1] for q in pts])
-        style = dict(ls="none", marker=m["marker"], color=m["color"], mfc="none", ms=9, mew=1.5, label=m["label"])
-        ax1.plot(p, np.abs(z) / amp, **style)
-        ax2.plot(p, np.degrees(np.angle(z)), **style)
-    ax1.set_ylabel("Heave RAO |Z|/a (m/m)")
-    ax1.set_title("Sphere heave in regular waves (PTO damper): radiation methods vs frequency domain")
-    ax2.set_ylabel("Heave phase re. wave (deg)")
-    ax2.set_xlabel("Wave period (s)")
-    for ax in (ax1, ax2):
-        ax.grid(True, alpha=0.3)
-        ax.legend(fontsize=9)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "heave_rao_vs_period.png", dpi=150)
-    plt.close(fig)
+        pts = [r for r in rows if m["tag"] in r]
+        if m["tag"] != checked and pts:
+            z = np.array([r[m["tag"]]["z"] for r in pts])
+            extra[m["label"]] = (np.array([r["omega"] for r in pts]), np.abs(z) / amp, np.angle(z))
 
-    # Errors vs period
-    fig, axes = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
-    keys = [("amp_err_pct", "Amplitude error (%)", AMP_TOL_PCT),
-            ("phase_err_deg", "Phase error (deg)", PHASE_TOL_DEG),
-            ("power_err_pct", "Mean PTO power error (%)", None)]
-    for ax, (key, label, tol) in zip(axes, keys):
-        for m in METHODS:
-            pts = [(r["period"], r[m["tag"]][key]) for r in rows if m["tag"] in r]
-            if pts:
-                ax.plot(*zip(*pts), marker=m["marker"], color=m["color"], mfc="none", ms=8, label=m["label"])
-        if tol is not None:
-            ax.axhspan(-tol, tol, color="#d62728", alpha=0.08, label=f"CC pass band (±{tol:g})")
-        ax.axhline(0.0, color="k", lw=0.8)
-        ax.set_ylabel(label)
-        ax.grid(True, alpha=0.3)
-    axes[0].set_title("Sphere heave: error relative to the frequency-domain solution")
-    axes[0].legend(fontsize=9)
-    axes[-1].set_xlabel("Wave period (s)")
-    fig.tight_layout()
-    fig.savefig(plot_dir / "heave_errors_vs_frequency_domain.png", dpi=150)
-    plt.close(fig)
+    create_verification_rao_plot(
+        w, np.abs(z_ref) / amp, np.angle(z_ref), w, np.abs(z_cc) / amp, np.angle(z_cc),
+        title="Sphere Heave RAO with PTO Damper — Radiation Methods vs Frequency Domain",
+        amp_label="Heave RAO (m/m)",
+        output_path=str(plot_dir / "heave_rao_vs_period.png"),
+        ref_label="Frequency domain (at simulated periods)",
+        sim_label="Constant coefficients",
+        amp_errors=np.abs(np.abs(z_cc) / np.abs(z_ref) - 1.0),
+        phase_errors=np.abs(np.angle(z_cc / z_ref)),
+        ref_file_path=str(base_dir / "reference.txt"),
+        test_file_path=str(base_dir),
+        extra_sources=extra,
+        error_thresholds=(AMP_TOL_PCT / 100.0, 2.0 * AMP_TOL_PCT / 100.0),
+        legend_kwargs=dict(loc="lower right", ncol=2),
+        connect_points=False,
+        show_extra_errors=True,
+    )
 
-    # Time series at the period with the largest reference response
-    i_res = int(np.argmax(np.abs(z_ref)))
-    row = rows[i_res]
-    w, k = row["omega"], row["k"]
-    fig, ax = plt.subplots(figsize=(10, 5))
-    t_ref = None
-    for m in METHODS:
-        if (k, m["tag"]) not in series:
-            continue
-        t, z = series[(k, m["tag"])]
+    row = rows_cc[int(np.argmax(np.abs(z_ref)))]
+    if (row["k"], checked) in series:
+        t, z = series[(row["k"], checked)]
         sel = t >= t[-1] - 4 * row["period"]
-        ax.plot(t[sel], z[sel], color=m["color"], label=m["label"], **m["line"])
-        t_ref = t[sel]
-    if t_ref is not None:
-        z_ss = np.real(row["z_ref"] * np.exp(1j * w * t_ref))
-        ax.plot(t_ref, z_ss, "k:", lw=1.5, label="Frequency domain (steady state)")
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Heave from equilibrium (m)")
-    ax.set_title(f"Sphere heave, last 4 periods at T = {row['period']:.2f} s (largest response)")
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=9)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "heave_time_series_largest_response.png", dpi=150)
-    plt.close(fig)
+        z_ss = np.real(row["z_ref"] * np.exp(1j * row["omega"] * t[sel]))
+        plot_comparison(
+            t[sel], z_ss, z[sel],
+            label_a="Frequency domain (steady state)",
+            label_b="Constant coefficients",
+            title=f"Sphere Heave, Last 4 Periods at T = {row['period']:.2f} s (Largest Response)",
+            y_label="Heave from equilibrium (m)",
+            output_path=str(plot_dir / "heave_time_series_largest_response.png"),
+            test_name_full=TEST_NAME,
+        )
 
 
 if __name__ == "__main__":

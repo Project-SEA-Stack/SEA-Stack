@@ -22,13 +22,19 @@ import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent / "utilities"))
-from compare_template_internal import write_comparison_status
+from compare_template_internal import plot_comparison, write_comparison_status
 
 import numpy as np
 
 TEST_NAME = "compare_nlfk_runaway_sphere_reg"
 HEAVE_LIMIT_M = 10.0  # draft 5 m + wave amplitude 5 m
 MODELS = ["linear", "nl_hydrostatics", "nlfk_airy_wheeler", "nlfk_hydrostatic"]
+MODEL_LABELS = {
+    "linear": "Linear",
+    "nl_hydrostatics": "NL hydrostatics (calm water)",
+    "nlfk_airy_wheeler": "NL FK (Airy + Wheeler)",
+    "nlfk_hydrostatic": "NL FK (long-wave)",
+}
 NLFK = ("nlfk_airy_wheeler", "nlfk_hydrostatic")
 CALM_WATER_WARNING = "nonlinear hydrostatics combined with waves"
 DIVERGENCE = re.compile(r"(?:Simulation divergence|Invalid force) detected at t=([-+0-9.eE]+)")
@@ -60,6 +66,7 @@ def main():
 
     lines = ["| Model | Heave min (m) | Heave max (m) | Divergence guard tripped at (s) | Checked |",
              "|---|---|---|---|---|"]
+    heave = {}  # model -> (time, heave) up to the divergence time
     for model in MODELS:
         path = base_dir / f"runaway_{model}_heave.txt"
         if not path.exists():
@@ -68,7 +75,9 @@ def main():
         data = np.loadtxt(path, comments="#")
         match = DIVERGENCE.search(sections.get(model, ""))
         t_div = float(match.group(1)) if match else None
-        z = data[data[:, 0] <= t_div, 1] if t_div is not None else data[:, 1]
+        kept = data[data[:, 0] <= t_div] if t_div is not None else data
+        z = kept[:, 1]
+        heave[model] = (kept[:, 0], z)
         metrics[f"{model}_heave_min_m"] = float(z.min())
         metrics[f"{model}_heave_max_m"] = float(z.max())
         metrics[f"{model}_divergence_time_s"] = t_div
@@ -93,6 +102,25 @@ def main():
     summary = "\n".join(lines)
     print(summary)
     (base_dir / "summary.md").write_text(summary + "\n", encoding="utf-8")
+
+    if "linear" in heave:
+        t_lin, z_lin = heave["linear"]
+        for model in MODELS[1:]:
+            if model not in heave:
+                continue
+            t, z = heave[model]
+            n = min(len(t), len(t_lin))
+            t_div = metrics.get(f"{model}_divergence_time_s")
+            cut = f" (Diverges at t = {t_div:.1f} s)" if t_div is not None else ""
+            plot_comparison(
+                t_lin[:n], z_lin[:n], z[:n],
+                label_a=MODEL_LABELS["linear"],
+                label_b=MODEL_LABELS[model],
+                title=f"C4: {MODEL_LABELS[model]} vs Linear, H = 10 m, T = 8 s{cut}",
+                y_label="Heave (m)",
+                output_path=str(base_dir / "plots" / f"c4_{model}_vs_linear_heave.png"),
+                test_name_full=TEST_NAME,
+            )
     passed = not failures
     payload = write_comparison_status(str(base_dir), TEST_NAME, metrics, passed=passed)
     if failures:
