@@ -19,8 +19,10 @@ add_library(seastack_hydro STATIC
     src/geometry/triangle_mesh.cpp
     src/geometry/mesh_io.cpp
     src/geometry/submerged_volume.cpp
+    src/geometry/wetted_surface_pressure.cpp
     src/force_components/hydrostatics_component.cpp
     src/force_components/nonlinear_hydrostatics_component.cpp
+    src/force_components/nonlinear_froude_krylov_component.cpp
     src/force_components/radiation_component.cpp
     src/force_components/radiation_ss_component.cpp
     src/force_components/radiation_cc_component.cpp

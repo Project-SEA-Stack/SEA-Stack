@@ -791,6 +791,10 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                     } else if (key == "hydrostatics" && value.empty()) {
                         in_body_hydrostatics = true;
                         body_had_hydrostatics_block = true;
+                    } else if (key == "hydrostatics" && value.find('{') == std::string::npos) {
+                        // Scalar form: hydrostatics: nonlinear (mesh from the body-level mesh_file)
+                        apply_hydrostatics_key("model", value);
+                        body_had_hydrostatics_block = true;
                     } else if (key == "hydrostatics") {
                         // Inline form: hydrostatics: { model: nonlinear, mesh_file: hull.stl }
                         const auto kv = parse_inline_brace_kv(value);
@@ -810,6 +814,30 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         current_body.h5_file = ResolvePath(value, hydro_file_path);
                     } else if (key == "mesh_file") {
                         current_body.mesh_file = ResolvePath(value, hydro_file_path);
+                    } else if (key == "froude_krylov") {
+                        std::string val_lower = value;
+                        std::transform(val_lower.begin(), val_lower.end(), val_lower.begin(), ::tolower);
+                        if (val_lower == "nonlinear") {
+                            current_body.froude_krylov = FroudeKrylovModel::kNonlinear;
+                        } else if (val_lower == "linear") {
+                            current_body.froude_krylov = FroudeKrylovModel::kLinear;
+                        } else {
+                            throw std::runtime_error(Location(hydro_file_path, line_number) + "body '" +
+                                                     current_body.name + "': froude_krylov must be "
+                                                     "'linear' or 'nonlinear'; got \"" + value + "\"");
+                        }
+                    } else if (key == "froude_krylov_pressure") {
+                        std::string val_lower = value;
+                        std::transform(val_lower.begin(), val_lower.end(), val_lower.begin(), ::tolower);
+                        if (val_lower == "airy_wheeler") {
+                            current_body.froude_krylov_pressure = FroudeKrylovPressureModel::kAiryWheeler;
+                        } else if (val_lower == "hydrostatic") {
+                            current_body.froude_krylov_pressure = FroudeKrylovPressureModel::kHydrostatic;
+                        } else {
+                            throw std::runtime_error(Location(hydro_file_path, line_number) + "body '" +
+                                                     current_body.name + "': froude_krylov_pressure must be "
+                                                     "'airy_wheeler' or 'hydrostatic'; got \"" + value + "\"");
+                        }
                     } else if (key == "include_excitation") {
                         current_body.include_excitation = ParseBool(value, true);
                     } else if (key == "include_radiation") {
@@ -1327,6 +1355,26 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             if (!data.bodies[i].mesh_file.empty()) {
                 data.bodies[i].hydrostatics.mesh_file = data.bodies[i].mesh_file;
             }
+        }
+    }
+
+    // Body-level mesh_file is the canonical hull for all nonlinear models;
+    // hydrostatics.mesh_file is still accepted. Downstream code reads
+    // hydrostatics.mesh_file only.
+    for (auto& body : data.bodies) {
+        if (body.hydrostatics.model == HydrostaticsModel::kNonlinear && !body.mesh_file.empty()) {
+            if (body.hydrostatics.mesh_file.empty()) {
+                body.hydrostatics.mesh_file = body.mesh_file;
+            } else if (body.hydrostatics.mesh_file != body.mesh_file) {
+                throw std::runtime_error("body '" + body.name + "': mesh_file ('" + body.mesh_file +
+                                         "') and hydrostatics.mesh_file ('" + body.hydrostatics.mesh_file +
+                                         "') differ. Set the hull once, with the body-level mesh_file.");
+            }
+        }
+        if (body.froude_krylov == FroudeKrylovModel::kNonlinear && !body.include_excitation) {
+            throw std::runtime_error("body '" + body.name + "': froude_krylov: nonlinear needs "
+                                     "include_excitation: true. The nonlinear force replaces the "
+                                     "linear Froude-Krylov part of the BEM excitation.");
         }
     }
     

@@ -25,6 +25,7 @@ namespace seastack::hydro {
 enum class HydroComponentType {
     kHydrostatics,              ///< Hydrostatic restoring forces and buoyancy (linear, from BEM)
     kNonlinearHydrostatics,     ///< Nonlinear hydrostatic buoyancy (instantaneous submerged volume)
+    kNonlinearFroudeKrylov,     ///< Static + incident-wave pressure on the instantaneous wetted surface
     kRadiation,                 ///< Radiation damping (RIRF convolution)
     kExcitation,                ///< Wave excitation forces
     kMooring,                   ///< Mooring forces (e.g. MoorDyn)

@@ -27,6 +27,24 @@ namespace seastack::hydro {
 enum class HydrostaticsModel { kLinear, kNonlinear };
 
 /**
+ * @brief Per-body Froude-Krylov model selection.
+ *
+ * kLinear: the Froude-Krylov force is the linear part of the BEM excitation.
+ * kNonlinear: incident-wave pressure is integrated over the instantaneous
+ * wetted surface (requires nonlinear hydrostatics and a closed mesh).
+ * See docs/theory/NONLINEAR_FROUDE_KRYLOV.md.
+ */
+enum class FroudeKrylovModel { kLinear, kNonlinear };
+
+/**
+ * @brief Incident-wave pressure model for nonlinear Froude-Krylov.
+ *
+ * kAiryWheeler: linear Airy pressure with Wheeler stretching (default).
+ * kHydrostatic: long-wave limit p = rho g (eta - z); no decay with depth.
+ */
+enum class FroudeKrylovPressureModel { kAiryWheeler, kHydrostatic };
+
+/**
  * @brief Per-body hydrostatics configuration.
  */
 struct HydrostaticsSettings {
@@ -40,8 +58,12 @@ struct HydrostaticsSettings {
 struct HydroBody {
     std::string name = "";
     std::string h5_file = "";
-    std::string mesh_file = "";  ///< DEPRECATED: use hydrostatics.mesh_file instead
+    /// Closed hull OBJ in the BEM frame, shared by all nonlinear models. After
+    /// parsing it is copied to hydrostatics.mesh_file for nonlinear bodies.
+    std::string mesh_file = "";
     HydrostaticsSettings hydrostatics;
+    FroudeKrylovModel froude_krylov = FroudeKrylovModel::kLinear;
+    FroudeKrylovPressureModel froude_krylov_pressure = FroudeKrylovPressureModel::kAiryWheeler;
     bool include_excitation = true;
     bool include_radiation = true;
     std::array<double, 6> linear_damping = {0, 0, 0, 0, 0, 0};     ///< Per-DOF linear [surge, sway, heave, roll, pitch, yaw]

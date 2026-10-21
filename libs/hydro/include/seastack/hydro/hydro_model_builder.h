@@ -127,13 +127,21 @@ class HydroModelBuilder {
 
     // ── Force component selection ────────────────────────────────────
 
-    /// Per-body hydrostatics configuration for the builder.
+    /// Per-body hydrostatics and Froude-Krylov configuration for the builder.
+    ///
+    /// Wiring (docs/theory/NONLINEAR_FROUDE_KRYLOV.md, section 7):
+    ///   model linear,    froude_krylov linear    -> HydrostaticsComponent
+    ///   model nonlinear, froude_krylov linear    -> NonlinearHydrostaticsComponent
+    ///   model nonlinear, froude_krylov nonlinear -> NonlinearFroudeKrylovComponent
+    ///   model linear,    froude_krylov nonlinear -> error at Build()
     struct BodyHydrostaticsConfig {
         HydrostaticsModel model = HydrostaticsModel::kLinear;
-        std::string mesh_file;  ///< OBJ path, required when model == kNonlinear
+        std::string mesh_file;  ///< Closed OBJ in the BEM frame, required for any nonlinear model
+        FroudeKrylovModel froude_krylov = FroudeKrylovModel::kLinear;
+        FroudeKrylovPressureModel fk_pressure = FroudeKrylovPressureModel::kAiryWheeler;
     };
 
-    /// Set per-body hydrostatics configuration (preferred API).
+    /// Set per-body hydrostatics and Froude-Krylov configuration (preferred API).
     /// One entry per body, in body order.
     HydroModelBuilder& WithBodyHydrostatics(
         std::vector<BodyHydrostaticsConfig> configs);
@@ -245,6 +253,9 @@ class HydroModelBuilder {
     ///   - Constant-coefficient radiation without a regular wave, with
     ///     RIRF-only settings, without A(w)/B(w) data, or at a wave frequency
     ///     absent from the BEM grid
+    ///   - Nonlinear Froude-Krylov without nonlinear hydrostatics, without a
+    ///     mesh, in waves without excitation, or with a wave that has no
+    ///     discrete components
     HydroModel Build();
 
   private:

@@ -56,6 +56,14 @@ if(TARGET seastack_hydro_io)
     target_compile_definitions(test_rm3_wave_yaml_depth_precedence PRIVATE
         "SEASTACK_TEST_RM3_H5_FILE=\"${_seastack_test_rm3_h5}\"")
     set_tests_properties(test_rm3_wave_yaml_depth_precedence PROPERTIES LABELS "unit;chrono-free")
+
+    # Nonlinear Froude-Krylov builder wiring: per-body toggle and build-time errors
+    build_unit_test(test_nonlinear_froude_krylov_builder)
+    target_link_libraries(test_nonlinear_froude_krylov_builder PRIVATE SEAStack::HydroIO)
+    target_compile_definitions(test_nonlinear_froude_krylov_builder PRIVATE
+        "SEASTACK_TEST_RM3_H5_FILE=\"${_seastack_test_rm3_h5}\""
+        "SEASTACK_TEST_RM3_FLOAT_OBJ=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3/assets/geometry/float.obj\"")
+    set_tests_properties(test_nonlinear_froude_krylov_builder PROPERTIES LABELS "unit;chrono-free")
 else()
     message(STATUS "Skipping test_directional_waves (requires SEASTACK_ENABLE_HYDRO_IO)")
 endif()
@@ -70,6 +78,21 @@ set_tests_properties(test_yaml_parser PROPERTIES LABELS "unit;chrono-free")
 build_unit_test(test_submerged_volume)
 target_link_libraries(test_submerged_volume PRIVATE SEAStack::Hydro)
 set_tests_properties(test_submerged_volume PROPERTIES LABELS "unit;chrono-free")
+
+# Wetted-surface pressure integration for nonlinear Froude-Krylov (Chrono-free, HDF5-free)
+build_unit_test(test_wetted_surface_pressure)
+target_link_libraries(test_wetted_surface_pressure PRIVATE SEAStack::Hydro)
+set_tests_properties(test_wetted_surface_pressure PROPERTIES LABELS "unit;chrono-free")
+
+# Incident-wave dynamic pressure for nonlinear Froude-Krylov (Chrono-free, HDF5-free)
+build_unit_test(test_wave_pressure)
+target_link_libraries(test_wave_pressure PRIVATE SEAStack::Hydro)
+set_tests_properties(test_wave_pressure PROPERTIES LABELS "unit;chrono-free")
+
+# Nonlinear Froude-Krylov component: frames, a^2 scaling, convergence (Chrono-free, HDF5-free)
+build_unit_test(test_nonlinear_froude_krylov)
+target_link_libraries(test_nonlinear_froude_krylov PRIVATE SEAStack::Hydro)
+set_tests_properties(test_nonlinear_froude_krylov PROPERTIES LABELS "unit;chrono-free")
 
 # Excitation ramp factor for GUI visualization (Chrono-free, HDF5-free)
 build_unit_test(test_excitation_ramp_visualization)

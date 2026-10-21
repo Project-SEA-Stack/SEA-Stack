@@ -786,6 +786,99 @@ hydrodynamics:
     return true;
 }
 
+// U10 (docs/theory/NONLINEAR_FROUDE_KRYLOV.md): flat body keys for nonlinear
+// hydrostatics and nonlinear Froude-Krylov, and their error cases.
+static bool test_froude_krylov_keys() {
+    // Canonical flat form: body-level mesh_file is copied to hydrostatics.mesh_file.
+    std::string yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      mesh_file: hull.obj
+      hydrostatics: nonlinear
+      froude_krylov: nonlinear
+      froude_krylov_pressure: hydrostatic
+    - name: spar
+      mesh_file: spar.obj
+      hydrostatics: linear
+)";
+    auto path = WriteTempYaml(yaml, "fk_flat");
+    auto data = ReadHydroYAML(path);
+    CleanupFile(path);
+    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kNonlinear, "flat hydrostatics: nonlinear");
+    Check(Filename(data.bodies[0].hydrostatics.mesh_file) == "hull.obj", "body mesh_file used for nonlinear body");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "froude_krylov: nonlinear");
+    Check(data.bodies[0].froude_krylov_pressure == FroudeKrylovPressureModel::kHydrostatic,
+          "froude_krylov_pressure: hydrostatic");
+    Check(data.bodies[1].hydrostatics.model == HydrostaticsModel::kLinear, "flat hydrostatics: linear");
+    Check(data.bodies[1].hydrostatics.mesh_file.empty(), "linear body keeps no hydrostatics mesh");
+    Check(data.bodies[1].froude_krylov == FroudeKrylovModel::kLinear, "froude_krylov defaults to linear");
+    Check(data.bodies[1].froude_krylov_pressure == FroudeKrylovPressureModel::kAiryWheeler,
+          "froude_krylov_pressure defaults to airy_wheeler");
+
+    // Block form with the same mesh in both places is accepted.
+    yaml = R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      mesh_file: hull.obj
+      hydrostatics:
+        model: nonlinear
+        mesh_file: hull.obj
+      froude_krylov: nonlinear
+      froude_krylov_pressure: airy_wheeler
+)";
+    path = WriteTempYaml(yaml, "fk_block_same_mesh");
+    data = ReadHydroYAML(path);
+    CleanupFile(path);
+    Check(Filename(data.bodies[0].hydrostatics.mesh_file) == "hull.obj", "matching mesh in both places accepted");
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      mesh_file: hull.obj
+      hydrostatics:
+        model: nonlinear
+        mesh_file: other.obj
+)", "err_fk_mesh_conflict", {"body 'float'", "differ", "body-level mesh_file"});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      froude_krylov: nonlinaer
+)", "err_fk_value", {":5:", "froude_krylov must be 'linear' or 'nonlinear'", "\"nonlinaer\""});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      froude_krylov_pressure: wheeler
+)", "err_fk_pressure_value", {":5:", "froude_krylov_pressure must be 'airy_wheeler' or 'hydrostatic'",
+                               "\"wheeler\""});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      mesh_file: hull.obj
+      hydrostatics: nonlinear
+      froude_krylov: nonlinear
+      include_excitation: false
+)", "err_fk_no_excitation", {"body 'float'", "include_excitation: true"});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      hydrostatics: nonlinar
+)", "err_hs_scalar_value", {":5:", "hydrostatics.model must be 'linear' or 'nonlinear'"});
+
+    std::cout << "  PASSED: test_froude_krylov_keys\n";
+    return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 12: Every shipped hydro YAML still parses
 // ─────────────────────────────────────────────────────────────────────────────
@@ -852,6 +945,7 @@ int main() {
     run(test_period_list_forms,     "test_period_list_forms");
     run(test_unsupported_list_items_error, "test_unsupported_list_items_error");
     run(test_hydrostatics_inline_and_model_check, "test_hydrostatics_inline_and_model_check");
+    run(test_froude_krylov_keys,    "test_froude_krylov_keys");
     run(test_parse_all_shipped_yamls, "test_parse_all_shipped_yamls");
 
     std::cout << "\nResults: " << passed << " passed, " << failed << " failed.\n";

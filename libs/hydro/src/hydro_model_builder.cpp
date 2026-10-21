@@ -19,6 +19,7 @@
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 #include <seastack/hydro/force_components/hydrostatics_component.h>
 #include <seastack/hydro/force_components/nonlinear_hydrostatics_component.h>
+#include <seastack/hydro/force_components/nonlinear_froude_krylov_component.h>
 #include <seastack/hydro/force_components/radiation_component.h>
 #include <seastack/hydro/force_components/radiation_ss_component.h>
 #include <seastack/hydro/force_components/radiation_cc_component.h>
@@ -62,6 +63,23 @@ bool WaveComponentsHaveMultipleDistinctHeadings(const WaveBase* wave) {
         }
     }
     return false;
+}
+
+/// Resolves kAuto: regular waves use frequency-domain excitation. Long-crested
+/// irregular seas use excitation IRF convolution (single incident heading).
+/// Irregular seas with multiple headings (directional spreading, bimodal with
+/// different mean directions, etc.) require frequency-domain transfer
+/// functions: IRF data in H5 is per-heading and cannot be convolved with a
+/// single kernel against the total eta.
+ExcitationMethod ResolveExcitationMethod(ExcitationMethod requested, const WaveBase* wave) {
+    if (requested != ExcitationMethod::kAuto) {
+        return requested;
+    }
+    if (wave && wave->GetWaveMode() == WaveMode::kIrregular &&
+        !WaveComponentsHaveMultipleDistinctHeadings(wave)) {
+        return ExcitationMethod::kIrfConvolution;
+    }
+    return ExcitationMethod::kFrequencyDomain;
 }
 
 }  // namespace
@@ -302,6 +320,19 @@ HydroModel HydroModelBuilder::Build() {
                         << " has hydrostatics model = linear but mesh_file is set ('"
                         << hs.mesh_file << "'). The mesh_file will be ignored.");
         }
+        if (hs.froude_krylov == FroudeKrylovModel::kNonlinear &&
+            hs.model != HydrostaticsModel::kNonlinear) {
+            throw std::runtime_error(
+                "HydroModelBuilder::Build(): body " + std::to_string(b) +
+                " has froude_krylov = nonlinear but hydrostatics = linear. Nonlinear "
+                "Froude-Krylov needs hydrostatics = nonlinear: the static and wave "
+                "pressure must be integrated over the same instantaneous wetted surface.");
+        }
+        if (hs.froude_krylov == FroudeKrylovModel::kLinear &&
+            hs.fk_pressure != FroudeKrylovPressureModel::kAiryWheeler) {
+            LOG_WARNING("WARNING: body " << b << " sets froude_krylov_pressure but froude_krylov "
+                        "= linear; the pressure model is ignored.");
+        }
     }
 
     // ── 3. Validate and prepare wave ────────────────────────────────
@@ -344,6 +375,32 @@ HydroModel HydroModelBuilder::Build() {
     // Forward excitation truncation to pre-built waves
     if (wave && excitation_truncation_time_ > 0.0 && !has_wave_def) {
         wave->SetExcitationTruncationTime(excitation_truncation_time_);
+    }
+
+    // ── 3a. Validate nonlinear Froude-Krylov against the wave ───────
+    bool any_nonlinear_fk = false;
+    for (const auto& hs : body_hydrostatics_) {
+        any_nonlinear_fk = any_nonlinear_fk || hs.froude_krylov == FroudeKrylovModel::kNonlinear;
+    }
+    const bool still_water = !wave || wave->GetWaveMode() == WaveMode::kNoWave;
+    if (any_nonlinear_fk && !still_water) {
+        if (!wave->GetWaveComponents()) {
+            throw std::runtime_error(
+                "HydroModelBuilder::Build(): froude_krylov = nonlinear needs a linear wave "
+                "defined by discrete components (regular or spectral). This wave model has "
+                "none (e.g. an eta-table import).");
+        }
+        if (!enable_excitation_) {
+            throw std::runtime_error(
+                "HydroModelBuilder::Build(): froude_krylov = nonlinear in waves needs wave "
+                "excitation enabled. The component replaces the linear Froude-Krylov part "
+                "of the BEM excitation; without excitation the diffraction force is missing "
+                "and the subtraction would be wrong.");
+        }
+    }
+    if (any_nonlinear_fk && still_water) {
+        LOG_INFO("froude_krylov = nonlinear in still water: the force reduces to nonlinear "
+                 "hydrostatics.");
     }
 
     // ── 4. Validate radiation configuration ─────────────────────────
@@ -433,14 +490,40 @@ HydroModel HydroModelBuilder::Build() {
     // ── 7. Assemble force components ────────────────────────────────
     std::vector<std::unique_ptr<IHydroForceComponent>> components;
 
-    // Partition bodies by hydrostatics model
-    std::vector<int> linear_bodies, nonlinear_bodies;
+    // Partition bodies: linear hydrostatics, nonlinear hydrostatics only, and
+    // nonlinear hydrostatics + nonlinear Froude-Krylov (one component covers both).
+    std::vector<int> linear_bodies, nonlinear_bodies, nonlinear_fk_bodies;
     for (int b = 0; b < num_bodies; ++b) {
-        if (body_hydrostatics_[b].model == HydrostaticsModel::kNonlinear)
-            nonlinear_bodies.push_back(b);
-        else
+        const auto& hs = body_hydrostatics_[b];
+        if (hs.model != HydrostaticsModel::kNonlinear)
             linear_bodies.push_back(b);
+        else if (hs.froude_krylov == FroudeKrylovModel::kNonlinear)
+            nonlinear_fk_bodies.push_back(b);
+        else
+            nonlinear_bodies.push_back(b);
     }
+
+    // Required frame conversion for nonlinear models:
+    // Transform mesh from BEM coordinate frame (origin at BEM reference)
+    // to body-fixed CG frame (used by dynamics).
+    // Chrono body.position represents CG, so mesh vertices must be expressed
+    // relative to CG. HydroData::cg is the CG position in BEM coordinates,
+    // so subtracting it moves the BEM-origin mesh into the CG frame.
+    auto bem_cg = [this](int b) -> Eigen::Vector3d {
+        const Eigen::VectorXd cg_v = data_->GetCGVector(b);
+        if (cg_v.size() < 3) {
+            throw std::runtime_error(
+                "HydroModelBuilder::Build(): CG vector must have at least 3 "
+                "components for nonlinear hydrostatics (body index " +
+                std::to_string(b) + ").");
+        }
+        return cg_v.head<3>();
+    };
+    auto load_mesh_in_cg_frame = [this, &bem_cg](int b) {
+        auto mesh = geometry::LoadObjMesh(body_hydrostatics_[b].mesh_file);
+        mesh.vertices.rowwise() -= bem_cg(b).transpose();
+        return mesh;
+    };
 
     if (!linear_bodies.empty()) {
         components.push_back(
@@ -461,41 +544,42 @@ HydroModel HydroModelBuilder::Build() {
                     "includes the linear Froude-Krylov force on the mean hull). "
                     "Results are only valid while heave and relative motion stay "
                     "well below the draft and freeboard; in larger waves the body "
-                    "can be thrown clear of the water. Use linear hydrostatics "
-                    "or smaller waves.");
+                    "can be thrown clear of the water. For large waves set "
+                    "froude_krylov: nonlinear on the body (wave pressure on the "
+                    "instantaneous wetted hull), or use linear hydrostatics.");
     }
 
     if (!nonlinear_bodies.empty()) {
         std::vector<std::unique_ptr<geometry::ISubmergedVolumeCalculator>> calculators;
         calculators.reserve(nonlinear_bodies.size());
         for (int b : nonlinear_bodies) {
-            auto mesh = geometry::LoadObjMesh(body_hydrostatics_[b].mesh_file);
-
-            // Required frame conversion for nonlinear hydrostatics:
-            // Transform mesh from BEM coordinate frame (origin at BEM reference)
-            // to body-fixed CG frame (used by dynamics).
-            // Chrono body.position represents CG, so mesh vertices must be expressed
-            // relative to CG. HydroData::cg is the CG position in BEM coordinates,
-            // so subtracting it moves the BEM-origin mesh into the CG frame.
-            {
-                const Eigen::VectorXd cg_v = data_->GetCGVector(b);
-                if (cg_v.size() < 3) {
-                    throw std::runtime_error(
-                        "HydroModelBuilder::Build(): CG vector must have at least 3 "
-                        "components for nonlinear hydrostatics (body index " +
-                        std::to_string(b) + ").");
-                }
-                const Eigen::Vector3d cg = cg_v.head<3>();
-                mesh.vertices.rowwise() -= cg.transpose();
-            }
-
             calculators.push_back(
-                std::make_unique<geometry::MeshSubmergedVolume>(std::move(mesh)));
+                std::make_unique<geometry::MeshSubmergedVolume>(load_mesh_in_cg_frame(b)));
         }
         double rho = data_->GetRhoVal();
         components.push_back(
             std::make_unique<NonlinearHydrostaticsComponent>(
                 std::move(calculators), rho, gravity, 0.0, nonlinear_bodies));
+    }
+
+    if (!nonlinear_fk_bodies.empty()) {
+        std::vector<NonlinearFroudeKrylovComponent::BodySetup> setups;
+        setups.reserve(nonlinear_fk_bodies.size());
+        for (int b : nonlinear_fk_bodies) {
+            setups.push_back({b, load_mesh_in_cg_frame(b), body_hydrostatics_[b].fk_pressure, bem_cg(b)});
+        }
+        // Match the ramp of the excitation it corrects (theory doc, section 4):
+        // frequency-domain excitation ramps with a half cosine, IRF excitation
+        // ramps eta linearly.
+        double fk_ramp = ramp_duration_;
+        if (fk_ramp <= 0.0 && wave) fk_ramp = wave->GetRampDuration();
+        const auto ramp_shape =
+            (ResolveExcitationMethod(excitation_method_, wave.get()) == ExcitationMethod::kIrfConvolution)
+                ? NonlinearFroudeKrylovComponent::RampShape::kLinear
+                : NonlinearFroudeKrylovComponent::RampShape::kCosine;
+        components.push_back(std::make_unique<NonlinearFroudeKrylovComponent>(
+            std::move(setups), still_water ? nullptr : wave, data_->GetRhoVal(), gravity, fk_ramp,
+            ramp_shape));
     }
 
     if (enable_radiation_) {
@@ -543,24 +627,7 @@ HydroModel HydroModelBuilder::Build() {
         const bool skip_wave_excitation =
             wave && wave->GetWaveMode() == WaveMode::kNoWave;
         if (!skip_wave_excitation) {
-        ExcitationMethod resolved = excitation_method_;
-        if (resolved == ExcitationMethod::kAuto) {
-            // Regular waves use frequency-domain. Long-crested irregular seas
-            // use excitation IRF convolution (single incident heading).  Irregular
-            // seas with multiple headings (directional spreading, bimodal with
-            // different mean directions, etc.) require frequency-domain transfer
-            // functions — IRF data in H5 is per-heading and cannot be convolved
-            // with a single kernel against the total eta.
-            if (wave && wave->GetWaveMode() == WaveMode::kIrregular) {
-                if (WaveComponentsHaveMultipleDistinctHeadings(wave.get())) {
-                    resolved = ExcitationMethod::kFrequencyDomain;
-                } else {
-                    resolved = ExcitationMethod::kIrfConvolution;
-                }
-            } else {
-                resolved = ExcitationMethod::kFrequencyDomain;
-            }
-        }
+        const ExcitationMethod resolved = ResolveExcitationMethod(excitation_method_, wave.get());
 
         {
             const bool multi_heading = WaveComponentsHaveMultipleDistinctHeadings(wave.get());

@@ -26,6 +26,8 @@ const char* HydroComponentTypeName(seastack::hydro::HydroComponentType type) {
             return "Hydrostatics";
         case seastack::hydro::HydroComponentType::kNonlinearHydrostatics:
             return "NonlinearHydrostatics";
+        case seastack::hydro::HydroComponentType::kNonlinearFroudeKrylov:
+            return "NonlinearFroudeKrylov";
         case seastack::hydro::HydroComponentType::kRadiation:
             return "Radiation";
         case seastack::hydro::HydroComponentType::kExcitation:
@@ -97,6 +99,7 @@ BodyForces HydroForces::Evaluate(const SystemState& state, double time,
             switch (component->Type()) {
                 case HydroComponentType::kHydrostatics:
                 case HydroComponentType::kNonlinearHydrostatics:
+                case HydroComponentType::kNonlinearFroudeKrylov:
                     profile_stats_.hydrostatics_seconds += elapsed;
                     profile_stats_.hydrostatics_calls++;
                     break;

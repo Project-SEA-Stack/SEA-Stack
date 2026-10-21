@@ -41,7 +41,6 @@ DepthAttenuation ComputeDepthAttenuation(double k_mag, double z, double water_de
     return {std::cosh(k_mag * (z + water_depth)) / denom,
             std::sinh(k_mag * (z + water_depth)) / denom};
 }
-
 }  // namespace
 
 namespace seastack::hydro {
@@ -253,6 +252,26 @@ Eigen::Vector3d LinearDirectionalWaveField::GetAcceleration(
     }
 
     return acceleration;
+}
+
+double LinearDirectionalWaveField::GetDynamicPressureHead(
+    const Eigen::Vector3d& position, double time, double elevation) const {
+    // Wheeler-stretched depth below the surface; deep water uses the h -> inf limit.
+    const bool infinite_depth = water_depth_ <= 0.0 || std::isinf(water_depth_);
+    const double z_s = infinite_depth
+                       ? (position.z() - mwl_) - elevation
+                       : GetWheelerStretchedPosition(position, elevation, water_depth_, mwl_).z() - mwl_;
+
+    const Eigen::ArrayXd phase_args = kx_.array() * position.x()
+                                    + ky_.array() * position.y()
+                                    - omegas_.array() * time
+                                    + phases_.array();
+    double head = 0.0;
+    for (Eigen::Index i = 0; i < amplitudes_.size(); ++i) {
+        const double depth_factor = AiryPressureDepthFactor(wavenumbers_[i], z_s, water_depth_);
+        head += amplitudes_[i] * depth_factor * std::cos(phase_args[i]);
+    }
+    return head;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -36,6 +36,16 @@ bool is_in_deep_water(double wavenumber, double water_depth) {
     return (std::abs(wavenumber) * water_depth > 89.4);
 }
 
+double AiryPressureDepthFactor(double wavenumber, double z, double water_depth) {
+    const double k = std::abs(wavenumber);
+    if (is_in_deep_water(k, water_depth)) {
+        return std::exp(k * z);
+    }
+    // cosh k(z+h) / cosh kh, written so that large kh cannot overflow.
+    return (std::exp(k * z) + std::exp(-k * (z + 2.0 * water_depth)))
+         / (1.0 + std::exp(-2.0 * k * water_depth));
+}
+
 Eigen::Vector3d GetWheelerStretchedPosition(const Eigen::Vector3d& position, double eta, double water_depth, double mwl) {
     // Wheeler stretching assumes finite depth. If depth is being used as a sentinel for "infinite",
     // fall back to no stretching to avoid undefined behavior.

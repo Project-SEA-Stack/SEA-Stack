@@ -16,6 +16,10 @@ namespace seastack::hydro {
 
 bool is_in_deep_water(double wavenumber, double water_depth);
 
+/// Airy pressure depth factor Z(z) = cosh k(z+h) / cosh kh, or e^{kz} when
+/// is_in_deep_water(). z is measured up from the mean water level [m].
+double AiryPressureDepthFactor(double wavenumber, double z, double water_depth);
+
 Eigen::Vector3d GetWheelerStretchedPosition(const Eigen::Vector3d& position,
                                             double                eta,
                                             double                water_depth,

@@ -5,8 +5,16 @@
 
 #include <seastack/hydro/waves/wave_base.h>
 #include <cmath>
+#include <stdexcept>
 
 namespace seastack::hydro {
+
+double WaveBase::GetDynamicPressureHead(const Eigen::Vector3d& /*position*/, double /*time*/,
+                                        double /*elevation*/) const {
+    throw std::logic_error(
+        "This wave model has no linear pressure field (GetDynamicPressureHead). "
+        "Nonlinear Froude-Krylov needs a wave defined by discrete components.");
+}
 
 Eigen::Vector3d WaveBase::GetVelocity(const Eigen::Vector3d& position, double time) const {
     double elevation = wave_stretching_ ? GetElevation(position, time) : 0.0;

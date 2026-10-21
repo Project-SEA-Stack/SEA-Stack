@@ -13,6 +13,7 @@
 #include <seastack/adapters/chrono/chrono_force_attacher.h>
 #include <seastack/adapters/chrono/chrono_coupler.h>
 #include <seastack/core/system_state.h>
+#include <seastack/hydro/force_components/nonlinear_froude_krylov_component.h>
 #include <seastack/hydro/force_components/nonlinear_hydrostatics_component.h>
 #include <seastack/hydro/force_components/radiation_ss_component.h>
 #include <seastack/hydro/hydro_forces.h>
@@ -364,6 +365,17 @@ Eigen::Vector3d HydroSystem::GetLastCentreOfBuoyancy(int body_index) const {
         }
     }
     return Eigen::Vector3d::Zero();
+}
+
+double HydroSystem::GetLastWettedArea(int body_index) const {
+    if (!hydro_model_) return 0.0;
+    for (const auto& comp : hydro_model_->GetForces().GetComponents()) {
+        if (comp->Type() == seastack::hydro::HydroComponentType::kNonlinearFroudeKrylov) {
+            auto* fk = dynamic_cast<const seastack::hydro::NonlinearFroudeKrylovComponent*>(comp.get());
+            if (fk) return fk->GetLastWettedArea(body_index);
+        }
+    }
+    return 0.0;
 }
 
 bool HydroSystem::HasKernelFitDiagnostics() const {

@@ -1361,6 +1361,7 @@ void SimulationExporter::Finalize() {
             switch (t) {
                 case T::kHydrostatics:          return "hydrostatics";
                 case T::kNonlinearHydrostatics: return "nonlinear_hydrostatics";
+                case T::kNonlinearFroudeKrylov: return "nonlinear_froude_krylov";
                 case T::kRadiation:             return "radiation";
                 case T::kExcitation:            return "excitation";
                 case T::kDamping:               return "damping";

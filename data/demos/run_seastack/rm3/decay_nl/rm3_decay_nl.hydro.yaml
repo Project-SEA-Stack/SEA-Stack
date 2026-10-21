@@ -2,14 +2,12 @@ hydrodynamics:
   bodies:
     - name: body1
       h5_file: ../assets/hydroData/rm3.h5
-      hydrostatics:
-        model: nonlinear
-        mesh_file: ../assets/geometry/float.obj
+      mesh_file: ../assets/geometry/float.obj
+      hydrostatics: nonlinear
 
     - name: body2
       h5_file: ../assets/hydroData/rm3.h5
-      hydrostatics:
-        model: linear
+      hydrostatics: linear
 
   waves:
     type: still

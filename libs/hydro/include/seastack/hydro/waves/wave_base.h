@@ -63,6 +63,22 @@ class WaveBase {
     Eigen::Vector3d GetVelocity(const Eigen::Vector3d& position, double time) const;
     Eigen::Vector3d GetAcceleration(const Eigen::Vector3d& position, double time) const;
 
+    /// Incident-wave dynamic pressure head p_d / (rho g) [m], without any ramp.
+    ///
+    /// Linear (Airy) pressure, always with Wheeler stretching of the vertical
+    /// coordinate (independent of GetWaveStretching()):
+    ///   z_s = h (z - elevation) / (h + elevation), or z_s = z - elevation in deep water.
+    /// At z = elevation, z_s = 0 and the head equals sum_i a_i cos(k_i.x - w_i t + phi_i).
+    /// A caller that ramps the wave by r(t) passes elevation = r * eta and uses
+    /// p_d = rho g r * head, so the total pressure rho g (r * head - z) is zero
+    /// on the free surface. Theory: docs/theory/NONLINEAR_FROUDE_KRYLOV.md, section 5.
+    ///
+    /// @param position   World point [m], intended at or below the free surface.
+    /// @param time       Time [s].
+    /// @param elevation  Free-surface elevation at (x, y) used for stretching [m].
+    /// @throws std::logic_error if the wave model has no linear pressure field.
+    virtual double GetDynamicPressureHead(const Eigen::Vector3d& position, double time, double elevation) const;
+
     /// Elevation using at most max_components (for faster visualization).
     /// Default ignores the limit and calls GetElevation(pos, t).
     virtual double GetElevation(const Eigen::Vector3d& pos, double t, int /*max_components*/) const {
@@ -135,6 +151,7 @@ class NoWave : public WaveBase {
     double GetElevation(const Eigen::Vector3d&, double) const override { return 0.0; }
     Eigen::Vector3d GetVelocity(const Eigen::Vector3d&, double, double) const override { return Eigen::Vector3d(0.0, 0.0, 0.0); }
     Eigen::Vector3d GetAcceleration(const Eigen::Vector3d&, double, double) const override { return Eigen::Vector3d(0.0, 0.0, 0.0); }
+    double GetDynamicPressureHead(const Eigen::Vector3d&, double, double) const override { return 0.0; }
 
   private:
     static constexpr WaveMode mode_ = WaveMode::kNoWave;

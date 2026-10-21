@@ -37,6 +37,7 @@ class LinearDirectionalWaveField : public WaveBase {
     double GetElevation(const Eigen::Vector3d& position, double time) const override;
     Eigen::Vector3d GetVelocity(const Eigen::Vector3d& position, double time, double elevation) const override;
     Eigen::Vector3d GetAcceleration(const Eigen::Vector3d& position, double time, double elevation) const override;
+    double GetDynamicPressureHead(const Eigen::Vector3d& position, double time, double elevation) const override;
 
     /// Surface slope (d_eta/dx, d_eta/dy) at a given position and time.
     Eigen::Vector2d GetElevationGradientXY(const Eigen::Vector3d& position, double time) const override;

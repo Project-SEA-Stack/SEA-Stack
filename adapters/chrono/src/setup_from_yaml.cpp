@@ -414,13 +414,19 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
         std::vector<BodyHSConfig> hs_configs;
         hs_configs.reserve(hydro_data.bodies.size());
         int nl_count = 0;
+        int nl_fk_count = 0;
         for (const auto& body : hydro_data.bodies) {
             BodyHSConfig cfg;
             cfg.model = body.hydrostatics.model;
             cfg.mesh_file = body.hydrostatics.mesh_file;
+            cfg.froude_krylov = body.froude_krylov;
+            cfg.fk_pressure = body.froude_krylov_pressure;
             hs_configs.push_back(std::move(cfg));
             if (body.hydrostatics.model == seastack::hydro::HydrostaticsModel::kNonlinear) {
                 ++nl_count;
+            }
+            if (body.froude_krylov == seastack::hydro::FroudeKrylovModel::kNonlinear) {
+                ++nl_fk_count;
             }
         }
         hydro_system->SetBodyHydrostatics(std::move(hs_configs));
@@ -429,6 +435,11 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
         for (const auto& body : hydro_data.bodies) {
             std::string mode_str = (body.hydrostatics.model == seastack::hydro::HydrostaticsModel::kNonlinear)
                 ? "nonlinear" : "linear";
+            if (body.froude_krylov == seastack::hydro::FroudeKrylovModel::kNonlinear) {
+                mode_str += (body.froude_krylov_pressure == seastack::hydro::FroudeKrylovPressureModel::kHydrostatic)
+                    ? ", froude_krylov: nonlinear (hydrostatic pressure)"
+                    : ", froude_krylov: nonlinear (airy_wheeler pressure)";
+            }
             seastack::infra::debug::LogDebug(
                 std::string("Body '") + body.name + "' hydrostatics: " + mode_str);
         }
@@ -436,6 +447,12 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
             seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine(
                 "+", "Nonlinear Hydrostatics",
                 std::to_string(nl_count) + " of " +
+                std::to_string(hydro_data.bodies.size()) + " bodies"));
+        }
+        if (nl_fk_count > 0) {
+            seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine(
+                "+", "Nonlinear Froude-Krylov",
+                std::to_string(nl_fk_count) + " of " +
                 std::to_string(hydro_data.bodies.size()) + " bodies"));
         }
     }

@@ -222,8 +222,13 @@ class HydroSystem {
     // Query methods (reach into model)
     // ─────────────────────────────────────────────────────────────────────────
 
+    /// Calm-waterplane values from nonlinear hydrostatics; 0 for bodies with
+    /// froude_krylov = nonlinear (they have no calm-water volume).
     double GetLastSubmergedVolume(int body_index) const;
     Eigen::Vector3d GetLastCentreOfBuoyancy(int body_index) const;
+    /// Wetted area below the incident surface [m^2] for bodies with
+    /// froude_krylov = nonlinear; 0 otherwise.
+    double GetLastWettedArea(int body_index) const;
 
     bool HasKernelFitDiagnostics() const;
     std::vector<seastack::hydro::KernelFitDiagnostics> GetKernelFitDiagnostics() const;

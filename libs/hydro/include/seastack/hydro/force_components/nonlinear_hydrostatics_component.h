@@ -33,8 +33,10 @@
  *     the body leaves or fully enters the water. The combination is only
  *     valid while heave and relative motion stay well below the draft and
  *     freeboard; beyond that the body can be thrown clear of the water.
- *     Nonlinear Froude-Krylov (pressure on the instantaneous wetted surface)
- *     is planned but not yet available.
+ *     For large waves use NonlinearFroudeKrylovComponent (YAML
+ *     froude_krylov: nonlinear), which integrates the static and incident-
+ *     wave pressure over the instantaneous wetted surface
+ *     (docs/theory/NONLINEAR_FROUDE_KRYLOV.md).
  *   - No mesh coarsening for high-resolution meshes.
  *
  * Diagnostics: logs a one-time warning per body when the body fully emerges
