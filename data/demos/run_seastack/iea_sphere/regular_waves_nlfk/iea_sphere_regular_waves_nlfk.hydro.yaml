@@ -1,0 +1,19 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/sphere.h5
+      mesh_file: ../assets/geometry/sphere.obj
+      # Buoyancy and Froude-Krylov force from the incident-wave pressure on
+      # the instantaneous wetted hull (below the wave surface, not z = 0).
+      # Radiation and diffraction stay linear.
+      hydrostatics: nonlinear
+      froude_krylov: nonlinear
+      froude_krylov_pressure: airy_wheeler
+
+  # IEA OES Task 10 steepness H / (g T^2) = 0.0096 (Task 10 uses 0.01).
+  waves:
+    type: regular
+    height: 6.0
+    period: 8.0
+    direction: 0
+    ramp_duration: 20.0

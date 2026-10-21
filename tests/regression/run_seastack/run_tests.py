@@ -317,6 +317,7 @@ def main() -> int:
 	parser.add_argument("--rm3-decay-nl", action="store_true", help="Run RM3 decay, nonlinear hydrostatics (float only)")
 	parser.add_argument("--sphere-regular-nl", action="store_true", help="Run IEA sphere regular waves, nonlinear hydrostatics")
 	parser.add_argument("--sphere-regular-lin", action="store_true", help="Run IEA sphere regular waves, linear hydrostatics (twin of --sphere-regular-nl)")
+	parser.add_argument("--sphere-regular-nlfk", action="store_true", help="Run IEA sphere regular waves H = 6 m with optimum PTO, nonlinear Froude-Krylov")
 	args = parser.parse_args()
 
 	global DEMOS_DIR
@@ -336,6 +337,7 @@ def main() -> int:
 			("iea_sphere", "decay_lin_5m"),
 			("iea_sphere", "regular_waves_nl"),
 			("iea_sphere", "regular_waves_lin"),
+			("iea_sphere", "regular_waves_nlfk"),
 			("oswec", "regular_waves"),
 			("oswec", "irregular_waves"),
 			("rm3", "irregular_waves"),
@@ -382,11 +384,13 @@ def main() -> int:
 			selections.append(("iea_sphere", "regular_waves_nl"))
 		if args.sphere_regular_lin:
 			selections.append(("iea_sphere", "regular_waves_lin"))
+		if args.sphere_regular_nlfk:
+			selections.append(("iea_sphere", "regular_waves_nlfk"))
 		if not selections:
 			print(
 				"No tests selected. Use --all or flags such as "
 				"--sphere-decay/--sphere-decay-ss/--sphere-irregular-ss/--sphere-decay-nl-1m/--sphere-decay-nl-5m/--sphere-decay-lin-5m "
-				"--sphere-regular-nl/--sphere-regular-lin "
+				"--sphere-regular-nl/--sphere-regular-lin/--sphere-regular-nlfk "
 				"--oswec-regular/--oswec-irregular/--oswec-decay "
 				"--rm3-regular/--rm3-irregular/--rm3-mooring/--rm3-decay/--rm3-decay-nl "
 				"--f3of-decay-c1/--f3of-decay-c2/--f3of-decay-c3/--f3of-decay-dt3",

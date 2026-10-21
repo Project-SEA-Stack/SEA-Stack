@@ -1,0 +1,5 @@
+model_file: iea_sphere_regular_waves_nlfk.model.yaml
+simulation_file: iea_sphere_regular_waves_nlfk.simulation.yaml
+hydro_file: iea_sphere_regular_waves_nlfk.hydro.yaml
+
+output_directory: outputs
