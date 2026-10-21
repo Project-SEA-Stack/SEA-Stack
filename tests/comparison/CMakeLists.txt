@@ -102,6 +102,7 @@ message(STATUS "Add SEA-Stack comparison tests")
 build_comparison_test(sphere  compare_excitation_irf_vs_fd_sphere_irreg)
 build_comparison_test(sphere  compare_eta_dft_vs_convolution_sphere_irreg)
 build_comparison_test(sphere  compare_linear_vs_nonlinear_hs_sphere_decay)
+build_comparison_test(sphere  compare_linear_vs_nonlinear_hs_sphere_reg)
 build_comparison_test(sphere  compare_radiation_methods_sphere_reg)
 
 set(_rm3_topo_src rm3/test_validate_rm3_mesh_topology.cpp)

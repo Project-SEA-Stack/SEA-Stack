@@ -1,0 +1,11 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/sphere.h5
+
+  waves:
+    type: regular
+    height: 2.0
+    period: 8.0
+    direction: 0
+    ramp_duration: 20.0

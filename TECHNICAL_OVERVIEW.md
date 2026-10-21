@@ -387,7 +387,7 @@ Development follows the Google C++ style guide, Effective Modern C++ idioms, and
 
 ### 7.2 Current limitations
 
-**Current scope.** Radiation and excitation are linear potential-flow about equilibrium. Nonlinear hydrostatics (mesh buoyancy) exists; nonlinear Froude–Krylov and viscous drag do not yet. `IPTOModel` / `IController` are scalar; multi-DOF PTO and state-feedback would need interface work. Tests use custom macros (`TEST_ASSERT`, `TEST_NEAR`), not Google Test/Catch2.
+**Current scope.** Radiation and excitation are linear potential-flow about equilibrium. Nonlinear hydrostatics (mesh buoyancy) exists; nonlinear Froude–Krylov and viscous drag do not yet. Nonlinear hydrostatics integrates buoyancy against the calm waterplane z = 0, while the linear excitation already contains the linear Froude–Krylov force on the mean hull. In waves the two are only consistent while heave and relative motion stay well below the draft and freeboard; in larger waves a body can be thrown clear of the water. `HydroModelBuilder` warns at start-up when nonlinear hydrostatics is combined with waves, and the component warns once per body if it fully emerges or submerges. `IPTOModel` / `IController` are scalar; multi-DOF PTO and state-feedback would need interface work. Tests use custom macros (`TEST_ASSERT`, `TEST_NEAR`), not Google Test/Catch2.
 
 **Architecture.** YAML wave construction lives in the Chrono adapter (`CreateWaveFromSettings`); moving it into `libs/hydro` would strengthen standalone use. Core headers live under `libs/core/` but use `namespace seastack::hydro` for some types—a naming cleanup for later.
 
@@ -523,7 +523,8 @@ The current implementation follows standard linear potential-flow theory:
 - **Excitation:** Convolution of wave elevation with excitation IRF, or
   frequency-domain transfer functions
 - **Hydrostatics:** Linear restoring from BEM stiffness matrices, or
-  nonlinear buoyancy from instantaneous submerged volume
+  nonlinear buoyancy from instantaneous submerged volume below the calm
+  waterplane (valid in waves only for small relative motion; see Current scope)
 - **Spectra:** Pierson-Moskowitz (1964), JONSWAP (Hasselmann et al., 1973)
 
 ---

@@ -449,6 +449,22 @@ HydroModel HydroModelBuilder::Build() {
                 linear_bodies));
     }
 
+    if (!nonlinear_bodies.empty() && enable_excitation_ && wave &&
+        wave->GetWaveMode() != WaveMode::kNoWave) {
+        std::ostringstream ids;
+        for (std::size_t i = 0; i < nonlinear_bodies.size(); ++i) {
+            ids << (i ? ", " : "") << nonlinear_bodies[i];
+        }
+        LOG_WARNING("WARNING: nonlinear hydrostatics combined with waves (body index "
+                    << ids.str() << "). Buoyancy is computed against the calm "
+                    "waterplane z = 0, while wave excitation stays linear (it "
+                    "includes the linear Froude-Krylov force on the mean hull). "
+                    "Results are only valid while heave and relative motion stay "
+                    "well below the draft and freeboard; in larger waves the body "
+                    "can be thrown clear of the water. Use linear hydrostatics "
+                    "or smaller waves.");
+    }
+
     if (!nonlinear_bodies.empty()) {
         std::vector<std::unique_ptr<geometry::ISubmergedVolumeCalculator>> calculators;
         calculators.reserve(nonlinear_bodies.size());

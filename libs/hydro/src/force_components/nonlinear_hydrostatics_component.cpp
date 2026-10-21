@@ -18,10 +18,20 @@
 
 #include <seastack/hydro/force_components/nonlinear_hydrostatics_component.h>
 
+#include <seastack/infra/logging.h>
+
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace seastack::hydro {
+
+namespace {
+
+/// Fraction of the closed-mesh volume above which a body counts as fully submerged.
+constexpr double kFullySubmergedFraction = 0.999;
+
+}  // namespace
 
 NonlinearHydrostaticsComponent::NonlinearHydrostaticsComponent(
     std::vector<std::unique_ptr<geometry::ISubmergedVolumeCalculator>> calculators,
@@ -51,10 +61,20 @@ NonlinearHydrostaticsComponent::NonlinearHydrostaticsComponent(
             ") must match active_bodies count (" +
             std::to_string(active_bodies_.size()) + ")");
     }
+
+    // Closed-mesh volume: a waterplane at +infinity submerges every vertex.
+    mesh_volume_.reserve(calculators_.size());
+    for (const auto& calc : calculators_) {
+        mesh_volume_.push_back(
+            calc->Compute(Eigen::Affine3d::Identity(),
+                          std::numeric_limits<double>::infinity()).volume);
+    }
+    warned_emerged_.assign(calculators_.size(), false);
+    warned_submerged_.assign(calculators_.size(), false);
 }
 
 void NonlinearHydrostaticsComponent::Compute(
-    const SystemState& state, double /*time*/, BodyForces& inout_forces) {
+    const SystemState& state, double time, BodyForces& inout_forces) {
     const int num_system_bodies = static_cast<int>(state.bodies.size());
     const int num_forces = static_cast<int>(inout_forces.size());
 
@@ -100,6 +120,25 @@ void NonlinearHydrostaticsComponent::Compute(
         // Cache for diagnostics (system-indexed)
         last_volume_[b] = result.volume;
         last_cob_[b] = result.centroid;
+
+        if (result.volume <= 0.0 && !warned_emerged_[i]) {
+            warned_emerged_[i] = true;
+            LOG_WARNING("WARNING: body index " << b << " fully emerged (zero submerged "
+                        "volume) at t = " << time << " s. Nonlinear hydrostatics uses the "
+                        "calm waterplane; if waves are active, the linear excitation is "
+                        "no longer consistent with the buoyancy. Consider linear "
+                        "hydrostatics or smaller waves.");
+        }
+        if (mesh_volume_[i] > 0.0 &&
+            result.volume >= kFullySubmergedFraction * mesh_volume_[i] &&
+            !warned_submerged_[i]) {
+            warned_submerged_[i] = true;
+            LOG_WARNING("WARNING: body index " << b << " fully submerged at t = " << time
+                        << " s. Nonlinear hydrostatics uses the calm waterplane; if "
+                        "waves are active, the linear excitation is no longer "
+                        "consistent with the buoyancy. Consider linear "
+                        "hydrostatics or smaller waves.");
+        }
 
         if (result.volume <= 0.0) continue;
 

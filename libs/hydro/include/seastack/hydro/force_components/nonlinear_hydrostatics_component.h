@@ -26,9 +26,19 @@
  * v1 Known Limitations:
  *   - Open/half-hull meshes (e.g. BEM wetted-surface meshes) are not
  *     supported. TODO: auto-cap at waterplane.
- *   - Flat waterplane only. Planned: WaveAwareMeshSubmergedVolume.
- *   - No nonlinear Froude-Krylov (deliberate scope exclusion).
+ *   - Flat waterplane only: buoyancy ignores the incident wave.
+ *   - No nonlinear Froude-Krylov in this component. In waves, the linear
+ *     excitation (which contains the linear Froude-Krylov force on the mean
+ *     hull) keeps growing with wave height while this buoyancy saturates once
+ *     the body leaves or fully enters the water. The combination is only
+ *     valid while heave and relative motion stay well below the draft and
+ *     freeboard; beyond that the body can be thrown clear of the water.
+ *     Nonlinear Froude-Krylov (pressure on the instantaneous wetted surface)
+ *     is planned but not yet available.
  *   - No mesh coarsening for high-resolution meshes.
+ *
+ * Diagnostics: logs a one-time warning per body when the body fully emerges
+ * (zero submerged volume) or fully submerges (>= 99.9% of the mesh volume).
  *
  * Extensibility:
  *   Future geometry methods (AnalyticalSubmergedVolume, WaveAwareMesh)
@@ -104,6 +114,12 @@ private:
     // Indexed by system body index for consistent diagnostics access.
     std::vector<double> last_volume_;
     std::vector<Eigen::Vector3d> last_cob_;
+
+    // Per-calculator closed-mesh volume [m^3] and once-only warning flags for
+    // full emergence / full submergence (indexed like calculators_).
+    std::vector<double> mesh_volume_;
+    std::vector<bool> warned_emerged_;
+    std::vector<bool> warned_submerged_;
 
 };
 

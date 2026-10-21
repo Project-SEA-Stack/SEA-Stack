@@ -61,6 +61,16 @@ RIRF-convolution results on uniform BEM grids unchanged.
   silently. Frequency-domain excitation now warns when wave components lie
   outside the BEM frequency range (their coefficients are clamped to the
   nearest grid end) and reports the share of wave energy affected.
+- **Nonlinear hydrostatics in waves now warns about its validity limit.**
+  Nonlinear hydrostatics computes buoyancy against the calm waterplane, while
+  wave excitation stays linear and includes the linear Froude-Krylov force on
+  the mean hull. When the relative motion approaches the draft or freeboard,
+  the two no longer match and a body can be thrown clear of the water. The
+  run now warns at start-up when nonlinear hydrostatics is combined with
+  waves, and once per body if it fully emerges or fully submerges. New demos
+  `iea_sphere/regular_waves_nl` and `regular_waves_lin` and the comparison
+  test `test_compare_linear_vs_nonlinear_hs_sphere_reg` show the range of
+  validity. Results are unchanged.
 - **Submerged-volume geometry fix (no effect on shipped cases).** The
   waterplane cap in the mesh submerged-volume calculation depended on the
   vertex order of each cut face. With the waterplane at z = 0, which is the

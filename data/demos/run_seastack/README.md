@@ -48,6 +48,8 @@ parameters**, and an **available cases** table (paths below are relative to
 | iea_sphere | decay_nl_1m | IEA sphere, nonlinear hydrostatics, 1 m drop | `iea_sphere/decay_nl_1m/iea_sphere_decay_nl_1m.setup.yaml` |
 | iea_sphere | decay_nl_5m | IEA sphere, nonlinear hydrostatics, 5 m drop | `iea_sphere/decay_nl_5m/iea_sphere_decay_nl_5m.setup.yaml` |
 | iea_sphere | decay_lin_5m | IEA sphere, linear hydrostatics, 5 m drop | `iea_sphere/decay_lin_5m/iea_sphere_decay_lin_5m.setup.yaml` |
+| iea_sphere | regular_waves_nl | IEA sphere, nonlinear hydrostatics, regular waves H = 2 m, T = 8 s | `iea_sphere/regular_waves_nl/iea_sphere_regular_waves_nl.setup.yaml` |
+| iea_sphere | regular_waves_lin | IEA sphere, linear hydrostatics, same waves (twin of `regular_waves_nl`) | `iea_sphere/regular_waves_lin/iea_sphere_regular_waves_lin.setup.yaml` |
 | oswec | regular_waves | OSWEC flap, regular waves | `oswec/regular_waves/oswec_regular_waves.setup.yaml` |
 | oswec | irregular_waves | OSWEC flap, JONSWAP irregular sea | `oswec/irregular_waves/oswec_irregular_waves.setup.yaml` |
 | oswec | divergence_limits | Free flap + configurable hydro `divergence:` limits (raised roll/pitch) | `oswec/divergence_limits/oswec_divergence_limits.setup.yaml` |

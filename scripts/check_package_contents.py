@@ -29,7 +29,7 @@ EXPECTED_DEMO_CASES = {
             "regular_waves", "spreading"},
     "f3of": {"assets", "decay_dt3", "irregular_waves"},
     "iea_sphere": {"assets", "decay", "decay_lin_5m", "decay_nl_1m", "decay_nl_5m",
-                   "decay_ss", "irregular_waves_ss"},
+                   "decay_ss", "irregular_waves_ss", "regular_waves_lin", "regular_waves_nl"},
     "oswec": {"assets", "decay", "divergence_limits", "external_pto",
               "external_pto_adaptive", "external_pto_hydraulic", "irregular_waves",
               "regular_waves", "translucent_hull"},

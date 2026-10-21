@@ -1,0 +1,17 @@
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/sphere.h5
+      # Mesh buoyancy against the calm waterplane z = 0. Wave excitation stays
+      # linear, so this is only valid while the relative motion stays well
+      # below the draft and freeboard (5 m here). Compare with regular_waves_lin.
+      hydrostatics:
+        model: nonlinear
+        mesh_file: ../assets/geometry/sphere.obj
+
+  waves:
+    type: regular
+    height: 2.0
+    period: 8.0
+    direction: 0
+    ramp_duration: 20.0
