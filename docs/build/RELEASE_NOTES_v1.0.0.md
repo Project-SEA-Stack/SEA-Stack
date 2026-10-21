@@ -61,6 +61,14 @@ RIRF-convolution results on uniform BEM grids unchanged.
   silently. Frequency-domain excitation now warns when wave components lie
   outside the BEM frequency range (their coefficients are clamped to the
   nearest grid end) and reports the share of wave energy affected.
+- **Submerged-volume geometry fix (no effect on shipped cases).** The
+  waterplane cap in the mesh submerged-volume calculation depended on the
+  vertex order of each cut face. With the waterplane at z = 0, which is the
+  only case nonlinear hydrostatics uses, the cap contributes nothing and
+  results were correct; at any other waterplane height the volume could be
+  wrong (13.9 m^3 instead of 16.2 m^3 for a test box). Fixed, with new unit
+  tests (`test_submerged_volume`). All nonlinear-hydrostatics baselines are
+  bit-identical.
 - **RM3 mooring demo now uses its full wave record.** Its 3600 s eta file has
   3597 Fourier bins, but the demo capped the import at 1000, so every 4th bin
   was kept and only 24% of the measured wave variance reached the model (the

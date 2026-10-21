@@ -66,6 +66,11 @@ target_link_libraries(test_yaml_parser PRIVATE SEAStack::Hydro)
 target_compile_definitions(test_yaml_parser PRIVATE "SEASTACK_TEST_DATA_DIR=\"${CMAKE_SOURCE_DIR}/data\"")
 set_tests_properties(test_yaml_parser PROPERTIES LABELS "unit;chrono-free")
 
+# Mesh submerged volume (nonlinear hydrostatics geometry; Chrono-free, HDF5-free)
+build_unit_test(test_submerged_volume)
+target_link_libraries(test_submerged_volume PRIVATE SEAStack::Hydro)
+set_tests_properties(test_submerged_volume PROPERTIES LABELS "unit;chrono-free")
+
 # Excitation ramp factor for GUI visualization (Chrono-free, HDF5-free)
 build_unit_test(test_excitation_ramp_visualization)
 target_link_libraries(test_excitation_ramp_visualization PRIVATE SEAStack::Hydro)

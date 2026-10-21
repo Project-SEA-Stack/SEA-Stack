@@ -136,8 +136,13 @@ SubmergedVolumeResult MeshSubmergedVolume::Compute(
         const bool below[3] = {b0, b1, b2};
 
         std::vector<Eigen::Vector3d> submerged_poly;
-        Eigen::Vector3d clip_a, clip_b;
-        int clip_count = 0;
+        // Waterline segment of this face, taken in the face's own winding
+        // order: it runs from the point where the boundary leaves the water
+        // (below -> above) to the point where it re-enters (above -> below).
+        // The order must not depend on which vertex happens to be first.
+        Eigen::Vector3d clip_exit, clip_entry;
+        bool has_exit = false;
+        bool has_entry = false;
 
         for (int e = 0; e < 3; ++e) {
             int next = (e + 1) % 3;
@@ -155,12 +160,12 @@ SubmergedVolumeResult MeshSubmergedVolume::Compute(
                 Eigen::Vector3d ip = LerpAtZ(lo, hi, waterplane_z);
                 submerged_poly.push_back(ip);
 
-                // Track clipping points for cap polygon (ordered: first is
-                // when we go from below to above, second from above to below)
-                if (clip_count < 2) {
-                    if (clip_count == 0) clip_a = ip;
-                    else clip_b = ip;
-                    clip_count++;
+                if (below[e]) {
+                    clip_exit = ip;
+                    has_exit = true;
+                } else {
+                    clip_entry = ip;
+                    has_entry = true;
                 }
             }
         }
@@ -173,8 +178,8 @@ SubmergedVolumeResult MeshSubmergedVolume::Compute(
         }
 
         // Record the waterplane clipping edge (for cap polygon)
-        if (clip_count == 2) {
-            cap_edges.emplace_back(clip_a, clip_b);
+        if (has_exit && has_entry) {
+            cap_edges.emplace_back(clip_exit, clip_entry);
         }
     }
 
