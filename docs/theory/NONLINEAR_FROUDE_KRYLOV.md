@@ -1,8 +1,10 @@
 # Nonlinear Froude-Krylov and hydrostatic forces
 
-**Status:** design note for review (Stage 2a). No code implements this yet.
-Sections 9 and 10 fix the verification cases and pass criteria before any
-results exist.
+**Status:** implemented after v1.0.0, planned for v1.1. Not in the v1.0.0
+release
+([release notes](../build/RELEASE_NOTES_v1.1.md)). Sections 1–8 are the
+design, written before the code. Sections 9 and 10 record the pass criteria
+and the results.
 
 ## 1. Summary
 
@@ -54,7 +56,7 @@ linear-FK subtraction in section 6.
 | Method | Captures | Status |
 |---|---|---|
 | Linear hydrostatics + linear excitation | Small motion only | Existing default |
-| Nonlinear hydrostatics, calm waterplane (WEC-Sim `nonlinearHydro = 1` analogue) | Hull shape in still water | Existing (`hydrostatics: nonlinear`) |
+| Nonlinear hydrostatics, calm waterplane (WEC-Sim `nonlinearHydro = 1` analogue) | Hull shape in still water | Existing (`hydrostatics: nonlinear`; in waves also `froude_krylov: linear`, section 7) |
 | **NL FK, Airy + Wheeler pressure on the instantaneous wetted surface** (WEC-Sim `nonlinearHydro = 2`; Lawson et al. 2014; Gilloteaux 2007) | Hull shape and wave pressure up to the incident surface | **Chosen**, default pressure model |
 | **NL FK, long-wave (hydrostatic) pressure** up to the incident surface | As above, but the wave pressure does not decay with depth | **Option** (`froude_krylov_pressure: hydrostatic`) |
 | Analytical NL FK for axisymmetric bodies (Giorgi & Ringwood 2017, 2018) | Closed-form integrals for simple shapes, with the waterline flat at $\eta$ on the body axis | Independent verification reference only |
@@ -212,6 +214,25 @@ assumption; section 11 lists the validity limits.
 
 Radiation and excitation components are unchanged and cover all bodies.
 
+**YAML defaults.** In YAML, `froude_krylov` follows `hydrostatics` when it is
+not set, so the common "turn on nonlinear hydro" setting gives the model that
+is valid in large waves:
+
+| `hydrostatics` | Waves | `froude_krylov` not set resolves to |
+|---|---|---|
+| linear | any | linear |
+| nonlinear | still water | linear (same force as NL FK, cheaper) |
+| nonlinear | regular, spectral or DFT eta import, `include_excitation: true` | nonlinear |
+| nonlinear | eta table, or `include_excitation: false` | linear, with a warning |
+
+`froude_krylov: nonlinear` without a `hydrostatics` key sets
+`hydrostatics: nonlinear`. An explicit `froude_krylov: linear` keeps the
+calm-water model in waves (the second row of the wiring table, with its
+warning). The parser applies these rules
+(`ReadHydroYAML`); the C++ `HydroModelBuilder` API has no default switching
+and uses `froude_krylov = linear` unless set. The builder logs the model
+chosen for each nonlinear body.
+
 **Build-time checks:**
 
 - `froude_krylov: nonlinear` needs a `mesh_file`.
@@ -235,7 +256,7 @@ Radiation and excitation components are unchanged and cover all bodies.
   h5_file: ../assets/hydroData/sphere.h5
   mesh_file: ../assets/geometry/sphere.obj   # closed hull, BEM frame
   hydrostatics: nonlinear                    # linear (default) | nonlinear
-  froude_krylov: nonlinear                   # linear (default) | nonlinear
+  froude_krylov: nonlinear                   # optional; follows hydrostatics in waves
   froude_krylov_pressure: airy_wheeler       # airy_wheeler (default) | hydrostatic
 ```
 

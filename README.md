@@ -45,7 +45,8 @@ SEA-Stack helps engineers and researchers explore design spaces efficiently, red
 - BEM hydrodynamic coefficients via BEMIO-format HDF5, including added mass, radiation IRFs, excitation, hydrostatic stiffness, and related data
 - Nonlinear hydrostatics with mesh-based submerged volume calculation
 - Nonlinear Froude-Krylov forces (incident-wave pressure on the instantaneous
-  wetted hull) for large waves
+  wetted hull) for large waves. Added after v1.0.0, planned for v1.1
+  ([v1.1 notes](docs/build/RELEASE_NOTES_v1.1.md))
 - Radiation damping via convolution or state-space approximation
 - Excitation via frequency-domain transfer functions or IRF convolution
 

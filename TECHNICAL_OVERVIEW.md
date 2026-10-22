@@ -3,6 +3,10 @@
 **Version:** v1.0.0
 **Date:** September 2026
 
+The lists below describe the v1.0.0 release. Nonlinear Froude-Krylov forces,
+and the hydrostatics warnings that go with them, were added after v1.0.0
+and are planned for v1.1. They are not in v1.0.0. See [docs/build/RELEASE_NOTES_v1.1.md](docs/build/RELEASE_NOTES_v1.1.md).
+
 ---
 
 ## 1. Executive Summary
@@ -18,7 +22,6 @@ The aim is to support both rapid design iteration and progressive confidence-bui
 SEA-Stack v1.0.0 includes:
 
 - Linear potential-flow hydrodynamics with optional nonlinear hydrostatics
-  and nonlinear Froude-Krylov forces (per body)
 - BEMIO-formatted HDF5 import for BEM-derived hydrodynamic coefficients
 - Dense infinite-frequency added mass from BEM included in the Chrono mass
   matrix via `ChLoadHydrodynamics` (no lagged-force / prior-step-acceleration
@@ -56,9 +59,6 @@ The project is developed openly and is intended to be accessible to engineers an
 
 - Linear potential-flow hydrodynamics (6-DOF per body, multi-body)
 - Linear or nonlinear hydrostatics (mesh-based instantaneous submerged volume)
-- Nonlinear Froude-Krylov: static plus incident-wave pressure integrated over
-  the instantaneous wetted hull (Airy + Wheeler or long-wave pressure); see
-  [docs/theory/NONLINEAR_FROUDE_KRYLOV.md](docs/theory/NONLINEAR_FROUDE_KRYLOV.md)
 - BEMIO-formatted HDF5 coefficient import
 - Regular, irregular (JONSWAP/PM), bimodal, and multi-directional wave fields
 - Precomputed elevation time-series import (eta-table) for IRF excitation
@@ -391,7 +391,7 @@ Development follows the Google C++ style guide, Effective Modern C++ idioms, and
 
 ### 7.2 Current limitations
 
-**Current scope.** Radiation and diffraction are linear potential-flow about equilibrium. Nonlinear hydrostatics (mesh buoyancy) and nonlinear Froude–Krylov exist; viscous drag does not yet. Nonlinear hydrostatics alone integrates buoyancy against the calm waterplane z = 0, while the linear excitation already contains the linear Froude–Krylov force on the mean hull. In waves the two are only consistent while heave and relative motion stay well below the draft and freeboard; in larger waves a body can be thrown clear of the water. `HydroModelBuilder` warns at start-up when nonlinear hydrostatics is combined with waves, and the component warns once per body if it fully emerges or submerges. Nonlinear Froude–Krylov (`froude_krylov: nonlinear`) removes this inconsistency: it integrates the static and incident-wave pressure over the hull below the wave surface and subtracts the linear Froude–Krylov part from the BEM excitation (theory, tests and limits in [docs/theory/NONLINEAR_FROUDE_KRYLOV.md](docs/theory/NONLINEAR_FROUDE_KRYLOV.md)). `IPTOModel` / `IController` are scalar; multi-DOF PTO and state-feedback would need interface work. Tests use custom macros (`TEST_ASSERT`, `TEST_NEAR`), not Google Test/Catch2.
+**Current scope.** Radiation and excitation are linear potential-flow about equilibrium. Nonlinear hydrostatics (mesh buoyancy) exists; nonlinear Froude–Krylov and viscous drag do not yet. `IPTOModel` / `IController` are scalar; multi-DOF PTO and state-feedback would need interface work. Tests use custom macros (`TEST_ASSERT`, `TEST_NEAR`), not Google Test/Catch2.
 
 **Architecture.** YAML wave construction lives in the Chrono adapter (`CreateWaveFromSettings`); moving it into `libs/hydro` would strengthen standalone use. Core headers live under `libs/core/` but use `namespace seastack::hydro` for some types—a naming cleanup for later.
 
@@ -527,8 +527,7 @@ The current implementation follows standard linear potential-flow theory:
 - **Excitation:** Convolution of wave elevation with excitation IRF, or
   frequency-domain transfer functions
 - **Hydrostatics:** Linear restoring from BEM stiffness matrices, or
-  nonlinear buoyancy from instantaneous submerged volume below the calm
-  waterplane (valid in waves only for small relative motion; see Current scope)
+  nonlinear buoyancy from instantaneous submerged volume
 - **Spectra:** Pierson-Moskowitz (1964), JONSWAP (Hasselmann et al., 1973)
 
 ---
