@@ -139,6 +139,7 @@ build_benchmark(sphere  bench_sphere_irreg_ss    COST 250)
 
 # Nonlinear Froude-Krylov (wetted-surface pressure integration each step)
 build_benchmark(sphere  bench_sphere_reg_nlfk    COST 200)
+build_benchmark(sphere  bench_sphere_irreg_nlfk  COST 300)
 
 # Tier 4: Batch throughput
 build_benchmark(oswec   bench_oswec_reg_batch    COST 600)
