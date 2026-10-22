@@ -314,6 +314,8 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
 
     // Track which bodies had an explicit hydrostatics: block for legacy compat
     std::vector<bool> explicit_hydrostatics_flags;
+    // Track which bodies set froude_krylov explicitly (indexed like data.bodies)
+    std::vector<bool> explicit_fk_flags;
     
     bool in_period_block = false;
     int period_block_indent = 0;
@@ -815,6 +817,9 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                     } else if (key == "mesh_file") {
                         current_body.mesh_file = ResolvePath(value, hydro_file_path);
                     } else if (key == "froude_krylov") {
+                        // The current body is pushed next, at index data.bodies.size().
+                        explicit_fk_flags.resize(data.bodies.size() + 1, false);
+                        explicit_fk_flags[data.bodies.size()] = true;
                         std::string val_lower = value;
                         std::transform(val_lower.begin(), val_lower.end(), val_lower.begin(), ::tolower);
                         if (val_lower == "nonlinear") {
@@ -1354,6 +1359,52 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
             data.bodies[i].hydrostatics.model = HydrostaticsModel::kNonlinear;
             if (!data.bodies[i].mesh_file.empty()) {
                 data.bodies[i].hydrostatics.mesh_file = data.bodies[i].mesh_file;
+            }
+        }
+    }
+
+    // Froude-Krylov default follows hydrostatics. A body with nonlinear
+    // hydrostatics in waves gets nonlinear Froude-Krylov unless it sets
+    // froude_krylov: linear (calm-water buoyancy, valid only for small relative
+    // motion). In still water both models give the same force, so the cheaper
+    // calm-water component is kept. Waves without discrete components (eta
+    // table) cannot use nonlinear FK and keep the calm-water model.
+    {
+        std::string wave_type = data.waves.type;
+        std::transform(wave_type.begin(), wave_type.end(), wave_type.begin(), ::tolower);
+        std::string wave_method = data.waves.method;
+        std::transform(wave_method.begin(), wave_method.end(), wave_method.begin(), ::tolower);
+        const bool still_water = wave_type == "no_wave" || wave_type == "still_ci" || wave_type == "still";
+        const bool eta_table = !data.waves.eta_file.empty() &&
+                               (wave_method == "irf_convolution" || wave_method == "irf");
+        const bool waves_with_components = !still_water && !eta_table;
+
+        for (size_t i = 0; i < data.bodies.size(); ++i) {
+            auto& body = data.bodies[i];
+            const bool fk_explicit = i < explicit_fk_flags.size() && explicit_fk_flags[i];
+            const bool hs_explicit = i < explicit_hydrostatics_flags.size() && explicit_hydrostatics_flags[i];
+            if (fk_explicit) {
+                if (body.froude_krylov == FroudeKrylovModel::kNonlinear && !hs_explicit &&
+                    body.hydrostatics.model == HydrostaticsModel::kLinear) {
+                    body.hydrostatics.model = HydrostaticsModel::kNonlinear;
+                    LOG_INFO("body '" << body.name << "': froude_krylov: nonlinear implies "
+                             "hydrostatics: nonlinear (static and wave pressure on the same "
+                             "instantaneous wetted surface).");
+                }
+                continue;
+            }
+            if (body.hydrostatics.model != HydrostaticsModel::kNonlinear || still_water) continue;
+            if (waves_with_components && body.include_excitation) {
+                body.froude_krylov = FroudeKrylovModel::kNonlinear;
+                LOG_INFO("body '" << body.name << "': hydrostatics: nonlinear in waves; using "
+                         "nonlinear Froude-Krylov (wave pressure on the instantaneous wetted "
+                         "hull). Set froude_krylov: linear for calm-water buoyancy only.");
+            } else {
+                LOG_WARNING("WARNING: body '" << body.name << "': hydrostatics: nonlinear in waves "
+                            "but nonlinear Froude-Krylov is not available ("
+                            << (eta_table ? "eta-table wave has no discrete components"
+                                          : "include_excitation is false")
+                            << "); buoyancy uses the calm waterplane z = 0.");
             }
         }
     }

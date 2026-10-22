@@ -70,7 +70,8 @@ python tests\run_tests.py --all --exe bin\run_seastack.exe
 | `--sphere-decay-ss` | IEA sphere, free decay (state-space) |
 | `--sphere-irregular-ss` | IEA sphere, irregular waves (state-space) |
 | `--sphere-decay-nl-1m` / `--sphere-decay-nl-5m` / `--sphere-decay-lin-5m` | IEA sphere decay variants (linear / nonlinear hydrostatics) |
-| `--sphere-regular-nl` / `--sphere-regular-lin` | IEA sphere regular waves, H = 2 m, T = 8 s (nonlinear / linear hydrostatics) |
+| `--sphere-regular-nl` / `--sphere-regular-lin` | IEA sphere regular waves, H = 2 m, T = 8 s (calm-water nonlinear / linear hydrostatics) |
+| `--sphere-regular-nlfk` | IEA sphere regular waves, H = 6 m, T = 8 s, optimum PTO, nonlinear Froude-Krylov |
 | `--oswec-regular` | OSWEC regular waves |
 | `--oswec-irregular` | OSWEC irregular (JONSWAP) |
 | `--oswec-decay` | OSWEC still-water decay (minimal) |

@@ -879,6 +879,83 @@ hydrodynamics:
     return true;
 }
 
+// The froude_krylov default follows hydrostatics: nonlinear hydrostatics in
+// waves with discrete components gets nonlinear FK unless froude_krylov is set.
+static bool test_froude_krylov_follows_hydrostatics() {
+    auto parse = [](const std::string& yaml, const std::string& name) {
+        auto path = WriteTempYaml(yaml, name);
+        auto data = ReadHydroYAML(path);
+        CleanupFile(path);
+        return data;
+    };
+    const std::string bodies = R"(
+hydrodynamics:
+  bodies:
+    - name: auto
+      mesh_file: hull.obj
+      hydrostatics: nonlinear
+    - name: calm
+      mesh_file: hull.obj
+      hydrostatics: nonlinear
+      froude_krylov: linear
+    - name: lin
+      hydrostatics: linear
+    - name: fk_only
+      mesh_file: hull.obj
+      froude_krylov: nonlinear
+    - name: no_exc
+      mesh_file: hull.obj
+      hydrostatics: nonlinear
+      include_excitation: false
+)";
+
+    auto data = parse(bodies + R"(  waves:
+    type: regular
+    height: 1.0
+    period: 8.0
+)", "fk_follow_regular");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "auto in regular waves -> nonlinear FK");
+    Check(data.bodies[1].froude_krylov == FroudeKrylovModel::kLinear, "explicit froude_krylov: linear kept");
+    Check(data.bodies[2].froude_krylov == FroudeKrylovModel::kLinear, "linear hydrostatics -> linear FK");
+    Check(data.bodies[3].hydrostatics.model == HydrostaticsModel::kNonlinear,
+          "froude_krylov: nonlinear implies nonlinear hydrostatics");
+    Check(Filename(data.bodies[3].hydrostatics.mesh_file) == "hull.obj", "implied nonlinear body gets mesh_file");
+    Check(data.bodies[4].froude_krylov == FroudeKrylovModel::kLinear, "include_excitation: false -> linear FK");
+
+    data = parse(bodies + R"(  waves:
+    type: irregular
+    spectrum: jonswap
+    height: 2.0
+    period: 8.0
+)", "fk_follow_irregular");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "auto in irregular waves -> nonlinear FK");
+
+    data = parse(bodies, "fk_follow_still");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "auto in still water -> linear FK");
+
+    data = parse(bodies + R"(  waves:
+    type: irregular
+    eta_file: eta.txt
+    method: irf_convolution
+)", "fk_follow_eta_table");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "auto with eta table -> linear FK");
+
+    // Explicit hydrostatics: linear is not overridden (HydroModelBuilder rejects the pair).
+    data = parse(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      mesh_file: hull.obj
+      hydrostatics: linear
+      froude_krylov: nonlinear
+)", "fk_explicit_linear_hs");
+    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kLinear,
+          "explicit hydrostatics: linear kept with froude_krylov: nonlinear");
+
+    std::cout << "  PASSED: test_froude_krylov_follows_hydrostatics\n";
+    return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test 12: Every shipped hydro YAML still parses
 // ─────────────────────────────────────────────────────────────────────────────
@@ -946,6 +1023,7 @@ int main() {
     run(test_unsupported_list_items_error, "test_unsupported_list_items_error");
     run(test_hydrostatics_inline_and_model_check, "test_hydrostatics_inline_and_model_check");
     run(test_froude_krylov_keys,    "test_froude_krylov_keys");
+    run(test_froude_krylov_follows_hydrostatics, "test_froude_krylov_follows_hydrostatics");
     run(test_parse_all_shipped_yamls, "test_parse_all_shipped_yamls");
 
     std::cout << "\nResults: " << passed << " passed, " << failed << " failed.\n";

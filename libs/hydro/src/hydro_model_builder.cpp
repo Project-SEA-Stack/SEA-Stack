@@ -544,17 +544,21 @@ HydroModel HydroModelBuilder::Build() {
                     "includes the linear Froude-Krylov force on the mean hull). "
                     "Results are only valid while heave and relative motion stay "
                     "well below the draft and freeboard; in larger waves the body "
-                    "can be thrown clear of the water. For large waves set "
+                    "can be thrown clear of the water. For large waves use "
                     "froude_krylov: nonlinear on the body (wave pressure on the "
-                    "instantaneous wetted hull), or use linear hydrostatics.");
+                    "instantaneous wetted hull; the YAML default with nonlinear "
+                    "hydrostatics in waves), or use linear hydrostatics.");
     }
 
     if (!nonlinear_bodies.empty()) {
         std::vector<std::unique_ptr<geometry::ISubmergedVolumeCalculator>> calculators;
         calculators.reserve(nonlinear_bodies.size());
         for (int b : nonlinear_bodies) {
-            calculators.push_back(
-                std::make_unique<geometry::MeshSubmergedVolume>(load_mesh_in_cg_frame(b)));
+            auto mesh = load_mesh_in_cg_frame(b);
+            LOG_INFO("Body " << b << ": nonlinear hydrostatics against the calm waterplane z = 0, "
+                     "linear Froude-Krylov (mesh '" << body_hydrostatics_[b].mesh_file << "', "
+                     << mesh.num_faces() << " faces)");
+            calculators.push_back(std::make_unique<geometry::MeshSubmergedVolume>(std::move(mesh)));
         }
         double rho = data_->GetRhoVal();
         components.push_back(
@@ -566,7 +570,12 @@ HydroModel HydroModelBuilder::Build() {
         std::vector<NonlinearFroudeKrylovComponent::BodySetup> setups;
         setups.reserve(nonlinear_fk_bodies.size());
         for (int b : nonlinear_fk_bodies) {
-            setups.push_back({b, load_mesh_in_cg_frame(b), body_hydrostatics_[b].fk_pressure, bem_cg(b)});
+            auto mesh = load_mesh_in_cg_frame(b);
+            const bool long_wave = body_hydrostatics_[b].fk_pressure == FroudeKrylovPressureModel::kHydrostatic;
+            LOG_INFO("Body " << b << ": nonlinear hydrostatics + nonlinear Froude-Krylov ("
+                     << (long_wave ? "hydrostatic" : "airy_wheeler") << " pressure; mesh '"
+                     << body_hydrostatics_[b].mesh_file << "', " << mesh.num_faces() << " faces)");
+            setups.push_back({b, std::move(mesh), body_hydrostatics_[b].fk_pressure, bem_cg(b)});
         }
         // Match the ramp of the excitation it corrects (theory doc, section 4):
         // frequency-domain excitation ramps with a half cosine, IRF excitation
