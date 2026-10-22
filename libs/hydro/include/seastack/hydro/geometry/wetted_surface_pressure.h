@@ -59,6 +59,9 @@ class WettedSurfacePressureIntegrator {
     /// Vertex positions in the world frame, one per column.
     Eigen::Matrix3Xd TransformVertices(const Eigen::Affine3d& body_to_world) const;
 
+    /// As above, writing into world (resized if needed) to avoid an allocation per call.
+    void TransformVertices(const Eigen::Affine3d& body_to_world, Eigen::Matrix3Xd& world) const;
+
     /**
      * @param world_vertices    3 x N vertex positions, world frame [m].
      * @param height_above_surface  d_v = z_v - eta_v [m]; wet where d_v <= 0.

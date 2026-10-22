@@ -179,29 +179,36 @@ void NonlinearFroudeKrylovComponent::Compute(const SystemState& state, double ti
         const auto& state_body = state.bodies[b];
         if (!body.checked_position) CheckInitialPosition(body, state_body.position);
 
-        const Eigen::Matrix3Xd v = body.integrator.TransformVertices(PoseFromState(state_body));
+        body.integrator.TransformVertices(PoseFromState(state_body), vertex_buffer_);
+        const Eigen::Matrix3Xd& v = vertex_buffer_;
         const int nv = body.integrator.NumVertices();
         height_buffer_.resize(nv);
         pressure_buffer_.resize(nv);
         zero_buffer_.setZero(nv);
 
         // Every vertex needs its true height above the surface: a dry vertex at
-        // the end of a cut edge sets where the clip point falls.
+        // the end of a cut edge sets where the clip point falls. The wave model
+        // evaluates eta (ramped) at all vertices and, for the Airy model, the
+        // pressure head at wet ones, in one pass.
+        const bool airy = body.pressure_model == FroudeKrylovPressureModel::kAiryWheeler;
+        if (wavy) {
+            wave_->GetElevationAndPressureHead(v, time, ramp, eta_buffer_, airy ? &head_buffer_ : nullptr);
+        }
         for (int j = 0; j < nv; ++j) {
-            const Eigen::Vector3d x = v.col(j);
+            const double z = v(2, j);
             if (!wavy) {
-                height_buffer_[j] = x.z();
-                pressure_buffer_[j] = -rho_g_ * x.z();
+                height_buffer_[j] = z;
+                pressure_buffer_[j] = -rho_g_ * z;
                 continue;
             }
-            const double eta = ramp * wave_->GetElevation(x, time);
-            height_buffer_[j] = x.z() - eta;
+            const double eta = eta_buffer_[j];
+            height_buffer_[j] = z - eta;
             if (height_buffer_[j] > 0.0) {
                 pressure_buffer_[j] = 0.0;  // dry vertex, value unused
-            } else if (body.pressure_model == FroudeKrylovPressureModel::kHydrostatic) {
-                pressure_buffer_[j] = rho_g_ * (eta - x.z());
+            } else if (!airy) {
+                pressure_buffer_[j] = rho_g_ * (eta - z);
             } else {
-                pressure_buffer_[j] = rho_g_ * (ramp * wave_->GetDynamicPressureHead(x, time, eta) - x.z());
+                pressure_buffer_[j] = rho_g_ * (ramp * head_buffer_[j] - z);
             }
         }
 

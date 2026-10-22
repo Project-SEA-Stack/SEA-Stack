@@ -16,6 +16,23 @@ double WaveBase::GetDynamicPressureHead(const Eigen::Vector3d& /*position*/, dou
         "Nonlinear Froude-Krylov needs a wave defined by discrete components.");
 }
 
+void WaveBase::GetElevationAndPressureHead(const Eigen::Matrix3Xd& points,
+                                           double time,
+                                           double elevation_scale,
+                                           Eigen::VectorXd& elevation,
+                                           Eigen::VectorXd* pressure_head) const {
+    const Eigen::Index n_points = points.cols();
+    elevation.resize(n_points);
+    if (pressure_head) pressure_head->resize(n_points);
+    for (Eigen::Index j = 0; j < n_points; ++j) {
+        const Eigen::Vector3d x = points.col(j);
+        const double eta = elevation_scale * GetElevation(x, time);
+        elevation[j] = eta;
+        if (!pressure_head) continue;
+        (*pressure_head)[j] = (x.z() - mwl_ - eta > 0.0) ? 0.0 : GetDynamicPressureHead(x, time, eta);
+    }
+}
+
 Eigen::Vector3d WaveBase::GetVelocity(const Eigen::Vector3d& position, double time) const {
     double elevation = wave_stretching_ ? GetElevation(position, time) : 0.0;
     return GetVelocity(position, time, elevation);

@@ -87,6 +87,11 @@ set_tests_properties(test_wetted_surface_pressure PROPERTIES LABELS "unit;chrono
 # Incident-wave dynamic pressure for nonlinear Froude-Krylov (Chrono-free, HDF5-free)
 build_unit_test(test_wave_pressure)
 target_link_libraries(test_wave_pressure PRIVATE SEAStack::Hydro)
+find_package(OpenMP)
+if(OpenMP_CXX_FOUND)
+    # Thread-count invariance check of the batched wave evaluation
+    target_link_libraries(test_wave_pressure PRIVATE OpenMP::OpenMP_CXX)
+endif()
 set_tests_properties(test_wave_pressure PROPERTIES LABELS "unit;chrono-free")
 
 # Nonlinear Froude-Krylov component: frames, a^2 scaling, convergence (Chrono-free, HDF5-free)

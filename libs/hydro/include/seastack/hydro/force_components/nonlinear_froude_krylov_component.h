@@ -118,7 +118,9 @@ class NonlinearFroudeKrylovComponent : public IHydroForceComponent {
     double shortest_wavelength_ = 0.0; ///< [m]; 0 in still water
 
     // Per-vertex work buffers (reused between calls).
+    Eigen::Matrix3Xd vertex_buffer_;  ///< World-frame vertices [m]
     Eigen::VectorXd height_buffer_, pressure_buffer_, zero_buffer_;
+    Eigen::VectorXd eta_buffer_, head_buffer_;  ///< Ramped elevation, pressure head [m]
 
     // System-indexed diagnostics.
     std::vector<double> last_wetted_area_;

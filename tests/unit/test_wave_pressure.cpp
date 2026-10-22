@@ -18,10 +18,16 @@
 
 #include <Eigen/Core>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 using seastack::hydro::EtaTableWaveField;
 using seastack::hydro::LinearDirectionalWaveField;
@@ -129,6 +135,79 @@ int main() {
                 }
             }
         }
+    }
+
+    // Batched GetElevationAndPressureHead matches the per-point functions, for
+    // points above and below the surface. 81 x 81 x 4 points with 4 components
+    // exceed the OpenMP threshold, so the threaded path is exercised.
+    for (double depth : {0.0, 30.0, 6.0, 500.0}) {
+        const auto comps = MakeDirectionalSea(depth);
+        LinearDirectionalWaveField field(comps, depth);
+        double sum_a = 0.0;
+        for (const auto& c : comps) sum_a += c.amplitude;
+        const double z_min = (depth > 0.0) ? std::max(-8.0, -0.9 * depth) : -8.0;
+        const int n_xy = 81;
+        const std::vector<double> z_levels = {z_min, 0.5 * z_min, -0.2, 1.5};
+        Eigen::Matrix3Xd cloud(3, n_xy * n_xy * static_cast<int>(z_levels.size()));
+        int col = 0;
+        for (int ix = 0; ix < n_xy; ++ix) {
+            for (int iy = 0; iy < n_xy; ++iy) {
+                for (double z : z_levels) {
+                    cloud.col(col++) = Eigen::Vector3d(-40.0 + ix, -40.0 + iy, z);
+                }
+            }
+        }
+        for (double scale : {1.0, 0.3}) {
+            const double t = 7.3;
+            Eigen::VectorXd eta, head, eta_only;
+            field.GetElevationAndPressureHead(cloud, t, scale, eta, &head);
+            field.GetElevationAndPressureHead(cloud, t, scale, eta_only, nullptr);
+            double max_eta_err = 0.0, max_head_err = 0.0;
+            int n_wet = 0;
+            bool zero_above = true;
+            for (int j = 0; j < cloud.cols(); ++j) {
+                const Eigen::Vector3d p = cloud.col(j);
+                const double eta_ref = scale * field.GetElevation(p, t);
+                max_eta_err = std::max(max_eta_err, std::abs(eta[j] - eta_ref));
+                max_eta_err = std::max(max_eta_err, std::abs(eta_only[j] - eta_ref));
+                if (p.z() - eta_ref > 0.0) {
+                    zero_above = zero_above && head[j] == 0.0;
+                } else {
+                    ++n_wet;
+                    max_head_err = std::max(max_head_err,
+                                            std::abs(head[j] - field.GetDynamicPressureHead(p, t, eta_ref)));
+                }
+            }
+            const std::string tag = ", depth " + std::to_string(depth) + ", scale " + std::to_string(scale);
+            TEST_NEAR(max_eta_err, 0.0, 1e-12 * sum_a, "batched eta matches GetElevation" + tag);
+            TEST_NEAR(max_head_err, 0.0, 1e-12 * sum_a, "batched head matches GetDynamicPressureHead" + tag);
+            TEST_ASSERT(zero_above, "batched head is zero above the surface" + tag);
+            TEST_ASSERT(n_wet > 0 && n_wet < cloud.cols(), "cloud has wet and dry points" + tag);
+        }
+
+#ifdef _OPENMP
+        // Each point is computed independently, so the thread count must not change any bit.
+        Eigen::VectorXd eta_1, head_1, eta_n, head_n;
+        const int max_threads = omp_get_max_threads();
+        omp_set_num_threads(1);
+        field.GetElevationAndPressureHead(cloud, 3.1, 1.0, eta_1, &head_1);
+        omp_set_num_threads(std::max(4, max_threads));
+        field.GetElevationAndPressureHead(cloud, 3.1, 1.0, eta_n, &head_n);
+        omp_set_num_threads(max_threads);
+        TEST_ASSERT(eta_1 == eta_n && head_1 == head_n,
+                    "batched results identical for 1 and N threads, depth " + std::to_string(depth));
+#endif
+    }
+
+    // Default WaveBase implementation (eta table: elevation only, no pressure field).
+    {
+        EtaTableWaveField table({0.0, 1.0, 2.0}, {0.0, 0.1, 0.0}, 0.0);
+        Eigen::Matrix3Xd pts(3, 2);
+        pts << 0.0, 5.0, 0.0, 1.0, -1.0, 0.5;
+        Eigen::VectorXd eta;
+        table.GetElevationAndPressureHead(pts, 0.5, 0.5, eta, nullptr);
+        TEST_NEAR(eta[0], 0.5 * table.GetElevation(pts.col(0), 0.5), 0.0, "default batched eta, point 0");
+        TEST_NEAR(eta[1], 0.5 * table.GetElevation(pts.col(1), 0.5), 0.0, "default batched eta, point 1");
     }
 
     // Pressure decays monotonically with depth in deep water (single component, crest).

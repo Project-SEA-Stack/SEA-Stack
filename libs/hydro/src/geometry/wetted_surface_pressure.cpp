@@ -32,12 +32,18 @@ WettedSurfacePressureIntegrator::WettedSurfacePressureIntegrator(TriangleMesh me
 
 Eigen::Matrix3Xd WettedSurfacePressureIntegrator::TransformVertices(
     const Eigen::Affine3d& body_to_world) const {
+    Eigen::Matrix3Xd world;
+    TransformVertices(body_to_world, world);
+    return world;
+}
+
+void WettedSurfacePressureIntegrator::TransformVertices(const Eigen::Affine3d& body_to_world,
+                                                        Eigen::Matrix3Xd& world) const {
     const int nv = mesh_.num_vertices();
-    Eigen::Matrix3Xd world(3, nv);
+    world.resize(3, nv);
     for (int i = 0; i < nv; ++i) {
         world.col(i) = body_to_world * Eigen::Vector3d(mesh_.vertices.row(i).transpose());
     }
-    return world;
 }
 
 namespace {

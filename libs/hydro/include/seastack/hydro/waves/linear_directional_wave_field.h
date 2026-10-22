@@ -39,6 +39,16 @@ class LinearDirectionalWaveField : public WaveBase {
     Eigen::Vector3d GetAcceleration(const Eigen::Vector3d& position, double time, double elevation) const override;
     double GetDynamicPressureHead(const Eigen::Vector3d& position, double time, double elevation) const override;
 
+    /// Batched elevation and pressure head (see WaveBase). Each component's
+    /// cosine is evaluated once per point and shared by both outputs; points
+    /// are processed in parallel with OpenMP when the workload is large.
+    /// Results do not depend on the thread count.
+    void GetElevationAndPressureHead(const Eigen::Matrix3Xd& points,
+                                     double time,
+                                     double elevation_scale,
+                                     Eigen::VectorXd& elevation,
+                                     Eigen::VectorXd* pressure_head) const override;
+
     /// Surface slope (d_eta/dx, d_eta/dy) at a given position and time.
     Eigen::Vector2d GetElevationGradientXY(const Eigen::Vector3d& position, double time) const override;
 

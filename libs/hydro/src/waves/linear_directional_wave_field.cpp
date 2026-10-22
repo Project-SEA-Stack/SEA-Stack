@@ -41,6 +41,7 @@ DepthAttenuation ComputeDepthAttenuation(double k_mag, double z, double water_de
     return {std::cosh(k_mag * (z + water_depth)) / denom,
             std::sinh(k_mag * (z + water_depth)) / denom};
 }
+
 }  // namespace
 
 namespace seastack::hydro {
@@ -272,6 +273,67 @@ double LinearDirectionalWaveField::GetDynamicPressureHead(
         head += amplitudes_[i] * depth_factor * std::cos(phase_args[i]);
     }
     return head;
+}
+
+void LinearDirectionalWaveField::GetElevationAndPressureHead(const Eigen::Matrix3Xd& points,
+                                                             double time,
+                                                             double elevation_scale,
+                                                             Eigen::VectorXd& elevation,
+                                                             Eigen::VectorXd* pressure_head) const {
+    const Eigen::Index n_points = points.cols();
+    const Eigen::Index n_comp = amplitudes_.size();
+    elevation.resize(n_points);
+    if (pressure_head) pressure_head->resize(n_points);
+
+    const bool infinite_depth = water_depth_ <= 0.0 || std::isinf(water_depth_);
+    bool all_deep = true;
+    for (Eigen::Index i = 0; i < n_comp; ++i) {
+        all_deep = all_deep && is_in_deep_water(std::abs(wavenumbers_[i]), water_depth_);
+    }
+    // Time part of the phase, shared by all points: phi_i - omega_i t.
+    const Eigen::ArrayXd theta = phases_.array() - omegas_.array() * time;
+    const Eigen::ArrayXd abs_k = wavenumbers_.array().abs();
+
+    const int n = static_cast<int>(n_points);
+#ifdef _OPENMP
+    // Below this many point-component evaluations, threading costs more than it saves.
+    constexpr long long kMinParallelWork = 50000;
+    const bool parallel = static_cast<long long>(n_points) * static_cast<long long>(n_comp) >= kMinParallelWork;
+    #pragma omp parallel if (parallel)
+#endif
+    {
+        // Per-thread scratch, allocated once per call rather than per point.
+        Eigen::ArrayXd cos_phase(n_comp);
+        Eigen::ArrayXd depth_factor(n_comp);
+#ifdef _OPENMP
+        #pragma omp for schedule(static)
+#endif
+        for (int j = 0; j < n; ++j) {
+            const double x = points(0, j);
+            const double y = points(1, j);
+            const double z = points(2, j);
+            cos_phase = (kx_.array() * x + ky_.array() * y + theta).cos();
+            const double eta = elevation_scale * (amplitudes_.array() * cos_phase).sum();
+            elevation[j] = eta;
+            if (!pressure_head) continue;
+            if (z - mwl_ - eta > 0.0) {
+                (*pressure_head)[j] = 0.0;  // above the surface
+                continue;
+            }
+            // Wheeler-stretched depth below the surface, as in GetDynamicPressureHead.
+            const double z_s = infinite_depth
+                               ? (z - mwl_) - eta
+                               : GetWheelerStretchedPosition(Eigen::Vector3d(x, y, z), eta, water_depth_, mwl_).z() - mwl_;
+            if (all_deep) {
+                depth_factor = (abs_k * z_s).exp();
+            } else {
+                for (Eigen::Index i = 0; i < n_comp; ++i) {
+                    depth_factor[i] = AiryPressureDepthFactor(wavenumbers_[i], z_s, water_depth_);
+                }
+            }
+            (*pressure_head)[j] = (amplitudes_.array() * depth_factor * cos_phase).sum();
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

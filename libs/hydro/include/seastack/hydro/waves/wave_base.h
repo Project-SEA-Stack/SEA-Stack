@@ -79,6 +79,23 @@ class WaveBase {
     /// @throws std::logic_error if the wave model has no linear pressure field.
     virtual double GetDynamicPressureHead(const Eigen::Vector3d& position, double time, double elevation) const;
 
+    /// Elevation and dynamic pressure head at many points in one call.
+    ///
+    /// For each column j of points:
+    ///   elevation[j] = elevation_scale * GetElevation(points.col(j), time)
+    ///   pressure_head[j] = GetDynamicPressureHead(points.col(j), time, elevation[j])
+    ///                      if the point is on or below that surface, else 0.
+    /// elevation_scale is typically an excitation ramp r(t) in [0, 1]; the head
+    /// is not scaled (see GetDynamicPressureHead). Units: m.
+    /// Pass pressure_head = nullptr when only the elevation is needed.
+    /// The default loops over the per-point functions; wave models with
+    /// discrete components override it to share the phase evaluation.
+    virtual void GetElevationAndPressureHead(const Eigen::Matrix3Xd& points,
+                                             double time,
+                                             double elevation_scale,
+                                             Eigen::VectorXd& elevation,
+                                             Eigen::VectorXd* pressure_head) const;
+
     /// Elevation using at most max_components (for faster visualization).
     /// Default ignores the limit and calls GetElevation(pos, t).
     virtual double GetElevation(const Eigen::Vector3d& pos, double t, int /*max_components*/) const {
