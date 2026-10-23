@@ -13,6 +13,8 @@
  *   8. Multi-body config
  *   9. Block-list forms (damping, moordyn.bodies, period.values), CRLF,
  *      loud errors for malformed lists, parse of every shipped hydro YAML
+ *  10. wetted_surface (mean, calm_water, instantaneous), the v1.0.0
+ *      hydrostatics forms it replaces, and their errors
  *********************************************************************/
 
 #include <seastack/hydro/config/yaml_parser.h>
@@ -786,52 +788,87 @@ hydrodynamics:
     return true;
 }
 
-// U10 (docs/theory/NONLINEAR_FROUDE_KRYLOV.md): flat body keys for nonlinear
-// hydrostatics and nonlinear Froude-Krylov, and their error cases.
-static bool test_froude_krylov_keys() {
-    // Canonical flat form: body-level mesh_file is copied to hydrostatics.mesh_file.
-    std::string yaml = R"(
+// U10 (docs/theory/NONLINEAR_FROUDE_KRYLOV.md, section 7): the body-level
+// wetted_surface key, the v1.0.0 hydrostatics forms it replaces, and their
+// error cases.
+static bool test_wetted_surface_keys() {
+    auto parse = [](const std::string& yaml, const std::string& name) {
+        auto path = WriteTempYaml(yaml, name);
+        auto data = ReadHydroYAML(path);
+        CleanupFile(path);
+        return data;
+    };
+    const std::string regular_waves = R"(  waves:
+    type: regular
+    height: 1.0
+    period: 8.0
+)";
+
+    auto data = parse(R"(
 hydrodynamics:
   bodies:
     - name: float
       mesh_file: hull.obj
-      hydrostatics: nonlinear
-      froude_krylov: nonlinear
-      froude_krylov_pressure: hydrostatic
+      wetted_surface: instantaneous
+      wave_pressure: long_wave
+    - name: calm
+      mesh_file: hull.obj
+      wetted_surface: calm_water
     - name: spar
       mesh_file: spar.obj
-      hydrostatics: linear
-)";
-    auto path = WriteTempYaml(yaml, "fk_flat");
-    auto data = ReadHydroYAML(path);
-    CleanupFile(path);
-    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kNonlinear, "flat hydrostatics: nonlinear");
-    Check(Filename(data.bodies[0].hydrostatics.mesh_file) == "hull.obj", "body mesh_file used for nonlinear body");
-    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "froude_krylov: nonlinear");
+      wetted_surface: mean
+    - name: unset
+)" + regular_waves, "ws_values");
+    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kNonlinear, "instantaneous -> nonlinear hydrostatics");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "instantaneous -> nonlinear FK");
     Check(data.bodies[0].froude_krylov_pressure == FroudeKrylovPressureModel::kHydrostatic,
-          "froude_krylov_pressure: hydrostatic");
-    Check(data.bodies[1].hydrostatics.model == HydrostaticsModel::kLinear, "flat hydrostatics: linear");
-    Check(data.bodies[1].hydrostatics.mesh_file.empty(), "linear body keeps no hydrostatics mesh");
-    Check(data.bodies[1].froude_krylov == FroudeKrylovModel::kLinear, "froude_krylov defaults to linear");
-    Check(data.bodies[1].froude_krylov_pressure == FroudeKrylovPressureModel::kAiryWheeler,
-          "froude_krylov_pressure defaults to airy_wheeler");
+          "wave_pressure: long_wave");
+    Check(Filename(data.bodies[0].hydrostatics.mesh_file) == "hull.obj", "body mesh_file used for instantaneous");
+    Check(data.bodies[1].hydrostatics.model == HydrostaticsModel::kNonlinear, "calm_water -> nonlinear hydrostatics");
+    Check(data.bodies[1].froude_krylov == FroudeKrylovModel::kLinear, "calm_water -> linear FK");
+    Check(Filename(data.bodies[1].hydrostatics.mesh_file) == "hull.obj", "body mesh_file used for calm_water");
+    Check(data.bodies[2].hydrostatics.model == HydrostaticsModel::kLinear, "mean -> linear hydrostatics");
+    Check(data.bodies[2].hydrostatics.mesh_file.empty(), "mean body keeps no hydrostatics mesh");
+    Check(data.bodies[3].hydrostatics.model == HydrostaticsModel::kLinear, "unset -> linear hydrostatics");
+    Check(data.bodies[3].froude_krylov == FroudeKrylovModel::kLinear, "unset -> linear FK");
+    Check(data.bodies[3].froude_krylov_pressure == FroudeKrylovPressureModel::kAiryWheeler,
+          "wave_pressure defaults to airy_wheeler");
 
-    // Block form with the same mesh in both places is accepted.
-    yaml = R"(
+    // The v1.0.0 forms mean calm_water, in waves too.
+    data = parse(R"(
 hydrodynamics:
   bodies:
-    - name: float
+    - name: scalar
+      mesh_file: hull.obj
+      hydrostatics: nonlinear
+    - name: block
       mesh_file: hull.obj
       hydrostatics:
         model: nonlinear
         mesh_file: hull.obj
-      froude_krylov: nonlinear
-      froude_krylov_pressure: airy_wheeler
-)";
-    path = WriteTempYaml(yaml, "fk_block_same_mesh");
-    data = ReadHydroYAML(path);
-    CleanupFile(path);
-    Check(Filename(data.bodies[0].hydrostatics.mesh_file) == "hull.obj", "matching mesh in both places accepted");
+    - name: inline
+      hydrostatics: { model: nonlinear, mesh_file: hull.obj }
+)" + regular_waves, "ws_legacy_forms");
+    for (const auto& body : data.bodies) {
+        Check(body.hydrostatics.model == HydrostaticsModel::kNonlinear, body.name + ": v1.0.0 form -> nonlinear");
+        Check(body.froude_krylov == FroudeKrylovModel::kLinear, body.name + ": v1.0.0 form -> calm_water");
+        Check(Filename(body.hydrostatics.mesh_file) == "hull.obj", body.name + ": mesh_file");
+    }
+
+    // Deprecated global flag: calm_water, except where a body sets wetted_surface.
+    data = parse(R"(
+hydrodynamics:
+  nonlinear_hydrostatics: true
+  bodies:
+    - name: legacy
+      mesh_file: hull.obj
+    - name: new
+      mesh_file: hull.obj
+      wetted_surface: mean
+)" + regular_waves, "ws_global_flag");
+    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kNonlinear, "global flag -> nonlinear");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "global flag -> calm_water");
+    Check(data.bodies[1].hydrostatics.model == HydrostaticsModel::kLinear, "wetted_surface wins over global flag");
 
     ExpectParseError(R"(
 hydrodynamics:
@@ -841,22 +878,15 @@ hydrodynamics:
       hydrostatics:
         model: nonlinear
         mesh_file: other.obj
-)", "err_fk_mesh_conflict", {"body 'float'", "differ", "body-level mesh_file"});
+)", "err_ws_mesh_conflict", {"body 'float'", "differ", "body-level mesh_file"});
 
     ExpectParseError(R"(
 hydrodynamics:
   bodies:
     - name: float
-      froude_krylov: nonlinaer
-)", "err_fk_value", {":5:", "froude_krylov must be 'linear' or 'nonlinear'", "\"nonlinaer\""});
-
-    ExpectParseError(R"(
-hydrodynamics:
-  bodies:
-    - name: float
-      froude_krylov_pressure: wheeler
-)", "err_fk_pressure_value", {":5:", "froude_krylov_pressure must be 'airy_wheeler' or 'hydrostatic'",
-                               "\"wheeler\""});
+      wetted_surface: instantanous
+)", "err_ws_value", {":5:", "wetted_surface must be 'mean', 'calm_water' or 'instantaneous'",
+                     "\"instantanous\""});
 
     ExpectParseError(R"(
 hydrodynamics:
@@ -864,9 +894,38 @@ hydrodynamics:
     - name: float
       mesh_file: hull.obj
       hydrostatics: nonlinear
+      wetted_surface: instantaneous
+)", "err_ws_both_keys", {"body 'float'", "set either wetted_surface or hydrostatics"});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      wave_pressure: wheeler
+)", "err_wave_pressure_value", {":5:", "wave_pressure must be 'airy_wheeler' or 'long_wave'", "\"wheeler\""});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      mesh_file: hull.obj
+      wetted_surface: calm_water
+      wave_pressure: long_wave
+)", "err_wave_pressure_unused", {"body 'float'", "wave_pressure applies only to wetted_surface: instantaneous"});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
       froude_krylov: nonlinear
-      include_excitation: false
-)", "err_fk_no_excitation", {"body 'float'", "include_excitation: true"});
+)", "err_removed_fk_key", {":5:", "'froude_krylov' is not a hydro YAML key", "wetted_surface: instantaneous"});
+
+    ExpectParseError(R"(
+hydrodynamics:
+  bodies:
+    - name: float
+      froude_krylov_pressure: hydrostatic
+)", "err_removed_fk_pressure_key", {":5:", "'froude_krylov_pressure' is not a hydro YAML key", "wave_pressure"});
 
     ExpectParseError(R"(
 hydrodynamics:
@@ -875,84 +934,68 @@ hydrodynamics:
       hydrostatics: nonlinar
 )", "err_hs_scalar_value", {":5:", "hydrostatics.model must be 'linear' or 'nonlinear'"});
 
-    std::cout << "  PASSED: test_froude_krylov_keys\n";
+    std::cout << "  PASSED: test_wetted_surface_keys\n";
     return true;
 }
 
-// The froude_krylov default follows hydrostatics: nonlinear hydrostatics in
-// waves with discrete components gets nonlinear FK unless froude_krylov is set.
-static bool test_froude_krylov_follows_hydrostatics() {
+// wetted_surface: instantaneous needs waves with discrete components and BEM
+// excitation. In still water it uses the calm-water integrator (same force).
+static bool test_wetted_surface_waves() {
     auto parse = [](const std::string& yaml, const std::string& name) {
         auto path = WriteTempYaml(yaml, name);
         auto data = ReadHydroYAML(path);
         CleanupFile(path);
         return data;
     };
-    const std::string bodies = R"(
+    const std::string body = R"(
 hydrodynamics:
   bodies:
-    - name: auto
+    - name: float
       mesh_file: hull.obj
-      hydrostatics: nonlinear
-    - name: calm
-      mesh_file: hull.obj
-      hydrostatics: nonlinear
-      froude_krylov: linear
-    - name: lin
-      hydrostatics: linear
-    - name: fk_only
-      mesh_file: hull.obj
-      froude_krylov: nonlinear
-    - name: no_exc
-      mesh_file: hull.obj
-      hydrostatics: nonlinear
-      include_excitation: false
+      wetted_surface: instantaneous
+)";
+    const std::string eta_table = R"(  waves:
+    type: irregular
+    eta_file: eta.txt
+    method: irf_convolution
 )";
 
-    auto data = parse(bodies + R"(  waves:
-    type: regular
-    height: 1.0
-    period: 8.0
-)", "fk_follow_regular");
-    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "auto in regular waves -> nonlinear FK");
-    Check(data.bodies[1].froude_krylov == FroudeKrylovModel::kLinear, "explicit froude_krylov: linear kept");
-    Check(data.bodies[2].froude_krylov == FroudeKrylovModel::kLinear, "linear hydrostatics -> linear FK");
-    Check(data.bodies[3].hydrostatics.model == HydrostaticsModel::kNonlinear,
-          "froude_krylov: nonlinear implies nonlinear hydrostatics");
-    Check(Filename(data.bodies[3].hydrostatics.mesh_file) == "hull.obj", "implied nonlinear body gets mesh_file");
-    Check(data.bodies[4].froude_krylov == FroudeKrylovModel::kLinear, "include_excitation: false -> linear FK");
-
-    data = parse(bodies + R"(  waves:
+    auto data = parse(body + R"(  waves:
     type: irregular
     spectrum: jonswap
     height: 2.0
     period: 8.0
-)", "fk_follow_irregular");
-    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "auto in irregular waves -> nonlinear FK");
+)", "ws_irregular");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kNonlinear, "instantaneous in irregular waves");
 
-    data = parse(bodies, "fk_follow_still");
-    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "auto in still water -> linear FK");
+    data = parse(body, "ws_no_waves");
+    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kNonlinear, "instantaneous, no waves -> nonlinear");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "instantaneous, no waves -> calm-water path");
 
-    data = parse(bodies + R"(  waves:
-    type: irregular
-    eta_file: eta.txt
-    method: irf_convolution
-)", "fk_follow_eta_table");
-    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "auto with eta table -> linear FK");
+    data = parse(body + "  waves:\n    type: still\n", "ws_still");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "instantaneous, still water -> calm-water path");
 
-    // Explicit hydrostatics: linear is not overridden (HydroModelBuilder rejects the pair).
+    ExpectParseError(body + eta_table, "err_ws_eta_table",
+                     {"body 'float'", "needs waves with discrete components", "wetted_surface: calm_water"});
+
+    ExpectParseError(body + "      include_excitation: false\n" + R"(  waves:
+    type: regular
+    height: 1.0
+    period: 8.0
+)", "err_ws_no_excitation", {"body 'float'", "include_excitation: true"});
+
+    // calm_water does not evaluate the wave, so an eta table is accepted.
     data = parse(R"(
 hydrodynamics:
   bodies:
     - name: float
       mesh_file: hull.obj
-      hydrostatics: linear
-      froude_krylov: nonlinear
-)", "fk_explicit_linear_hs");
-    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kLinear,
-          "explicit hydrostatics: linear kept with froude_krylov: nonlinear");
+      wetted_surface: calm_water
+)" + eta_table, "ws_calm_eta_table");
+    Check(data.bodies[0].hydrostatics.model == HydrostaticsModel::kNonlinear, "calm_water with eta table");
+    Check(data.bodies[0].froude_krylov == FroudeKrylovModel::kLinear, "calm_water with eta table -> linear FK");
 
-    std::cout << "  PASSED: test_froude_krylov_follows_hydrostatics\n";
+    std::cout << "  PASSED: test_wetted_surface_waves\n";
     return true;
 }
 
@@ -1022,8 +1065,8 @@ int main() {
     run(test_period_list_forms,     "test_period_list_forms");
     run(test_unsupported_list_items_error, "test_unsupported_list_items_error");
     run(test_hydrostatics_inline_and_model_check, "test_hydrostatics_inline_and_model_check");
-    run(test_froude_krylov_keys,    "test_froude_krylov_keys");
-    run(test_froude_krylov_follows_hydrostatics, "test_froude_krylov_follows_hydrostatics");
+    run(test_wetted_surface_keys,   "test_wetted_surface_keys");
+    run(test_wetted_surface_waves,  "test_wetted_surface_waves");
     run(test_parse_all_shipped_yamls, "test_parse_all_shipped_yamls");
 
     std::cout << "\nResults: " << passed << " passed, " << failed << " failed.\n";

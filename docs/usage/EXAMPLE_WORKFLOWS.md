@@ -33,15 +33,12 @@ documented command lines: [demo suite README](../../data/demos/run_seastack/READ
 This option was added after v1.0.0 and is planned for v1.1. See
 [RELEASE_NOTES_v1.1.md](../build/RELEASE_NOTES_v1.1.md).
 
-Set `hydrostatics: nonlinear` and a `mesh_file` on a body. In waves this
-turns on nonlinear Froude-Krylov as well: SEA-Stack integrates the static
-and incident-wave pressure over the part of the hull that is below the wave
-surface at each time step. It then subtracts the linear Froude-Krylov force
-that the BEM excitation already contains, so only diffraction and radiation
-stay linear. Use it when heave or relative motion is a sizeable fraction of
-the draft or freeboard. In that range, nonlinear hydrostatics alone (buoyancy
-against the calm waterplane plus linear excitation) can throw the body clear
-of the water. Example:
+Set `wetted_surface: instantaneous` and a `mesh_file` on a body. At each
+time step SEA-Stack then integrates the static and incident-wave pressure
+over the part of the hull that is below the wave surface. It subtracts the
+linear Froude-Krylov force that the BEM excitation already contains, so only
+diffraction and radiation stay linear. Use it when heave or relative motion
+is a sizeable fraction of the draft or freeboard. Example:
 [`iea_sphere/regular_waves_nlfk`](../../data/demos/run_seastack/iea_sphere/regular_waves_nlfk/).
 
 ```yaml
@@ -50,55 +47,53 @@ hydrodynamics:
     - name: body1
       h5_file: ../assets/hydroData/sphere.h5
       mesh_file: ../assets/geometry/sphere.obj   # closed hull, body frame
-      hydrostatics: nonlinear                    # in waves: nonlinear FK too
+      wetted_surface: instantaneous              # mean (default) | calm_water | instantaneous
 ```
 
-The start-up log states the model chosen for each body.
+`wetted_surface` says which hull surface the static and incident-wave
+pressure act on:
 
-Advanced keys (most users do not need them):
+| Value | Static pressure (buoyancy) | Incident-wave pressure (Froude-Krylov) | Use |
+|---|---|---|---|
+| `mean` (default) | BEM stiffness on the mean hull | BEM excitation on the mean hull | Small motions; fastest |
+| `calm_water` | Mesh below z = 0 | BEM excitation on the mean hull | v1.0.0 `hydrostatics: nonlinear`; eta-table waves; cross-checks |
+| `instantaneous` | Mesh below the incident wave | Mesh below the incident wave | Large waves and motions |
 
-| Key | Values | Meaning |
-|---|---|---|
-| `mesh_file` | path | Closed hull mesh, shared by nonlinear hydrostatics and nonlinear Froude-Krylov |
-| `hydrostatics` | `linear` (default), `nonlinear` | Buoyancy from the BEM stiffness or from the mesh |
-| `froude_krylov` | not set (default), `linear`, `nonlinear` | Not set: follows `hydrostatics` (see below). `linear`: incident-wave pressure on the mean hull, from the BEM excitation. `nonlinear`: on the instantaneous wetted hull |
-| `froude_krylov_pressure` | `airy_wheeler` (default), `hydrostatic` | Airy pressure with Wheeler stretching, or the long-wave approximation `p = rho g (eta - z)` |
+`instantaneous` sets both parts together, so the hull never sees buoyancy
+from one surface and wave pressure from another. `calm_water` is valid only
+while the relative motion stays well below the draft and freeboard; in large
+waves it can throw the body clear of the water, and the run logs a warning.
+In still water the two nonlinear options give the same force, and
+`instantaneous` uses the cheaper calm-water integrator. The start-up log
+states the model chosen for each body.
 
-How `froude_krylov` is chosen when it is not set:
+`wave_pressure` (only with `instantaneous`) selects the wave pressure model:
+`airy_wheeler` (default) is Airy pressure with Wheeler stretching above
+z = 0; `long_wave` is `p = rho g (eta - z)`. Pick `long_wave` only for long
+waves: it ignores the decay of the wave pressure with depth, so its error
+grows with wavenumber times draft (about 4% heave for the IEA sphere at
+T = 4.2 s).
 
-- `hydrostatics: linear`: linear.
-- `hydrostatics: nonlinear` in still water: linear. In still water both
-  models give the same force, and the calm-water model is cheaper.
-- `hydrostatics: nonlinear` in regular or spectral waves: nonlinear.
-- `hydrostatics: nonlinear` with an eta-table wave (`waves.method:
-  irf_convolution`) or `include_excitation: false`: linear, with a warning.
-  Nonlinear Froude-Krylov is not available in those cases.
+v1.0.0 inputs still work: `hydrostatics: nonlinear` (scalar, block or inline
+form) and the deprecated global `nonlinear_hydrostatics: true` both mean
+`calm_water`.
 
-`froude_krylov: nonlinear` on its own also sets `hydrostatics: nonlinear`.
-Set `froude_krylov: linear` only if you want buoyancy against the calm
-waterplane z = 0 with linear excitation in waves. That model is valid only
-while the relative motion stays well below the draft and freeboard, and the
-run logs a warning.
+Rules (checked at start-up; each stops the run with an explicit error):
 
-Pick `hydrostatic` pressure only for long waves: it ignores the decay of
-the wave pressure with depth, so its error grows with wavenumber times draft
-(about 4% heave for the IEA sphere at T = 4.2 s).
+- `calm_water` and `instantaneous` need a closed hull `mesh_file`. If both
+  the body-level `mesh_file` and `hydrostatics.mesh_file` are given, they
+  must be the same file.
+- Set `wetted_surface` or `hydrostatics` on a body, not both.
+- `instantaneous` needs `include_excitation: true`: the diffraction force
+  still comes from the BEM excitation.
+- `instantaneous` needs waves defined by discrete components (regular,
+  spectral, or a DFT eta import). Eta-table imports (`waves.method:
+  irf_convolution`) are rejected; use `calm_water` there.
 
-Rules for nonlinear Froude-Krylov (checked at start-up; each stops the run
-with an explicit error):
-
-- A `mesh_file` is required, and `hydrostatics` must not be set to `linear`.
-- `include_excitation` must stay `true`: the diffraction force still comes
-  from the BEM excitation.
-- The wave must be defined by discrete components (regular, spectral, or a
-  DFT eta import). Eta-table imports are rejected.
-- If both the body-level `mesh_file` and `hydrostatics.mesh_file` are given,
-  they must be the same file.
-
-In still water the force equals nonlinear hydrostatics. The force ramps in
-with the same ramp as the excitation. A warning is logged if a body starts
-away from its BEM position (the subtracted linear force is phased for that
-position) or if it leaves the water completely.
+The nonlinear Froude-Krylov force ramps in with the same ramp as the
+excitation. A warning is logged if a body starts away from its BEM position
+(the subtracted linear force is phased for that position) or if it leaves
+the water completely.
 
 Verification: unit, comparison and external tests are listed in
 [docs/theory/NONLINEAR_FROUDE_KRYLOV.md](../theory/NONLINEAR_FROUDE_KRYLOV.md),

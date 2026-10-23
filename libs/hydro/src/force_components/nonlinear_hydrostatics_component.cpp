@@ -127,7 +127,7 @@ void NonlinearHydrostaticsComponent::Compute(
                         "volume) at t = " << time << " s. Nonlinear hydrostatics uses the "
                         "calm waterplane; if waves are active, the linear excitation is "
                         "no longer consistent with the buoyancy. Consider "
-                        "froude_krylov: nonlinear, linear hydrostatics, or smaller waves.");
+                        "wetted_surface: instantaneous, linear hydrostatics, or smaller waves.");
         }
         if (mesh_volume_[i] > 0.0 &&
             result.volume >= kFullySubmergedFraction * mesh_volume_[i] &&
@@ -137,7 +137,7 @@ void NonlinearHydrostaticsComponent::Compute(
                         << " s. Nonlinear hydrostatics uses the calm waterplane; if "
                         "waves are active, the linear excitation is no longer "
                         "consistent with the buoyancy. Consider "
-                        "froude_krylov: nonlinear, linear hydrostatics, or smaller waves.");
+                        "wetted_surface: instantaneous, linear hydrostatics, or smaller waves.");
         }
 
         if (result.volume <= 0.0) continue;

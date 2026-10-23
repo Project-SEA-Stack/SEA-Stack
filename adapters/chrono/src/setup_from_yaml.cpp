@@ -433,15 +433,16 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAML(
 
         // Log per-body hydrostatics mode
         for (const auto& body : hydro_data.bodies) {
-            std::string mode_str = (body.hydrostatics.model == seastack::hydro::HydrostaticsModel::kNonlinear)
-                ? "nonlinear" : "linear";
+            std::string mode_str = "mean (linear)";
             if (body.froude_krylov == seastack::hydro::FroudeKrylovModel::kNonlinear) {
-                mode_str += (body.froude_krylov_pressure == seastack::hydro::FroudeKrylovPressureModel::kHydrostatic)
-                    ? ", froude_krylov: nonlinear (hydrostatic pressure)"
-                    : ", froude_krylov: nonlinear (airy_wheeler pressure)";
+                mode_str = (body.froude_krylov_pressure == seastack::hydro::FroudeKrylovPressureModel::kHydrostatic)
+                    ? "instantaneous (long_wave pressure)"
+                    : "instantaneous (airy_wheeler pressure)";
+            } else if (body.hydrostatics.model == seastack::hydro::HydrostaticsModel::kNonlinear) {
+                mode_str = "calm_water";
             }
             seastack::infra::debug::LogDebug(
-                std::string("Body '") + body.name + "' hydrostatics: " + mode_str);
+                std::string("Body '") + body.name + "' wetted surface: " + mode_str);
         }
         if (nl_count > 0) {
             seastack::infra::cli::LogDebug(seastack::infra::cli::CreateAlignedLine(

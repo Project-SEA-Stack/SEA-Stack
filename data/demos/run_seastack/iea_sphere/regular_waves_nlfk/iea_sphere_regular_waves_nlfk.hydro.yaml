@@ -3,12 +3,11 @@ hydrodynamics:
     - name: body1
       h5_file: ../assets/hydroData/sphere.h5
       mesh_file: ../assets/geometry/sphere.obj
-      # Buoyancy and Froude-Krylov force from the incident-wave pressure on
-      # the instantaneous wetted hull (below the wave surface, not z = 0).
-      # Radiation and diffraction stay linear. In waves, hydrostatics: nonlinear
-      # turns on nonlinear Froude-Krylov (Airy pressure, Wheeler stretching) by
-      # default; see docs/usage/EXAMPLE_WORKFLOWS.md for the advanced keys.
-      hydrostatics: nonlinear
+      # Buoyancy and Froude-Krylov force from the static and incident-wave
+      # pressure on the hull below the wave surface (not z = 0). Radiation and
+      # diffraction stay linear. Wave pressure: Airy with Wheeler stretching
+      # (wave_pressure: airy_wheeler, the default; or long_wave).
+      wetted_surface: instantaneous
 
   # IEA OES Task 10 steepness H / (g T^2) = 0.0096 (Task 10 uses 0.01).
   waves:

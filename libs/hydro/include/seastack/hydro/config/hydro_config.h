@@ -62,8 +62,8 @@ struct HydroBody {
     /// parsing it is copied to hydrostatics.mesh_file for nonlinear bodies.
     std::string mesh_file = "";
     HydrostaticsSettings hydrostatics;
-    /// ReadHydroYAML sets this to kNonlinear when the key is absent and the body
-    /// has nonlinear hydrostatics in waves with discrete components.
+    /// ReadHydroYAML sets hydrostatics.model and froude_krylov from the body's
+    /// wetted_surface key (mean, calm_water or instantaneous).
     FroudeKrylovModel froude_krylov = FroudeKrylovModel::kLinear;
     FroudeKrylovPressureModel froude_krylov_pressure = FroudeKrylovPressureModel::kAiryWheeler;
     bool include_excitation = true;

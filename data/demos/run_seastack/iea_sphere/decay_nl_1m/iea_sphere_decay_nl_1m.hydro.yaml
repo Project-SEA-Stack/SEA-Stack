@@ -3,7 +3,7 @@ hydrodynamics:
     - name: body1
       h5_file: ../assets/hydroData/sphere.h5
       mesh_file: ../assets/geometry/sphere.obj
-      hydrostatics: nonlinear
+      wetted_surface: instantaneous
 
   waves:
     type: still

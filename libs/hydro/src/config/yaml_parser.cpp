@@ -314,8 +314,11 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
 
     // Track which bodies had an explicit hydrostatics: block for legacy compat
     std::vector<bool> explicit_hydrostatics_flags;
-    // Track which bodies set froude_krylov explicitly (indexed like data.bodies)
-    std::vector<bool> explicit_fk_flags;
+    // Per-body wetted_surface value ("" if unset) and whether wave_pressure was
+    // set, indexed like data.bodies. The current body is pushed next, at index
+    // data.bodies.size().
+    std::vector<std::string> wetted_surface_values;
+    std::vector<bool> wave_pressure_flags;
     
     bool in_period_block = false;
     int period_block_indent = 0;
@@ -816,33 +819,37 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                         current_body.h5_file = ResolvePath(value, hydro_file_path);
                     } else if (key == "mesh_file") {
                         current_body.mesh_file = ResolvePath(value, hydro_file_path);
-                    } else if (key == "froude_krylov") {
-                        // The current body is pushed next, at index data.bodies.size().
-                        explicit_fk_flags.resize(data.bodies.size() + 1, false);
-                        explicit_fk_flags[data.bodies.size()] = true;
+                    } else if (key == "wetted_surface") {
                         std::string val_lower = value;
                         std::transform(val_lower.begin(), val_lower.end(), val_lower.begin(), ::tolower);
-                        if (val_lower == "nonlinear") {
-                            current_body.froude_krylov = FroudeKrylovModel::kNonlinear;
-                        } else if (val_lower == "linear") {
-                            current_body.froude_krylov = FroudeKrylovModel::kLinear;
-                        } else {
+                        if (val_lower != "mean" && val_lower != "calm_water" && val_lower != "instantaneous") {
                             throw std::runtime_error(Location(hydro_file_path, line_number) + "body '" +
-                                                     current_body.name + "': froude_krylov must be "
-                                                     "'linear' or 'nonlinear'; got \"" + value + "\"");
+                                                     current_body.name + "': wetted_surface must be 'mean', "
+                                                     "'calm_water' or 'instantaneous'; got \"" + value + "\"");
                         }
-                    } else if (key == "froude_krylov_pressure") {
+                        wetted_surface_values.resize(data.bodies.size() + 1);
+                        wetted_surface_values[data.bodies.size()] = val_lower;
+                    } else if (key == "wave_pressure") {
                         std::string val_lower = value;
                         std::transform(val_lower.begin(), val_lower.end(), val_lower.begin(), ::tolower);
                         if (val_lower == "airy_wheeler") {
                             current_body.froude_krylov_pressure = FroudeKrylovPressureModel::kAiryWheeler;
-                        } else if (val_lower == "hydrostatic") {
+                        } else if (val_lower == "long_wave") {
                             current_body.froude_krylov_pressure = FroudeKrylovPressureModel::kHydrostatic;
                         } else {
                             throw std::runtime_error(Location(hydro_file_path, line_number) + "body '" +
-                                                     current_body.name + "': froude_krylov_pressure must be "
-                                                     "'airy_wheeler' or 'hydrostatic'; got \"" + value + "\"");
+                                                     current_body.name + "': wave_pressure must be "
+                                                     "'airy_wheeler' or 'long_wave'; got \"" + value + "\"");
                         }
+                        wave_pressure_flags.resize(data.bodies.size() + 1, false);
+                        wave_pressure_flags[data.bodies.size()] = true;
+                    } else if (key == "froude_krylov" || key == "froude_krylov_pressure") {
+                        throw std::runtime_error(Location(hydro_file_path, line_number) + "body '" +
+                                                 current_body.name + "': '" + key + "' is not a hydro YAML key. " +
+                                                 (key == "froude_krylov"
+                                                      ? "Use wetted_surface: instantaneous for nonlinear "
+                                                        "hydrostatics and Froude-Krylov."
+                                                      : "Use wave_pressure: airy_wheeler or long_wave."));
                     } else if (key == "include_excitation") {
                         current_body.include_excitation = ParseBool(value, true);
                     } else if (key == "include_radiation") {
@@ -1349,11 +1356,12 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         } else {
             LOG_WARNING(
                 "WARNING: Global 'nonlinear_hydrostatics' flag is deprecated. "
-                "Use per-body 'hydrostatics: { model: nonlinear }' instead.");
+                "Use per-body 'wetted_surface: calm_water' (or 'instantaneous' in "
+                "waves) instead.");
         }
         for (size_t i = 0; i < data.bodies.size(); ++i) {
-            bool has_explicit = (i < explicit_hydrostatics_flags.size())
-                                && explicit_hydrostatics_flags[i];
+            bool has_explicit = ((i < explicit_hydrostatics_flags.size()) && explicit_hydrostatics_flags[i]) ||
+                                ((i < wetted_surface_values.size()) && !wetted_surface_values[i].empty());
             if (has_explicit) continue;  // per-body config wins
 
             data.bodies[i].hydrostatics.model = HydrostaticsModel::kNonlinear;
@@ -1363,12 +1371,14 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         }
     }
 
-    // Froude-Krylov default follows hydrostatics. A body with nonlinear
-    // hydrostatics in waves gets nonlinear Froude-Krylov unless it sets
-    // froude_krylov: linear (calm-water buoyancy, valid only for small relative
-    // motion). In still water both models give the same force, so the cheaper
-    // calm-water component is kept. Waves without discrete components (eta
-    // table) cannot use nonlinear FK and keep the calm-water model.
+    // wetted_surface selects the surface over which the static and incident-wave
+    // pressure are integrated:
+    //   mean          linear: BEM stiffness and BEM excitation on the mean hull
+    //   calm_water    mesh buoyancy below z = 0 (same as hydrostatics: nonlinear)
+    //   instantaneous mesh below the incident wave: nonlinear hydrostatics and
+    //                 Froude-Krylov (docs/theory/NONLINEAR_FROUDE_KRYLOV.md)
+    // In still water the calm-water and instantaneous surfaces coincide, so
+    // instantaneous uses the cheaper calm-water integrator (same force).
     {
         std::string wave_type = data.waves.type;
         std::transform(wave_type.begin(), wave_type.end(), wave_type.begin(), ::tolower);
@@ -1377,34 +1387,46 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
         const bool still_water = wave_type == "no_wave" || wave_type == "still_ci" || wave_type == "still";
         const bool eta_table = !data.waves.eta_file.empty() &&
                                (wave_method == "irf_convolution" || wave_method == "irf");
-        const bool waves_with_components = !still_water && !eta_table;
 
         for (size_t i = 0; i < data.bodies.size(); ++i) {
             auto& body = data.bodies[i];
-            const bool fk_explicit = i < explicit_fk_flags.size() && explicit_fk_flags[i];
+            const std::string surface = i < wetted_surface_values.size() ? wetted_surface_values[i] : "";
             const bool hs_explicit = i < explicit_hydrostatics_flags.size() && explicit_hydrostatics_flags[i];
-            if (fk_explicit) {
-                if (body.froude_krylov == FroudeKrylovModel::kNonlinear && !hs_explicit &&
-                    body.hydrostatics.model == HydrostaticsModel::kLinear) {
-                    body.hydrostatics.model = HydrostaticsModel::kNonlinear;
-                    LOG_INFO("body '" << body.name << "': froude_krylov: nonlinear implies "
-                             "hydrostatics: nonlinear (static and wave pressure on the same "
-                             "instantaneous wetted surface).");
-                }
-                continue;
+            const bool pressure_set = i < wave_pressure_flags.size() && wave_pressure_flags[i];
+
+            if (!surface.empty() && hs_explicit) {
+                throw std::runtime_error("body '" + body.name + "': set either wetted_surface or "
+                                         "hydrostatics, not both. wetted_surface replaces hydrostatics "
+                                         "(hydrostatics: nonlinear is wetted_surface: calm_water).");
             }
-            if (body.hydrostatics.model != HydrostaticsModel::kNonlinear || still_water) continue;
-            if (waves_with_components && body.include_excitation) {
-                body.froude_krylov = FroudeKrylovModel::kNonlinear;
-                LOG_INFO("body '" << body.name << "': hydrostatics: nonlinear in waves; using "
-                         "nonlinear Froude-Krylov (wave pressure on the instantaneous wetted "
-                         "hull). Set froude_krylov: linear for calm-water buoyancy only.");
-            } else {
-                LOG_WARNING("WARNING: body '" << body.name << "': hydrostatics: nonlinear in waves "
-                            "but nonlinear Froude-Krylov is not available ("
-                            << (eta_table ? "eta-table wave has no discrete components"
-                                          : "include_excitation is false")
-                            << "); buoyancy uses the calm waterplane z = 0.");
+            if (pressure_set && surface != "instantaneous") {
+                throw std::runtime_error("body '" + body.name + "': wave_pressure applies only to "
+                                         "wetted_surface: instantaneous.");
+            }
+
+            if (surface == "mean") {
+                body.hydrostatics.model = HydrostaticsModel::kLinear;
+            } else if (surface == "calm_water") {
+                body.hydrostatics.model = HydrostaticsModel::kNonlinear;
+            } else if (surface == "instantaneous") {
+                body.hydrostatics.model = HydrostaticsModel::kNonlinear;
+                if (still_water) {
+                    LOG_INFO("body '" << body.name << "': wetted_surface: instantaneous in still "
+                             "water; the wave surface is z = 0, so the calm-water integrator is "
+                             "used (same force).");
+                } else if (eta_table) {
+                    throw std::runtime_error("body '" + body.name + "': wetted_surface: instantaneous "
+                                             "needs waves with discrete components. An eta table with "
+                                             "waves.method: irf_convolution has none; omit waves.method "
+                                             "for DFT eta import, or use wetted_surface: calm_water.");
+                } else if (!body.include_excitation) {
+                    throw std::runtime_error("body '" + body.name + "': wetted_surface: instantaneous "
+                                             "needs include_excitation: true. The nonlinear force "
+                                             "replaces only the linear Froude-Krylov part of the BEM "
+                                             "excitation; diffraction still comes from the BEM data.");
+                } else {
+                    body.froude_krylov = FroudeKrylovModel::kNonlinear;
+                }
             }
         }
     }
@@ -1421,11 +1443,6 @@ YAMLHydroData ReadHydroYAML(const std::string& hydro_file_path) {
                                          "') and hydrostatics.mesh_file ('" + body.hydrostatics.mesh_file +
                                          "') differ. Set the hull once, with the body-level mesh_file.");
             }
-        }
-        if (body.froude_krylov == FroudeKrylovModel::kNonlinear && !body.include_excitation) {
-            throw std::runtime_error("body '" + body.name + "': froude_krylov: nonlinear needs "
-                                     "include_excitation: true. The nonlinear force replaces the "
-                                     "linear Froude-Krylov part of the BEM excitation.");
         }
     }
     

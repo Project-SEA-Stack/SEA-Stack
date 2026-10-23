@@ -48,7 +48,7 @@ parameters**, and an **available cases** table (paths below are relative to
 | iea_sphere | decay_nl_1m | IEA sphere, nonlinear hydrostatics, 1 m drop | `iea_sphere/decay_nl_1m/iea_sphere_decay_nl_1m.setup.yaml` |
 | iea_sphere | decay_nl_5m | IEA sphere, nonlinear hydrostatics, 5 m drop | `iea_sphere/decay_nl_5m/iea_sphere_decay_nl_5m.setup.yaml` |
 | iea_sphere | decay_lin_5m | IEA sphere, linear hydrostatics, 5 m drop | `iea_sphere/decay_lin_5m/iea_sphere_decay_lin_5m.setup.yaml` |
-| iea_sphere | regular_waves_nl | IEA sphere, calm-water nonlinear hydrostatics (`froude_krylov: linear`), regular waves H = 2 m, T = 8 s (not in the v1.0.0 package) | `iea_sphere/regular_waves_nl/iea_sphere_regular_waves_nl.setup.yaml` |
+| iea_sphere | regular_waves_nl | IEA sphere, calm-water nonlinear hydrostatics (`wetted_surface: calm_water`), regular waves H = 2 m, T = 8 s (not in the v1.0.0 package) | `iea_sphere/regular_waves_nl/iea_sphere_regular_waves_nl.setup.yaml` |
 | iea_sphere | regular_waves_lin | IEA sphere, linear hydrostatics, same waves (twin of `regular_waves_nl`; not in the v1.0.0 package) | `iea_sphere/regular_waves_lin/iea_sphere_regular_waves_lin.setup.yaml` |
 | iea_sphere | regular_waves_nlfk | IEA sphere, nonlinear Froude-Krylov, regular waves H = 6 m, T = 8 s, optimum PTO (not in the v1.0.0 package) | `iea_sphere/regular_waves_nlfk/iea_sphere_regular_waves_nlfk.setup.yaml` |
 | oswec | regular_waves | OSWEC flap, regular waves | `oswec/regular_waves/oswec_regular_waves.setup.yaml` |

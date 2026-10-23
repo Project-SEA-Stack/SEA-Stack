@@ -24,18 +24,18 @@ decay, irregular waves, and linear vs nonlinear hydrostatic comparisons.
 | decay_nl_1m | Nonlinear hydrostatics (mesh-based buoyancy), 1 m drop | `decay_nl_1m/iea_sphere_decay_nl_1m.setup.yaml` |
 | decay_nl_5m | Nonlinear hydrostatics, 5 m drop | `decay_nl_5m/iea_sphere_decay_nl_5m.setup.yaml` |
 | decay_lin_5m | Linear hydrostatics, 5 m drop | `decay_lin_5m/iea_sphere_decay_lin_5m.setup.yaml` |
-| regular_waves_nl | Calm-water nonlinear hydrostatics (`froude_krylov: linear`), regular waves H = 2 m, T = 8 s. Not in the v1.0.0 package | `regular_waves_nl/iea_sphere_regular_waves_nl.setup.yaml` |
+| regular_waves_nl | Calm-water nonlinear hydrostatics (`wetted_surface: calm_water`), regular waves H = 2 m, T = 8 s. Not in the v1.0.0 package | `regular_waves_nl/iea_sphere_regular_waves_nl.setup.yaml` |
 | regular_waves_lin | Linear hydrostatics, same waves (twin of `regular_waves_nl`). Not in the v1.0.0 package | `regular_waves_lin/iea_sphere_regular_waves_lin.setup.yaml` |
-| regular_waves_nlfk | Nonlinear Froude-Krylov, regular waves H = 6 m, T = 8 s, optimum PTO (633,980 N s/m). Not in the v1.0.0 package | `regular_waves_nlfk/iea_sphere_regular_waves_nlfk.setup.yaml` |
+| regular_waves_nlfk | Nonlinear Froude-Krylov (`wetted_surface: instantaneous`), regular waves H = 6 m, T = 8 s, optimum PTO (633,980 N s/m). Not in the v1.0.0 package | `regular_waves_nlfk/iea_sphere_regular_waves_nlfk.setup.yaml` |
 
 Nonlinear cases use instantaneous submerged volume from the OBJ mesh; 1 m and
 5 m amplitudes illustrate linear vs large-displacement behavior.
 
 ## Calm-water nonlinear hydrostatics in waves
 
-In waves, `hydrostatics: nonlinear` turns on nonlinear Froude-Krylov unless
-the body also sets `froude_krylov: linear`. `regular_waves_nl` sets it, to
-show the limits of the calm-water model.
+`wetted_surface: calm_water` (the same as v1.0.0 `hydrostatics: nonlinear`)
+keeps buoyancy against the calm waterplane in waves. `regular_waves_nl` uses
+it to show the limits of that model.
 
 Calm-water nonlinear hydrostatics computes buoyancy against the waterplane z = 0.
 Wave excitation stays linear and already includes the linear Froude-Krylov
@@ -59,9 +59,8 @@ fully emerges or fully submerges.
 
 ## Large waves: nonlinear Froude-Krylov
 
-With `hydrostatics: nonlinear` alone, a body in waves uses nonlinear
-Froude-Krylov. The static and incident-wave pressure are integrated over the
-hull below the wave surface, and the linear Froude-Krylov part of the
+With `wetted_surface: instantaneous`, the static and incident-wave pressure
+are integrated over the hull below the wave surface, and the linear Froude-Krylov part of the
 excitation is removed. See
 [EXAMPLE_WORKFLOWS.md](../../../../docs/usage/EXAMPLE_WORKFLOWS.md#large-waves-nonlinear-froude-krylov).
 

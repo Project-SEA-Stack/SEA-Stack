@@ -3,11 +3,11 @@ hydrodynamics:
     - name: body1
       h5_file: ../assets/hydroData/rm3.h5
       mesh_file: ../assets/geometry/float.obj
-      hydrostatics: nonlinear
+      wetted_surface: instantaneous
 
     - name: body2
       h5_file: ../assets/hydroData/rm3.h5
-      hydrostatics: linear
+      wetted_surface: mean
 
   waves:
     type: still

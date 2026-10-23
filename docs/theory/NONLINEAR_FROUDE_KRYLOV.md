@@ -15,17 +15,19 @@ bodies that enable it. Radiation and diffraction stay linear.
 
 - **Method.** Weakly nonlinear Froude-Krylov (NL FK), as in WEC-Sim
   `nonlinearHydro = 2` (Lawson et al. 2014), building on Gilloteaux (2007).
-- **Pressure models.** Two choices, per body:
+- **Pressure models.** Two choices, per body (YAML `wave_pressure`):
   - `airy_wheeler` (default): linear Airy pressure, Wheeler-stretched above
     the mean waterline.
-  - `hydrostatic`: long-wave pressure $\rho g(\eta - z)$, with no decay of
-    the wave pressure with depth.
+  - `long_wave` (C++ `FroudeKrylovPressureModel::kHydrostatic`): long-wave
+    pressure $\rho g(\eta - z)$, with no decay of the wave pressure with
+    depth.
 - **No double counting.** The BEM excitation already contains the linear
   Froude-Krylov force. The component subtracts the linear FK it would compute
   itself on the mean wetted mesh, so the total is the BEM excitation plus the
   nonlinear correction.
 - **Opt-in per body.** It requires nonlinear hydrostatics on the same body,
   because static and wave pressure must be integrated over the same surface.
+  In YAML one key sets both: `wetted_surface: instantaneous` (section 7).
 
 ## 2. Why calm-water nonlinear buoyancy fails in waves
 
@@ -56,9 +58,9 @@ linear-FK subtraction in section 6.
 | Method | Captures | Status |
 |---|---|---|
 | Linear hydrostatics + linear excitation | Small motion only | Existing default |
-| Nonlinear hydrostatics, calm waterplane (WEC-Sim `nonlinearHydro = 1` analogue) | Hull shape in still water | Existing (`hydrostatics: nonlinear`; in waves also `froude_krylov: linear`, section 7) |
+| Nonlinear hydrostatics, calm waterplane (WEC-Sim `nonlinearHydro = 1` analogue) | Hull shape in still water | Existing (`wetted_surface: calm_water`, or v1.0.0 `hydrostatics: nonlinear`; section 7) |
 | **NL FK, Airy + Wheeler pressure on the instantaneous wetted surface** (WEC-Sim `nonlinearHydro = 2`; Lawson et al. 2014; Gilloteaux 2007) | Hull shape and wave pressure up to the incident surface | **Chosen**, default pressure model |
-| **NL FK, long-wave (hydrostatic) pressure** up to the incident surface | As above, but the wave pressure does not decay with depth | **Option** (`froude_krylov_pressure: hydrostatic`) |
+| **NL FK, long-wave (hydrostatic) pressure** up to the incident surface | As above, but the wave pressure does not decay with depth | **Option** (`wave_pressure: long_wave`) |
 | Analytical NL FK for axisymmetric bodies (Giorgi & Ringwood 2017, 2018) | Closed-form integrals for simple shapes, with the waterline flat at $\eta$ on the body axis | Independent verification reference only |
 | Nonlinear incident waves, e.g. Rienecker-Fenton (Penalba et al. 2017) | Steep-wave kinematics | Out of scope |
 | Fully nonlinear potential flow or CFD | Everything above, plus nonlinear diffraction and radiation | Out of scope |
@@ -140,7 +142,7 @@ $$p_d = \rho g\, r(t)\sum_i a_i\, Z_i(z_s)\cos(\mathbf{k}_i\cdot\mathbf{x} - \om
     checks this.
   - Below the trough ($z \ll \eta$) stretching changes $p_d$ only slightly.
 
-### 5.2 `hydrostatic` (long-wave)
+### 5.2 `long_wave` (hydrostatic pressure)
 
 $$p_d = \rho g\, \eta(\mathbf{x}, t), \qquad p = \rho g\,(\eta - z).$$
 
@@ -149,7 +151,7 @@ surface.
 
 ## 6. Force decomposition and the linear-FK subtraction
 
-For a body with `froude_krylov: nonlinear`:
+For a body with nonlinear Froude-Krylov (YAML `wetted_surface: instantaneous`):
 
 $$\mathbf{F}_{\text{hydro}} = \mathbf{F}_{\text{rad}} + \mathbf{F}_{\text{exc,BEM}}(t)
  + \underbrace{\Big[\mathbf{F}_{p}(S_w(t)) - \mathbf{F}^{\text{lin}}_{FK,\text{mesh}}(t)\Big]}_{\texttt{NonlinearFroudeKrylovComponent}}$$
@@ -176,7 +178,7 @@ $$\mathbf{F}_{\text{hydro}} = \mathbf{F}_{\text{rad}} + \mathbf{F}_{\text{exc,BE
 
   - Here $\hat{\mathbf{n}}$ is the generalised normal: $\mathbf{n}$ for force,
     $(\mathbf{r}-\mathbf{r}_{CG})\times\mathbf{n}$ for moment.
-  - For `hydrostatic`, $Z_i = 1$.
+  - For `long_wave`, $Z_i = 1$.
   - $\mathbf{A}_i$ and $\mathbf{B}_i$ are computed once at build time, with the
     same quadrature as $\mathbf{F}_p$. They then form the exact linearisation
     of the discrete operator, so discretisation error cancels in the
@@ -214,33 +216,40 @@ assumption; section 11 lists the validity limits.
 
 Radiation and excitation components are unchanged and cover all bodies.
 
-**YAML defaults.** In YAML, `froude_krylov` follows `hydrostatics` when it is
-not set, so the common "turn on nonlinear hydro" setting gives the model that
-is valid in large waves:
+**YAML: one key per body.** The YAML user picks the hull surface that the
+static and incident-wave pressure act on with `wetted_surface`. One key sets
+both parts, so a body can never get buoyancy from one surface and wave
+pressure from another:
 
-| `hydrostatics` | Waves | `froude_krylov` not set resolves to |
-|---|---|---|
-| linear | any | linear |
-| nonlinear | still water | linear (same force as NL FK, cheaper) |
-| nonlinear | regular, spectral or DFT eta import, `include_excitation: true` | nonlinear |
-| nonlinear | eta table, or `include_excitation: false` | linear, with a warning |
+| `wetted_surface` | `hydrostatics` | `froude_krylov` | Notes |
+|---|---|---|---|
+| `mean` (default) | linear | linear | Same as no key |
+| `calm_water` | nonlinear | linear | Same as v1.0.0 `hydrostatics: nonlinear` (all forms) and the deprecated global `nonlinear_hydrostatics: true`. Kept for eta-table waves, v1.0.0 inputs, and as an independent cross-check of the NL FK code in the comparison tests |
+| `instantaneous` | nonlinear | nonlinear | In still water the parser keeps `froude_krylov` linear (same force, cheaper) and logs it |
 
-`froude_krylov: nonlinear` without a `hydrostatics` key sets
-`hydrostatics: nonlinear`. An explicit `froude_krylov: linear` keeps the
-calm-water model in waves (the second row of the wiring table, with its
-warning). The parser applies these rules
-(`ReadHydroYAML`); the C++ `HydroModelBuilder` API has no default switching
-and uses `froude_krylov = linear` unless set. The builder logs the model
-chosen for each nonlinear body.
+`wave_pressure: airy_wheeler | long_wave` (only with `instantaneous`) sets
+`froude_krylov_pressure` to `kAiryWheeler` or `kHydrostatic`. The parser
+(`ReadHydroYAML`) applies the mapping. The C++ `HydroModelBuilder` API is
+unchanged: it sets `hydrostatics.model` and `froude_krylov` directly, with
+`froude_krylov = linear` unless set. The builder logs the model chosen for
+each nonlinear body.
+
+**Parse-time checks** (each an error):
+
+- `wetted_surface` and `hydrostatics` on the same body.
+- `wave_pressure` without `wetted_surface: instantaneous`.
+- `instantaneous` with eta-table waves (`waves.method: irf_convolution`),
+  which have no discrete components.
+- `instantaneous` with `include_excitation: false`, because the subtraction
+  assumes the BEM excitation is applied.
+- The removed pre-release keys `froude_krylov` and `froude_krylov_pressure`,
+  with a pointer to `wetted_surface` and `wave_pressure`.
 
 **Build-time checks:**
 
-- `froude_krylov: nonlinear` needs a `mesh_file`.
-- It needs `include_excitation` true, because the subtraction assumes the BEM
-  excitation is applied.
-- The wave field must expose discrete components. Eta-table waves without
-  components are rejected.
-- In still water, the run logs that NL FK reduces to nonlinear hydrostatics.
+- `froude_krylov = kNonlinear` needs a `mesh_file`.
+- It needs `include_excitation` true.
+- The wave field must expose discrete components.
 - **Self-check:** where the H5 file has a finite `excitation/froude-krylov`
   dataset (Capytaine), compare it with the mesh linear FK at the wave
   frequencies and warn above 10% in the dominant DOF. This catches mesh scale
@@ -249,15 +258,14 @@ chosen for each nonlinear body.
   its BEM CG by more than 1% of the shortest wavelength (BEM frame = world
   frame assumption).
 
-**YAML** (body level, flat keys):
+**YAML** (body level):
 
 ```yaml
 - name: body1
   h5_file: ../assets/hydroData/sphere.h5
   mesh_file: ../assets/geometry/sphere.obj   # closed hull, BEM frame
-  hydrostatics: nonlinear                    # linear (default) | nonlinear
-  froude_krylov: nonlinear                   # optional; follows hydrostatics in waves
-  froude_krylov_pressure: airy_wheeler       # airy_wheeler (default) | hydrostatic
+  wetted_surface: instantaneous              # mean (default) | calm_water | instantaneous
+  wave_pressure: airy_wheeler                # airy_wheeler (default) | long_wave
 ```
 
 ## 8. Discretisation
@@ -333,7 +341,7 @@ written reason in this file.
 | U4 | Frame test: body offset in $x, y$ and rotated, with a wave (WEC-Sim #886) | equals the translated or rotated reference to ≤ 1e-9 |
 | U5 | Fixed body: correction scales as $a^2$ (WEC-Sim #1485). Use a pose where the waterplane area changes with height (for a sphere, not at the equator; there the long-wave correction is $O(a^3)$) | fitted log-log slope 2 ± 0.1 for $a$ = 1e-3 to 1e-1 m |
 | U6 | Mesh linear FK, truncated vertical cylinder in heave, vs $\rho g a\,e^{-kd}\pi R^2\,2J_1(kR)/(kR)$ | ≤ 1% on the finest mesh |
-| U7 | Clipping under a sloping planar surface, `hydrostatic` model (exact case) | force ≤ 1e-9 relative |
+| U7 | Clipping under a sloping planar surface, `long_wave` model (exact case) | force ≤ 1e-9 relative |
 | U8 | Mesh convergence, sphere, three resolutions | error decreases monotonically, observed order ≥ 1.5 |
 | U9 | Per-body toggle, two bodies | forces on the linear body bit-identical to an all-linear run |
 | U9a | Long-wave: wall-sided box in a long wave, heave force minus still-water force vs $\rho g A\eta$; both models agree as $k \to 0$ (sphere, deep water, linear FK heave) | ≤ 1e-9; ≤ 1% at T = 120 s, and the difference falls in proportion to $k$ |

@@ -129,10 +129,11 @@ class HydroModelBuilder {
 
     /// Per-body hydrostatics and Froude-Krylov configuration for the builder.
     ///
-    /// Wiring (docs/theory/NONLINEAR_FROUDE_KRYLOV.md, section 7):
-    ///   model linear,    froude_krylov linear    -> HydrostaticsComponent
-    ///   model nonlinear, froude_krylov linear    -> NonlinearHydrostaticsComponent
-    ///   model nonlinear, froude_krylov nonlinear -> NonlinearFroudeKrylovComponent
+    /// Wiring (docs/theory/NONLINEAR_FROUDE_KRYLOV.md, section 7), with the
+    /// equivalent YAML wetted_surface value:
+    ///   model linear,    froude_krylov linear    -> HydrostaticsComponent (mean)
+    ///   model nonlinear, froude_krylov linear    -> NonlinearHydrostaticsComponent (calm_water)
+    ///   model nonlinear, froude_krylov nonlinear -> NonlinearFroudeKrylovComponent (instantaneous)
     ///   model linear,    froude_krylov nonlinear -> error at Build()
     struct BodyHydrostaticsConfig {
         HydrostaticsModel model = HydrostaticsModel::kLinear;

@@ -326,11 +326,12 @@ HydroModel HydroModelBuilder::Build() {
                 "HydroModelBuilder::Build(): body " + std::to_string(b) +
                 " has froude_krylov = nonlinear but hydrostatics = linear. Nonlinear "
                 "Froude-Krylov needs hydrostatics = nonlinear: the static and wave "
-                "pressure must be integrated over the same instantaneous wetted surface.");
+                "pressure must be integrated over the same instantaneous wetted surface "
+                "(in YAML, wetted_surface: instantaneous sets both).");
         }
         if (hs.froude_krylov == FroudeKrylovModel::kLinear &&
             hs.fk_pressure != FroudeKrylovPressureModel::kAiryWheeler) {
-            LOG_WARNING("WARNING: body " << b << " sets froude_krylov_pressure but froude_krylov "
+            LOG_WARNING("WARNING: body " << b << " sets a wave-pressure model but froude_krylov "
                         "= linear; the pressure model is ignored.");
         }
     }
@@ -545,9 +546,9 @@ HydroModel HydroModelBuilder::Build() {
                     "Results are only valid while heave and relative motion stay "
                     "well below the draft and freeboard; in larger waves the body "
                     "can be thrown clear of the water. For large waves use "
-                    "froude_krylov: nonlinear on the body (wave pressure on the "
-                    "instantaneous wetted hull; the YAML default with nonlinear "
-                    "hydrostatics in waves), or use linear hydrostatics.");
+                    "nonlinear Froude-Krylov (YAML: wetted_surface: instantaneous; "
+                    "static and wave pressure on the hull below the wave), or use "
+                    "linear hydrostatics.");
     }
 
     if (!nonlinear_bodies.empty()) {
@@ -555,8 +556,8 @@ HydroModel HydroModelBuilder::Build() {
         calculators.reserve(nonlinear_bodies.size());
         for (int b : nonlinear_bodies) {
             auto mesh = load_mesh_in_cg_frame(b);
-            LOG_INFO("Body " << b << ": nonlinear hydrostatics against the calm waterplane z = 0, "
-                     "linear Froude-Krylov (mesh '" << body_hydrostatics_[b].mesh_file << "', "
+            LOG_INFO("Body " << b << ": wetted surface calm_water: nonlinear hydrostatics against "
+                     "z = 0, linear Froude-Krylov (mesh '" << body_hydrostatics_[b].mesh_file << "', "
                      << mesh.num_faces() << " faces)");
             calculators.push_back(std::make_unique<geometry::MeshSubmergedVolume>(std::move(mesh)));
         }
@@ -572,8 +573,8 @@ HydroModel HydroModelBuilder::Build() {
         for (int b : nonlinear_fk_bodies) {
             auto mesh = load_mesh_in_cg_frame(b);
             const bool long_wave = body_hydrostatics_[b].fk_pressure == FroudeKrylovPressureModel::kHydrostatic;
-            LOG_INFO("Body " << b << ": nonlinear hydrostatics + nonlinear Froude-Krylov ("
-                     << (long_wave ? "hydrostatic" : "airy_wheeler") << " pressure; mesh '"
+            LOG_INFO("Body " << b << ": wetted surface instantaneous: nonlinear hydrostatics + "
+                     "Froude-Krylov (" << (long_wave ? "long_wave" : "airy_wheeler") << " pressure; mesh '"
                      << body_hydrostatics_[b].mesh_file << "', " << mesh.num_faces() << " faces)");
             setups.push_back({b, std::move(mesh), body_hydrostatics_[b].fk_pressure, bem_cg(b)});
         }

@@ -20,9 +20,11 @@ published:
 - **Nonlinear Froude-Krylov forces (per body).** Nonlinear Froude-Krylov
   integrates the static and incident-wave pressure over the hull below the
   wave surface at each step and removes the linear Froude-Krylov part from
-  the BEM excitation; radiation and diffraction stay linear. It needs a
-  body-level `mesh_file`. `froude_krylov_pressure` selects Airy pressure
-  with Wheeler stretching (default) or the long-wave approximation. On the IEA OES Task 10 sphere at
+  the BEM excitation; radiation and diffraction stay linear. Turn it on with
+  `wetted_surface: instantaneous` and a body-level `mesh_file`;
+  `wave_pressure` selects Airy pressure with Wheeler stretching
+  (`airy_wheeler`, default) or the long-wave approximation (`long_wave`).
+  On the IEA OES Task 10 sphere at
   steepness H/(gT²) = 0.01, the heave RAO lies within 1% of the range of the
   MARIN and NREL weakly nonlinear codes at all 20 points (free and optimum
   PTO); at T = 11 s with PTO it gives 0.577 against 0.575 / 0.574, where
@@ -30,23 +32,20 @@ published:
   and limits in
   [NONLINEAR_FROUDE_KRYLOV.md](../theory/NONLINEAR_FROUDE_KRYLOV.md) and
   [EXAMPLE_WORKFLOWS.md](../usage/EXAMPLE_WORKFLOWS.md#large-waves-nonlinear-froude-krylov).
-- **Behaviour change: in YAML, `hydrostatics: nonlinear` in waves now
-  includes nonlinear Froude-Krylov.** When `froude_krylov` is not set, it
-  follows `hydrostatics`. Results change from v1.0.0 for bodies with
-  nonlinear hydrostatics in regular or spectral waves; those runs used
-  calm-water buoyancy, which is valid only for small relative motion. Set
-  `froude_krylov: linear` to get the v1.0.0 behaviour. Unchanged: linear
-  hydrostatics, still-water runs (including all shipped nonlinear decay
-  cases), eta-table waves, and bodies with `include_excitation: false`
-  (these keep the calm-water model and log a warning). `froude_krylov:
-  nonlinear` on its own now also sets `hydrostatics: nonlinear`. The start-up
-  log states the model chosen for each nonlinear body. The C++
-  `HydroModelBuilder` API has no default switching.
-- **Simpler hydro YAML for nonlinear hydrostatics.** A body can now set
-  `mesh_file` and `hydrostatics: nonlinear` directly. The block form
-  (`hydrostatics: {model: nonlinear, mesh_file: ...}`) is still accepted; if
-  both name a mesh, they must match. The shipped nonlinear demos use the flat
-  form.
+- **New body key `wetted_surface` for the hull pressure model.** It says
+  which hull surface the static and incident-wave pressure act on: `mean`
+  (default; linear hydrostatics and excitation), `calm_water` (mesh buoyancy
+  below z = 0 with linear excitation, the v1.0.0 nonlinear hydrostatics) or
+  `instantaneous` (nonlinear hydrostatics and Froude-Krylov on the hull
+  below the wave). One key sets both parts, so they always use the same
+  surface. v1.0.0 inputs are unchanged: `hydrostatics: nonlinear` (scalar,
+  block or inline form) and the deprecated global `nonlinear_hydrostatics`
+  flag both mean `calm_water`, and all v1.0.0 results are unchanged. A body
+  can now give `mesh_file` once at body level; if `hydrostatics.mesh_file`
+  is also given, it must match. Setting both `wetted_surface` and
+  `hydrostatics` on one body is an error. The start-up log states the model
+  chosen for each nonlinear body. The shipped nonlinear demos use
+  `wetted_surface`.
 - **Submerged-volume geometry fix (no effect on shipped cases).** The
   waterplane cap in the mesh submerged-volume calculation depended on the
   vertex order of each cut face. With the waterplane at z = 0, which is the
