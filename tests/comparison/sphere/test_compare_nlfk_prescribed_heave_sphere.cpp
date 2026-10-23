@@ -13,6 +13,8 @@
  *
  * Output per case: "time z_cg Fz" with Fz the vertical pressure force
  * (static + incident-wave pressure on the instantaneous wetted surface) [N].
+ * The header also records the mesh size and the mean wall time per Compute()
+ * call [us] (information only; not checked).
  */
 
 #include <seastack/adapters/chrono/helper.h>
@@ -22,6 +24,7 @@
 
 #include "../../unit/test_mesh_shapes.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -40,6 +43,7 @@ constexpr double kRho = 1000.0;
 constexpr double kG = 9.81;
 constexpr double kHeave = 1.5;      // prescribed heave amplitude [m]
 constexpr int kSamples = 81;        // over two wave periods
+constexpr int kTimingSweeps = 50;   // repeats of the 81 samples for the timing
 
 struct Body {
     const char* name;
@@ -64,6 +68,29 @@ bool RunCase(const Body& body, double period, double amplitude, const std::strin
     NonlinearFroudeKrylovComponent fk(std::move(setups), wave, kRho, Eigen::Vector3d(0.0, 0.0, -kG), 0.0,
                                       NonlinearFroudeKrylovComponent::RampShape::kCosine);
 
+    seastack::hydro::SystemState state;
+    state.bodies.resize(1);
+
+    // Wall time per Compute() call over repeated sweeps of the same samples, for
+    // the cost comparison with nlfk_reference.py. One wave component on a mesh
+    // of a few thousand vertices is below the OpenMP work threshold, so this is
+    // single-threaded.
+    double compute_us_per_call = 0.0;
+    {
+        seastack::hydro::BodyForces scratch(1);
+        const auto start = std::chrono::steady_clock::now();
+        for (int sweep = 0; sweep < kTimingSweeps; ++sweep) {
+            for (int i = 0; i < kSamples; ++i) {
+                const double t = 2.0 * period * i / (kSamples - 1);
+                state.bodies[0].position =
+                    Eigen::Vector3d(0.0, 0.0, body.z_mean + kHeave * std::sin(0.37 * omega * t));
+                fk.Compute(state, t, scratch);
+            }
+        }
+        const std::chrono::duration<double, std::micro> elapsed = std::chrono::steady_clock::now() - start;
+        compute_us_per_call = elapsed.count() / (kTimingSweeps * kSamples);
+    }
+
     std::ofstream out(path);
     if (!out) {
         std::cerr << "Error: cannot write " << path << "\n";
@@ -71,9 +98,9 @@ bool RunCase(const Body& body, double period, double amplitude, const std::strin
     }
     out << std::setprecision(12) << "# body " << body.name << "\n# period_s " << period << "\n# wave_amplitude_m "
         << amplitude << "\n# heave_amplitude_m " << kHeave << "\n# z_mean_m " << body.z_mean
-        << "\n# Time(s)  z_cg(m)  Fz(N)\n";
-    seastack::hydro::SystemState state;
-    state.bodies.resize(1);
+        << "\n# mesh_vertices " << body.mesh.num_vertices() << "\n# mesh_triangles " << body.mesh.num_faces()
+        << "\n# compute_us_per_call " << std::setprecision(4) << compute_us_per_call
+        << std::setprecision(12) << "\n# Time(s)  z_cg(m)  Fz(N)\n";
     for (int i = 0; i < kSamples; ++i) {
         const double t = 2.0 * period * i / (kSamples - 1);
         state.bodies[0].position = Eigen::Vector3d(0.0, 0.0, body.z_mean + kHeave * std::sin(0.37 * omega * t));
