@@ -15,6 +15,13 @@ from mhkit.wave.io import ndbc
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+## ~~~~~~~~~ uncomment and direct path if SSLcertificateError / VPN blocks from downloading data from NDBC website ~~~~~~~~~~~~~~
+
+# os.environ["REQUESTS_CA_BUNDLE"] = r"C:\path\to\your_root_ca.cer"
+# os.environ["SSL_CERT_FILE"] = r"C:\path\to\your_root_ca.cer"
+
+
+##~~~~~~~~~~~~~~~~~~~~~ script below ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 def _represent_scalar_list_inline(dumper, data):
     """Emit lists of scalars as [a, b, c]; leave lists of maps in block form."""
@@ -55,6 +62,35 @@ def _resolve_depth(existing_waves, measured_depth=None):
         return float(measured_depth), "buoy metadata"
     return None, "not set"
 
+
+def _resolve_height(wave_type, hm0_mean):
+    """Height to write into waves.height.
+
+    SEA-Stack reads waves.height as the crest-to-trough height H of a regular wave
+    (amplitude = H/2), but as the significant wave height Hs of an irregular spectrum.
+    A regular wave of height H carries energy (1/8) rho g H^2 while the measured sea
+    carries (1/16) rho g Hm0^2, so writing H = Hm0 would double the energy. The
+    energy-equivalent regular wave therefore uses H = Hm0 / sqrt(2) (= H_rms), paired
+    with the energy period Te. An irregular spectrum keeps Hs = Hm0 because the
+    spectrum itself reproduces the measured energy.
+
+    Overrides:
+      --height             written verbatim (crest-to-trough for regular, Hs for irregular)
+      --significant_height an Hs value: Hs/sqrt(2) for regular, kept as Hs for irregular
+
+    Returns (height, source).
+    """
+    regular = str(wave_type).lower() == "regular"
+    if args.height is not None:
+        return float(args.height), "--height override"
+    if args.significant_height is not None:
+        hs = float(args.significant_height)
+        if regular:
+            return hs / np.sqrt(2.0), f"from significant height = {hs:g}"
+        return hs, f"significant height override = {hs:g}"
+    if regular:
+        return hm0_mean / np.sqrt(2.0), "from measured Hm0"
+    return hm0_mean, "from measured Hm0"
 
 #~~~~~~~~~~~~~~ Command-line Arguments ~~~~~~~~~~~~~~
 
@@ -206,10 +242,21 @@ parser.add_argument(
     help="Ramp time in seconds for wave generation (optional)"
 )
 parser.add_argument(
-    "--height",
+    "--height", "--H",
     type=float,
     default=None,
-    help="Override calculated wave height in meters (optional)"
+    dest="height",
+    help="Override the written waves.height verbatim, in meters. For regular waves this "
+         "is the crest-to-trough height; for an irregular spectrum it is Hs (optional)."
+)
+parser.add_argument(
+    "--significant_height", "--Hs", "--hs",
+    type=float,
+    default=None,
+    dest="significant_height",
+    help="Override using a significant wave height Hs, in meters. For regular waves the "
+         "written crest-to-trough height is the energy-equivalent Hs/sqrt(2); for an "
+         "irregular spectrum Hs is used directly (optional)."
 )
 parser.add_argument(
     "--period",
@@ -720,11 +767,6 @@ if existing_eta_path:
 
     exit(0)
 
-#~~~~~~~~~~~from buoy number~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-# # use if SSLcertificateError / VPN blocks from downloading data from NDBC website
-os.environ["REQUESTS_CA_BUNDLE"] = r"C:\Users\ariley\OneDrive - NREL\Documents\nrel_root_ca.cer"
-os.environ["SSL_CERT_FILE"] = r"C:\Users\ariley\OneDrive - NREL\Documents\nrel_root_ca.cer"
 
 #~~~~~~~~~~~~~~~INPUTS~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -2402,8 +2444,9 @@ if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_pat
         yaml_data['hydrodynamics']['waves']['type'] = wave_type
 
         if not custom_eta:
-            # Use override values if provided, otherwise use calculated values
-            height_value = args.height if args.height is not None else Hs_rep
+            # waves.height is crest-to-trough for a regular wave but Hs for an irregular
+            # spectrum, so the regular case writes the energy-equivalent Hm0/sqrt(2).
+            height_value, height_source = _resolve_height(wave_type, Hs_rep)
             period_value = args.period if args.period is not None else Te_rep
 
             yaml_data['hydrodynamics']['waves']['height'] = float(round(height_value, 2))
@@ -2522,10 +2565,8 @@ if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_pat
         print(f"  Type: {yaml_data['hydrodynamics']['waves']['type']}")
         if custom_eta:
             pass
-        elif args.height is not None:
-            print(f"  Height: {yaml_data['hydrodynamics']['waves']['height']} m (OVERRIDE)")
         else:
-            print(f"  Height: {yaml_data['hydrodynamics']['waves']['height']} m (from {Hs_rep:.4f} m)")
+            print(f"  Height: {yaml_data['hydrodynamics']['waves']['height']} m ({height_source})")
         
         # Period handling - varies by spectrum type
         if custom_eta:
