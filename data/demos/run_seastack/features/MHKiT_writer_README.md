@@ -588,6 +588,15 @@ Saves to case/figures/46050_wind_10_12_2012.png
 
 ---
 
+### `--no_plot`
+Suppresses all figure windows, even when a plotting flag is given. The analysis still runs, prints to the terminal, the YAML is still written, and `--save` still writes PNGs even when nothing is just displayed on screen.
+
+Useful in a simulation campaign using `--partitions` without a pop up a directional plot.
+
+**Example:**
+```bash
+python MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml> --buoy 46050 --partitions --date 12-16 --year 2025 --time 00:00-12:00 --no_plot
+
 
 ## Small notes 
 
