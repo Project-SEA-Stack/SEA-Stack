@@ -338,7 +338,7 @@ To force a value to write to the yaml, instead of using the measured one.
 - `--height` or `--H` — crest-to-trough wave height for regular waves, Hs for an irregular spectrum [m]
 - `--significant_height` or `--Hs` — significant wave height Hs; for regular waves it is the energy-equivalent Hs/√2 [m]
 - `--period` — wave period [s]
-- `--depth` — water depth [m] (otherwise taken from buoy metadata)
+- `--depth` — water depth [m] (otherwise using existing yaml depth, or if blank taken from buoy metadata)
 - `--seed` — random seed for eta generation (default 42)
 - `--ramp_time` — ramp duration [s], cosine ramp (default 60)
 - `--gamma` — peak enhancement factor, overrides for plotting and yaml writing
