@@ -25,6 +25,18 @@ With capabilities such as
 
 ---------
 
+> **Note on figures:** the screenshots in this README are hosted on GitHub (embedded from `user-attachments`). They render when you view this file on GitHub, but **not** from a local clone or the release ZIP. To see the figures, open the README on the GitHub repository page.
+
+## Requirements
+
+This tool needs MHKiT (with the wave extras). The dependencies are listed in [`requirements.txt`](./requirements.txt) next to the script:
+
+```bash
+pip install -r requirements.txt
+```
+
+Python 3.10+ is recommended.
+
 ## Basic command structure:
 
 run the python file in terminal
@@ -108,7 +120,7 @@ Plot the measured wave spectrum
 
 **Year breakdown example:**
 ```bash
-python MHKiT_writer.py -buoy 46050 --plot_spectrum 2020
+python MHKiT_writer.py --buoy 46050 --plot_spectrum 2020
 ```
 
 <img width="1768" height="864" alt="image" src="https://github.com/user-attachments/assets/873ec849-a5eb-4841-af8a-2c6991e6989a" />
@@ -124,7 +136,7 @@ python MHKiT_writer.py --buoy 46050 --plot_spectrum --year from:2010
 
 **List of months example:**
 ```bash
-python MHKiT_writer.py -buoy 46050 --plot_spectrum jan feb march apr may --year 2020
+python MHKiT_writer.py --buoy 46050 --plot_spectrum jan feb march apr may --year 2020
 ```
 
 <img width="1774" height="857" alt="image" src="https://github.com/user-attachments/assets/ccba59e2-8696-4f69-964b-fe955cd09302" />
@@ -580,7 +592,32 @@ Saves to case/figures/46050_wind_10_12_2012.png
 
 - **`nfrequencies` is computed** SEA-Stack's DFT eta import only evaluates the orthogonal Fourier frequencies `k/(N·dt)`, and strides — silently dropping energy — if `nfrequencies` is below the in-band bin count. The script sizes it to cover the whole default 0.001–1.0 Hz eta band.
 - **Hm0 in the file header vs the statistics block** can differ by a percent or two because the header uses a plain trapezoid integration whereas the statistics use MHKiT's `significant_wave_height`. The eta record targets the former.
-- **SSL / VPN.** If NDBC downloads fail with a certificate error, the `REQUESTS_CA_BUNDLE` and `SSL_CERT_FILE` lines near the top of the script point at a local root CA and may need updating for your machine.
+- **SSL / VPN.** NDBC downloads may fail with an SSL certificate error on networks that route traffic through a corporate proxy or VPN (which presents its own root CA). Point the standard `REQUESTS_CA_BUNDLE` (and, if needed, `SSL_CERT_FILE`) at your organisation's root CA bundle. Two easy options:
+
+  **Option 1 — add two lines to the script (quickest).** Near the top of `MHKiT_writer.py`, set the bundle for the whole run:
+
+  ```python
+  import os
+  os.environ["REQUESTS_CA_BUNDLE"] = r"C:\path\to\your_root_ca.cer"
+  os.environ["SSL_CERT_FILE"]      = r"C:\path\to\your_root_ca.cer"
+  ```
+
+  **Option 2 — set the environment variable in your shell (no script edit).**
+
+  ```bash
+  # Linux / macOS
+  export REQUESTS_CA_BUNDLE=/path/to/your_root_ca.pem
+  python MHKiT_writer.py <path_to_hydro_yaml> --buoy <number>
+  ```
+
+  ```powershell
+  # Windows PowerShell
+  $env:REQUESTS_CA_BUNDLE = "C:\path\to\your_root_ca.cer"
+  python MHKiT_writer.py <path_to_hydro_yaml> --buoy <number>
+  ```
+
+  Ask your IT team for the correct CA bundle file.
+  
 - **Plot flags do not write YAML.** Add `--spectrum`, `--type irregular` if you want a plot *and* an update in the same run.
 - **cos-2s cannot match MEM exactly.** Both are normalised so ∫D dθ = 1, but the measured distribution is zero outside its partition while cos-2s has tails around the whole circle. A peak match of 90–97% is the structural limit, not a fitting failure.
 - **Swell is inner, wind sea is outer.** Radius is frequency, so low-frequency swell sits near the center with a tight lobe, and locally generated wind sea sits toward the rim with a broad lobe aligned with the local wind. Cross-check wave_direction against `--plot_wind` for the same date.
