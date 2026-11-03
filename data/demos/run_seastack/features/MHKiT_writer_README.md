@@ -44,10 +44,10 @@ run the python file in terminal
   - either cd data/demos/run_seastack/features or direct to data/demos/run_seastack/features/MHKiT_writer.py
 
 ```bash
-python MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml> --buoy <number> 
+python features/MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml> --buoy <number> 
 ```
 
-The **positional path** is the hydro YAML to update. It must already exist; this script edits an existing `hydrodynamics.waves` block, it does not create one.
+The **positional path** is the hydro YAML to update. This must already edits as MHKiT_writer.py edits an existing `hydrodynamics.waves` block.
 
 ---
 
@@ -329,7 +329,7 @@ python MHKiT_writer.py --buoy 46050 --plot_wind jan 2023
 This path tells the script where the yaml file of the device is. It will only edit the waves information in the hydro.yaml file, and sometimes the simulation.yaml if necessary.
 
 ```bash
-python MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml>
+python features/MHKiT_writer.py <path_to_hydro_yaml/case.hydro.yaml>
 ```
 
 ### Override flags
@@ -338,7 +338,7 @@ To force a value to write to the yaml, instead of using the measured one.
 - `--height` or `--H` — crest-to-trough wave height for regular waves, Hs for an irregular spectrum [m]
 - `--significant_height` or `--Hs` — significant wave height Hs; for regular waves it is the energy-equivalent Hs/√2 [m]
 - `--period` — wave period [s]
-- `--depth` — water depth [m] (otherwise using existing yaml depth, or if blank taken from buoy metadata)
+- `--depth` — water depth [m] (otherwise uses existing yaml defined depth, or if none then taken from buoy metadata)
 - `--seed` — random seed for eta generation (default 42)
 - `--ramp_time` — ramp duration [s], cosine ramp (default 60)
 - `--gamma` — peak enhancement factor, overrides for plotting and yaml writing
