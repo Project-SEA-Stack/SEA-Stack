@@ -156,6 +156,21 @@ Mooring directory can be specified with `--mooring_path`
 
 ---
 
+### `--compare`
+Overlay the same field/DOF from two or more runs on one figure.
+Pass multiple output `.h5` files; each run keeps its own time vector, so runs of different lengths still plot correctly. Combine with `--field`, `--dof`, and `--bodies` exactly as in single-file mode.
+
+**Used with:** body fields, joint fields, TSDA fields  
+
+**Example:**
+```bash
+--compare ../caseA/outputs/results.x.h5 ../caseB/outputs/results.x.h5
+```
+
+use `--labels` to set legend names for each run case 
+
+---
+
 ## Full example usage
 
 ### Plot heave position (all bodies) of 5sa demo - bodies not specified
@@ -252,3 +267,18 @@ python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring t
 <img width="713" height="443" alt="image" src="https://github.com/user-attachments/assets/4580dd69-9077-4d01-9a02-c07048c3b857" />
 
 ---
+
+### Compare nonlinear-FK and nonlinear buoyancy runs of the IEA sphere example with heave position 
+
+
+```bash
+python features\h5_reader.py --compare iea_sphere\regular_waves_nl\outputs\results.regular.h5 iea_sphere\regular_waves_nlfk\outputs\results.regular.h5 --bodies 1 --field position --dof heave --labels nl nlfk
+```
+
+
+<img width="639" height="493" alt="image" src="https://github.com/user-attachments/assets/70b62a4d-d86d-4b76-8500-a24f4cb0c696" />
+
+
+---
+
+
