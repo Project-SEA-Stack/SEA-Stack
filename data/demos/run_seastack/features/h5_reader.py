@@ -43,6 +43,12 @@ def parse_args():
         "--mooring_path", type=str, default=None,
         help="Path to mooring folder (default: same location as outputs)")
 
+    parser.add_argument("--compare", nargs="+",
+                        help="Two or more HDF5 files to overlay on the same plot")
+
+    parser.add_argument("--labels", nargs="+",
+                        help="Labels for --compare files (default: case folder names)")
+
     return parser.parse_args()
 
 DOF_MAP = {
@@ -274,6 +280,59 @@ def plot_data(time, data, fields, dofs=None, joints=None):
     # plt.close("all")
 
 
+def plot_compare(runs, fields, dofs):
+    """Overlay the same field/DOF from multiple runs on one figure.
+
+    runs: list of (label, time, data) tuples returned by load_data().
+    Each run's own time vector is used, so runs may differ in length.
+    """
+    if isinstance(dofs, str):
+        dofs = [dofs]
+
+    for field in fields:
+        if field in BODY_FIELDS:
+            if not dofs:
+                raise ValueError(f"{field} requires at least one DOF")
+
+            for dof in dofs:
+                plt.figure()
+                meta = FIELD_META.get(field, {})
+                plt.title(f"{meta.get('title', field)} ({dof}) - comparison")
+                plt.xlabel("Time [s]")
+                plt.ylabel(meta.get("ylabel", field))
+                idx = DOF_MAP[dof]
+
+                for label, time, data in runs:
+                    for key, group in data.items():
+                        if field not in group:
+                            continue
+                        plt.plot(time, group[field][:, idx], label=f"{label}: {key}")
+
+                plt.legend()
+                plt.grid(True)
+
+        elif field in JOINT_FIELDS or field in TSDA_FIELDS:
+            plt.figure()
+            meta = FIELD_META.get(field, {})
+            plt.title(f"{meta.get('title', field)} - comparison")
+            plt.xlabel("Time [s]")
+            plt.ylabel(meta.get("ylabel", field))
+
+            for label, time, data in runs:
+                for key, group in data.items():
+                    if field not in group:
+                        continue
+                    y = group[field]
+                    if len(y.shape) == 2:
+                        y = y[:, 2]
+                    plt.plot(time, y, label=f"{label}: {key.replace('tsda_', '').replace('joint_', '')}")
+
+            plt.legend()
+            plt.grid(True)
+
+    plt.show()
+
+
 def list_outputs(path):
     with h5py.File(path, "r") as f:
 
@@ -419,6 +478,18 @@ def main():
         list_outputs(args.path)
         return
 
+    if args.compare:
+        if args.labels and len(args.labels) == len(args.compare):
+            labels = args.labels
+        else:
+            labels = [Path(p).resolve().parents[1].name for p in args.compare]
+        runs = []
+        for h5_path, label in zip(args.compare, labels):
+            t, d = load_data(h5_path, args.bodies, args.field, args.joints, args.tsdas)
+            runs.append((label, t, d))
+        plot_compare(runs, args.field, args.dof)
+        return
+
     run_h5 = any([
         args.field != ["position"],
         args.bodies is not None,
@@ -485,4 +556,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
