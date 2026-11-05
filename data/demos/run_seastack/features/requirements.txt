@@ -5,6 +5,8 @@
 # mhkit[wave] is the only direct requirement; it also pulls in numpy, scipy,
 # pandas and matplotlib. Heads up: it is a large install (xarray, s3fs, etc.).
 mhkit[wave]
+# Comment-preserving round-trip YAML writes (keeps existing hydro YAML comments).
+ruamel.yaml>=0.17
 
 # --- h5outputsReader.py: plot SEA-Stack .h5 outputs ---
 # Lightweight. If you only need the reader, you can install just these three.
