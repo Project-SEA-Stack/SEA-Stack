@@ -8,6 +8,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import yaml
+import io
+from ruamel.yaml import YAML
 from scipy import integrate
 from scipy.optimize import minimize, minimize_scalar
 from mhkit import wave
@@ -15,13 +17,38 @@ from mhkit.wave.io import ndbc
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-## ~~~~~~~~~ uncomment and direct path if SSLcertificateError / VPN blocks from downloading data from NDBC website ~~~~~~~~~~~~~~
 
-# os.environ["REQUESTS_CA_BUNDLE"] = r"C:\path\to\your_root_ca.cer"
-# os.environ["SSL_CERT_FILE"] = r"C:\path\to\your_root_ca.cer"
+## DELETE BEFORE UPDATING~~~~~~~~~~~~
+# # use if SSLcertificateError / VPN blocks from downloading data from NDBC website
+os.environ["REQUESTS_CA_BUNDLE"] = r"C:\Users\ariley\OneDrive - NREL\Documents\nrel_root_ca.cer"
+os.environ["SSL_CERT_FILE"] = r"C:\Users\ariley\OneDrive - NREL\Documents\nrel_root_ca.cer"
 
 
 ##~~~~~~~~~~~~~~~~~~~~~
+
+# Round-trip YAML: preserves comments, key order and formatting across an edit-and-write,
+# so the writer overwrites only the necessary wave parameters without stripping the file's
+# existing comments (which PyYAML's safe_load/dump silently discards).
+_HYDRO_YAML = YAML()
+_HYDRO_YAML.preserve_quotes = True
+_HYDRO_YAML.width = 4096
+_HYDRO_YAML.indent(mapping=2, sequence=4, offset=2)
+
+
+def _load_hydro_yaml(path):
+    """Load a hydro YAML in round-trip mode so comments survive an edit-and-write."""
+    with open(path, "r") as f:
+        return _HYDRO_YAML.load(f)
+
+
+def _dump_hydro_yaml(data, path):
+    """Write data back, preserving comments. Serialise to a buffer first so a dump
+    failure cannot truncate the existing file."""
+    buf = io.StringIO()
+    _HYDRO_YAML.dump(data, buf)
+    with open(path, "w", newline="\n") as f:
+        f.write(buf.getvalue())
+
 
 def _represent_scalar_list_inline(dumper, data):
     """Emit lists of scalars as [a, b, c]; leave lists of maps in block form."""
@@ -1216,8 +1243,7 @@ def main():
 
         eta_ref = os.path.relpath(existing_eta_path, _yaml_dir).replace('\\', '/')
 
-        with open(yaml_file_path, 'r') as f:
-            yaml_data = yaml.safe_load(f) or {}
+        yaml_data = _load_hydro_yaml(yaml_file_path) or {}
         if 'waves' not in (yaml_data.get('hydrodynamics') or {}):
             print(f"ERROR: 'hydrodynamics.waves' section not found in {yaml_file_path}")
             exit(1)
@@ -1237,17 +1263,7 @@ def main():
             waves_block['depth'] = depth
 
         yaml_data['hydrodynamics']['waves'] = waves_block
-        class IndentDumper(yaml.SafeDumper):
-            def increase_indent(self, flow=False, indentless=False):
-                return super().increase_indent(flow, False)
-
-        # The hydro parser reads moordyn bodies and the damping vectors only as
-        # inline [ ] and ignores the block form without saying so, while its
-        # section keys must stay block. So flow-style scalar lists, nothing else.
-        IndentDumper.add_representer(list, _represent_scalar_list_inline)
-
-        with open(yaml_file_path, 'w') as f:
-            yaml.dump(yaml_data, f, Dumper=IndentDumper, default_flow_style=False, sort_keys=False)
+        _dump_hydro_yaml(yaml_data, yaml_file_path)
 
         print(f"\nUpdated hydro YAML: {yaml_file_path}")
         for key, value in waves_block.items():
@@ -2482,8 +2498,7 @@ def main():
     if wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_path):
         print(f"\n\nUpdating YAML file: {yaml_file_path}")
 
-        with open(yaml_file_path, 'r') as f:
-            yaml_data = yaml.safe_load(f)
+        yaml_data = _load_hydro_yaml(yaml_file_path)
 
         if 'waves' not in ((yaml_data or {}).get('hydrodynamics') or {}):
             print("ERROR: 'hydrodynamics.waves' section not found in YAML file")
@@ -2507,17 +2522,9 @@ def main():
 
         yaml_data['hydrodynamics']['waves'] = waves_block
 
-        class IndentDumper(yaml.SafeDumper):
-            def increase_indent(self, flow=False, indentless=False):
-                return super().increase_indent(flow, False)
-
-        IndentDumper.add_representer(list, _represent_scalar_list_inline)
-
-        # Serialise first: opening with "w" truncates, so a dump failure would destroy the file
-        rendered = yaml.dump(yaml_data, Dumper=IndentDumper,
-                             default_flow_style=False, sort_keys=False)
-        with open(yaml_file_path, "w") as f:
-            f.write(rendered)
+        # _dump_hydro_yaml serialises to a buffer first, so a dump failure cannot
+        # truncate (and destroy) the existing file.
+        _dump_hydro_yaml(yaml_data, yaml_file_path)
 
         print("Updated wave parameters:")
         print(f"  Type: irregular with {len(wave_partitions)} partition(s)")
@@ -2534,8 +2541,7 @@ def main():
     if not wave_partitions and not skip_yaml_update and os.path.exists(yaml_file_path):
         print(f"\n\nUpdating YAML file: {yaml_file_path}")
 
-        with open(yaml_file_path, 'r') as f:
-            yaml_data = yaml.safe_load(f)
+        yaml_data = _load_hydro_yaml(yaml_file_path)
 
         if 'hydrodynamics' in yaml_data and 'waves' in yaml_data['hydrodynamics']:
             # With an eta file the sea state comes entirely from the record, so the waves
@@ -2720,20 +2726,7 @@ def main():
             # with open(yaml_file_path, 'w') as f:
             #     yaml.dump(yaml_data, f, default_flow_style=False, sort_keys=False)
 
-            class IndentDumper(yaml.SafeDumper):
-                def increase_indent(self, flow=False, indentless=False):
-                    return super().increase_indent(flow, False)
-
-            IndentDumper.add_representer(list, _represent_scalar_list_inline)
-
-            with open(yaml_file_path, "w") as f:
-                yaml.dump(
-                    yaml_data,
-                    f,
-                    Dumper=IndentDumper,
-                    default_flow_style=False,
-                    sort_keys=False,
-                )
+            _dump_hydro_yaml(yaml_data, yaml_file_path)
 
             print(f"\nYAML file updated successfully!")
         else:
