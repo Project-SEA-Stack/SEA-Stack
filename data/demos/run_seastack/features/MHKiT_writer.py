@@ -18,10 +18,10 @@ from mhkit.wave.io import ndbc
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
-## DELETE BEFORE UPDATING~~~~~~~~~~~~
-# # use if SSLcertificateError / VPN blocks from downloading data from NDBC website
-os.environ["REQUESTS_CA_BUNDLE"] = r"C:\Users\ariley\OneDrive - NREL\Documents\nrel_root_ca.cer"
-os.environ["SSL_CERT_FILE"] = r"C:\Users\ariley\OneDrive - NREL\Documents\nrel_root_ca.cer"
+## ~~~~~~~~~ uncomment and direct path if SSLcertificateError / VPN blocks from downloading data from NDBC website ~~~~~~~~~~~~~~
+
+# os.environ["REQUESTS_CA_BUNDLE"] = r"C:\path\to\your_root_ca.cer"
+# os.environ["SSL_CERT_FILE"] = r"C:\path\to\your_root_ca.cer"
 
 
 ##~~~~~~~~~~~~~~~~~~~~~
