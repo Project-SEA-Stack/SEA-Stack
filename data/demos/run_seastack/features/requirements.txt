@@ -1,0 +1,22 @@
+# Python dependencies for the demo feature tools in this folder.
+# Install everything with:  pip install -r requirements.txt
+
+# --- MHKiT_writer.py: NDBC buoy wave data -> hydro YAML ---
+# mhkit[wave] is the only direct requirement; it also pulls in numpy, scipy,
+# pandas and matplotlib. Heads up: it is a large install (xarray, s3fs, etc.).
+mhkit[wave]
+# Comment-preserving round-trip YAML writes (keeps existing hydro YAML comments).
+ruamel.yaml>=0.17
+
+# --- h5outputsReader.py: plot SEA-Stack .h5 outputs ---
+# Lightweight. If you only need the reader, you can install just these three.
+h5py>=3.6
+numpy>=1.22
+matplotlib>=3.5
+
+# --- SSL / certificates ---
+# Behind a corporate proxy or VPN, `pip install` may fail with an SSL certificate
+# error. If so, point pip at your CA bundle: pip config set global.cert C:\path\to\your_root_ca.cer
+# or pass:  --trusted-host pypi.org --trusted-host files.pythonhosted.org
+# (Separately, MHKiT's NDBC *downloads* at run time use REQUESTS_CA_BUNDLE -
+#  see the "SSL / VPN" note in MHKiT_writer_README.md.)
