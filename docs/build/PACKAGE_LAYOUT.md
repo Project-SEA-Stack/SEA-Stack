@@ -10,6 +10,7 @@ This describes what ships in the **runtime** ZIP produced by `cmake --install` a
 | `lib/` | macOS: bundled shared libraries (Chrono, HDF5, VSG, MoorDyn, …). Every dylib uses an `@rpath` install name; files rewritten at install time are ad-hoc re-signed. A VSG package also bundles `libvulkan` and `libMoltenVK.dylib`, which keep their LunarG signatures |
 | `share/vulkan/icd.d/` | macOS VSG packages only: `MoltenVK_icd.json`, which `run_seastack` passes to the Vulkan loader via `VK_DRIVER_FILES` |
 | `demos/` | YAML-driven `run_seastack` case data (geometry, hydro HDF5 inputs, configs), including RM3/OSWEC `external_pto*` Python PTO cases |
+| `demos/features/` | Optional Python tools: `MHKiT_writer.py` (NDBC buoy data to hydro YAML; needs MHKiT, `mhkit[wave]`) and `h5_reader.py` (plots `.h5` outputs). Dependencies in `requirements.txt`; not needed to run `run_seastack` |
 | `python/` | Thin IPC helper `seastack_external.py` for out-of-process force demos under `demos/` |
 | `examples/external_pto/` | Comparison-plot scripts (`run_visual_verification.py`, `plot_verification.py`) for the external PTO demos |
 | `data/chrono/` | Chrono runtime assets (optional) |

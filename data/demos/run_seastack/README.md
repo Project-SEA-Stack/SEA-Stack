@@ -20,6 +20,19 @@ build\bin\Release\run_seastack.exe data\demos\run_seastack\rm3\irregular_waves\r
 
 Output files are written to an `outputs/` subdirectory next to the setup YAML.
 
+## Demo tools
+
+The `features/` folder holds two optional Python tools. Neither is needed to run `run_seastack`.
+
+- [`MHKiT_writer.py`](features/MHKiT_writer_README.md): downloads NDBC buoy wave data with MHKiT and writes the wave block of a hydro YAML (regular, irregular, partitioned or custom spectra).
+- [`h5_reader.py`](features/h5_reader_README.md): plots SEA-Stack HDF5 outputs (body motion, joint reactions, TSDA forces and energy, mooring) and overlays several runs with `--compare`.
+
+Install their dependencies with:
+
+```
+pip install -r features/requirements.txt
+```
+
 **Release ZIP note:** Some folders exist only in the full source repository (e.g. RM3 `regular_waves`, F3OF `decay_dt1` / `decay_dt2`). The downloadable runtime package omits those to keep the bundle focused; see each model’s `README.md`.
 
 ## Available demos

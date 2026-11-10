@@ -54,6 +54,13 @@ published:
   wrong (13.9 m³ instead of 16.2 m³ for a test box). Fixed, with new unit
   tests (`test_submerged_volume`). All nonlinear-hydrostatics baselines are
   bit-identical.
+- **Demo tools in `demos/features/`.** New `MHKiT_writer.py` downloads NDBC
+  buoy data with MHKiT and writes the hydro YAML wave block (regular waves
+  use the energy-equivalent height Hm0/√2). The HDF5 plotter
+  `demos/h5outputsReader.py` has moved to `demos/features/h5_reader.py` and
+  gains `--compare` to overlay several runs. Dependencies are in
+  `demos/features/requirements.txt`. Contributed by @alliemr123
+  ([#18](https://github.com/Project-SEA-Stack/SEA-Stack/pull/18)).
 
 ## Known issues and limitations
 

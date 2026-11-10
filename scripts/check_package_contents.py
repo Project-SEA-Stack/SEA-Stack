@@ -23,7 +23,10 @@ import sys
 import zipfile
 from pathlib import Path
 
-EXPECTED_DEMO_TOP_FILES = {"README.md", "h5outputsReader.py"}
+EXPECTED_DEMO_TOP_FILES = {"README.md"}
+# Optional Python demo tools (MHKiT writer, HDF5 reader) under demos/features/.
+EXPECTED_DEMO_FEATURE_FILES = {"MHKiT_writer.py", "MHKiT_writer_README.md", "h5_reader.py",
+                               "h5_reader_README.md", "requirements.txt"}
 EXPECTED_DEMO_CASES = {
     "5sa": {"assets", "bimodal", "irregular_waves", "mooring", "power_matrix",
             "regular_waves", "spreading"},
@@ -67,6 +70,7 @@ def strip_root(names: list[str]) -> list[str]:
 def check_demos(names: list[str]) -> bool:
     ok = True
     top_files: set[str] = set()
+    feature_files: set[str] = set()
     cases: dict[str, set[str]] = {}
     for n in names:
         if not n.startswith("demos/"):
@@ -75,6 +79,9 @@ def check_demos(names: list[str]) -> bool:
         if len(parts) == 1 and not n.endswith("/"):
             top_files.add(parts[0])
         elif len(parts) >= 2:
+            if parts[0] == "features" and len(parts) == 2 and not n.endswith("/"):
+                feature_files.add(parts[1])
+                continue
             if len(parts) == 2 and not n.endswith("/"):
                 continue  # file directly under demos/<model>/ (e.g. README), not a case dir
             cases.setdefault(parts[0], set()).add(parts[1])
@@ -86,6 +93,12 @@ def check_demos(names: list[str]) -> bool:
         ok = False
         print(f"FAIL demos/ top-level files: missing={sorted(EXPECTED_DEMO_TOP_FILES - top_files)} "
               f"extra={sorted(top_files - EXPECTED_DEMO_TOP_FILES)}")
+    print(f"demos/features/ files: {sorted(feature_files)}")
+    if feature_files != EXPECTED_DEMO_FEATURE_FILES:
+        ok = False
+        print(f"FAIL demos/features/ files: "
+              f"missing={sorted(EXPECTED_DEMO_FEATURE_FILES - feature_files)} "
+              f"extra={sorted(feature_files - EXPECTED_DEMO_FEATURE_FILES)}")
     for model in sorted(set(cases) | set(EXPECTED_DEMO_CASES)):
         got, want = cases.get(model, set()), EXPECTED_DEMO_CASES.get(model, set())
         if got != want:

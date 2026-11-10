@@ -16,6 +16,10 @@ With capabilities such as
 
 ---------
 
+## Requirements
+
+The reader needs `h5py`, `numpy`, and `matplotlib`. They are listed in [`requirements.txt`](./requirements.txt) next to the script (`pip install -r requirements.txt` also installs the MHKiT writer's dependencies).
+
 ## Basic command structure:
 
 run h5 output reader python file in terminal
@@ -262,7 +266,7 @@ python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring m
 ### Plot tension on lines of RM3 specifying path
 
 ```bash
-python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring tension --mooring_path C:\Users\ariley\source\repos\sea-stack\build\data\demos\run_seastack\rm3\assets\mooring
+python h5_reader.py ../5sa/regular_waves/outputs/results.regular.h5  --mooring tension --mooring_path ../rm3/assets/mooring
 ```
 <img width="713" height="443" alt="image" src="https://github.com/user-attachments/assets/4580dd69-9077-4d01-9a02-c07048c3b857" />
 

@@ -8,7 +8,7 @@ mhkit[wave]
 # Comment-preserving round-trip YAML writes (keeps existing hydro YAML comments).
 ruamel.yaml>=0.17
 
-# --- h5outputsReader.py: plot SEA-Stack .h5 outputs ---
+# --- h5_reader.py: plot SEA-Stack .h5 outputs ---
 # Lightweight. If you only need the reader, you can install just these three.
 h5py>=3.6
 numpy>=1.22
@@ -17,6 +17,5 @@ matplotlib>=3.5
 # --- SSL / certificates ---
 # Behind a corporate proxy or VPN, `pip install` may fail with an SSL certificate
 # error. If so, point pip at your CA bundle: pip config set global.cert C:\path\to\your_root_ca.cer
-# or pass:  --trusted-host pypi.org --trusted-host files.pythonhosted.org
 # (Separately, MHKiT's NDBC *downloads* at run time use REQUESTS_CA_BUNDLE -
 #  see the "SSL / VPN" note in MHKiT_writer_README.md.)
