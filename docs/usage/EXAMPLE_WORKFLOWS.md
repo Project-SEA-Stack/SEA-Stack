@@ -28,6 +28,34 @@ YAML and assets live under [`data/demos/run_seastack/`](../../data/demos/run_sea
 Preconfigured models (RM3, 5SA, OSWEC, IEA sphere, F3OF, and others) with
 documented command lines: [demo suite README](../../data/demos/run_seastack/README.md).
 
+## Initial body velocity
+
+A body in the model YAML can start moving. Chrono's model parser reads two
+optional body keys (Chrono 10.0):
+
+```yaml
+bodies:
+  - name: body1
+    location: [0, 0, -2.0]               # equilibrium for the IEA sphere
+    initial_linear_velocity: [0, 0, 0.5]  # [m/s]
+    initial_angular_velocity: [0, 0, 0]   # [rad/s]
+```
+
+- `initial_linear_velocity` is the velocity of the centre of mass, in
+  world axes.
+- `initial_angular_velocity` is in the **body's own axes** (the axes of its
+  centre-of-mass frame), not world axes. For a body that starts rotated, the
+  two differ.
+- Both default to zero. Give a velocity that the joints allow (for the
+  heave-only sphere, z only).
+- SEA-Stack does not change these velocities. Radiation memory starts empty,
+  so the start is impulsive, as for an offset decay.
+- The output file starts at the first time step, not at t = 0.
+
+`test_initial_velocity` runs the IEA sphere decay from equilibrium with
+0.5 m/s upward and checks it against the 1 m offset decay: same damped period
+(4.35 s) within 0.03%.
+
 ## Large waves: nonlinear Froude-Krylov
 
 This option was added after v1.0.0 and is planned for v1.1. See

@@ -57,6 +57,13 @@ published:
   wrong (13.9 m³ instead of 16.2 m³ for a test box). Fixed, with new unit
   tests (`test_submerged_volume`). All nonlinear-hydrostatics baselines are
   bit-identical.
+- **Initial body velocity documented and tested.** The model YAML body keys
+  `initial_linear_velocity` (centre of mass, world axes) and
+  `initial_angular_velocity` (body axes) already worked through Chrono's
+  parser but were undocumented. They are now described in
+  [EXAMPLE_WORKFLOWS.md](../usage/EXAMPLE_WORKFLOWS.md#initial-body-velocity)
+  and covered by `test_initial_velocity` (IEA sphere decay from 0.5 m/s at
+  equilibrium: same damped period as the 1 m offset decay, within 0.03%).
 - **Demo tools in `demos/features/`.** New `MHKiT_writer.py` downloads NDBC
   buoy data with MHKiT and writes the hydro YAML wave block (regular waves
   use the energy-equivalent height Hm0/√2). The HDF5 plotter
