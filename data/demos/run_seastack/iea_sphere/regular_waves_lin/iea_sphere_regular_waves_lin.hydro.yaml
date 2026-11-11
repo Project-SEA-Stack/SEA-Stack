@@ -2,10 +2,13 @@ hydrodynamics:
   bodies:
     - name: body1
       h5_file: ../assets/hydroData/sphere.h5
+      # Linear hydrostatics and Froude-Krylov force. Same body, PTO and waves
+      # as regular_waves_nlfk, which differs only in wetted_surface.
 
+  # IEA OES Task 10 steepness H / (g T^2) = 0.0096 (Task 10 uses 0.01).
   waves:
     type: regular
-    height: 2.0
+    height: 6.0
     period: 8.0
     direction: 0
     ramp_duration: 20.0

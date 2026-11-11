@@ -46,15 +46,17 @@ model:
       axis: [0, 0, 1]
 
   tsdas:
-    - name: heave_spring_damper
+    - name: heave_pto
       type: TSDA
       body1: ground
       body2: body1
-      point1: [0, 0, 0]
-      point2: [0, 0, 0]
+      # Vertical damper between a ground anchor below the sphere and its CG
+      # (same PTO as regular_waves_nlfk).
+      point1: [0, 0, -10.0]
+      point2: [0, 0, -2.0]
       spring_coefficient: 0.0
-      damping_coefficient: 0.0
-      free_length: 0.0
+      damping_coefficient: 633980.0   # optimum PTO damping at T = 8 s [N s/m]
+      free_length: 8.0
       visualization:
         type: SPRING
         radius: 0.05
