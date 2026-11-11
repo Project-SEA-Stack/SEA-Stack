@@ -68,6 +68,10 @@ struct SingleRunConfig {
     bool has_external_pto = false;
     seastack::infra::SetupConfig::ExternalPtoConfig external_pto;
     std::vector<seastack::infra::SetupConfig::ExternalPtoConfig> external_ptos;
+
+    /// Optional out-of-process controller YAML (resolved path; empty = none).
+    /// Requires a build with SEASTACK_ENABLE_EXTERNAL.
+    std::string controller_file;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).

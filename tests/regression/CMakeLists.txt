@@ -407,4 +407,24 @@ if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
         set_tests_properties(test_constant_coefficients_funnel PROPERTIES
             ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
     endif()
+
+    # External controller (preview) through run_seastack: YAML mistakes, bad
+    # step() returns, process failures, print forwarding and cost per tick.
+    # Standard-library Python only.
+    if(TARGET seastack_external)
+        add_test(
+            NAME test_controller_robustness
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_controller_robustness.py"
+                --exe $<TARGET_FILE:run_seastack>
+        )
+        set_tests_properties(test_controller_robustness PROPERTIES
+            LABELS "external;chrono;execute"
+            COST 10
+        )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            set_tests_properties(test_controller_robustness PROPERTIES
+                ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+        endif()
+    endif()
 endif()

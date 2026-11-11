@@ -75,6 +75,7 @@ struct CampaignConfig {
     bool has_external_pto = false;
     seastack::infra::SetupConfig::ExternalPtoConfig external_pto;
     std::vector<seastack::infra::SetupConfig::ExternalPtoConfig> external_ptos;
+    std::string controller_file;  ///< Resolved controller YAML (empty = none)
 
     // Axes
     AxisSpec hs;
@@ -356,6 +357,8 @@ bool ResolveCaseFiles(CampaignConfig& cfg) {
             cfg.simulation_file = (case_dir / sc.simulation_file).lexically_normal().string();
         if (sc.has_hydro_file)
             cfg.hydro_file = (case_dir / sc.hydro_file).lexically_normal().string();
+        if (sc.has_controller_file)
+            cfg.controller_file = (case_dir / sc.controller_file).lexically_normal().string();
 #ifdef SEASTACK_HAVE_EXTERNAL
         try {
             LoadExternalPtoFromSetupYaml(setup_path, sc);
@@ -807,6 +810,7 @@ int RunCampaign(const std::string& campaign_yaml_path,
             run_cfg.has_external_pto = cfg.has_external_pto;
             run_cfg.external_pto = cfg.external_pto;
             run_cfg.external_ptos = cfg.external_ptos;
+            run_cfg.controller_file = cfg.controller_file;
 
             std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
             fs::create_directories(cell_diag_dir, ec);
@@ -885,6 +889,7 @@ int RunCampaign(const std::string& campaign_yaml_path,
                 run_cfg.has_external_pto = cfg.has_external_pto;
                 run_cfg.external_pto = cfg.external_pto;
                 run_cfg.external_ptos = cfg.external_ptos;
+                run_cfg.controller_file = cfg.controller_file;
 
                 std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
                 fs::create_directories(cell_diag_dir, ec);
@@ -935,6 +940,7 @@ int RunCampaign(const std::string& campaign_yaml_path,
             run_cfg.has_external_pto = cfg.has_external_pto;
             run_cfg.external_pto = cfg.external_pto;
             run_cfg.external_ptos = cfg.external_ptos;
+            run_cfg.controller_file = cfg.controller_file;
 
             std::string cell_diag_dir = (fs::path(cfg.output_directory) / label).string();
             fs::create_directories(cell_diag_dir, ec);

@@ -62,6 +62,11 @@ struct SetupConfig {
     /// Path as given in setup (`external_pto_file`), empty when inline `external_pto:`.
     std::string external_pto_file;
     bool has_external_pto_file = false;
+
+    /// Optional out-of-process controller YAML (`controller_file`, preview;
+    /// requires SEASTACK_ENABLE_EXTERNAL). Path as given in setup.
+    std::string controller_file;
+    bool has_controller_file = false;
 };
 
 /// Parse a model.setup.yaml file and return configuration

@@ -170,6 +170,18 @@ if(TARGET seastack_external)
         set_tests_properties(test_external_pto_functors PROPERTIES LABELS "unit")
     endif()
 
+    # External controller (preview): registry vs docs table, every channel on a
+    # small Chrono rig, zero-order hold, validation messages, RSDA step vs
+    # analytic. In-process model; no Python.
+    if(TARGET seastack_app_lib)
+        build_unit_test(test_external_controller)
+        target_link_libraries(test_external_controller PRIVATE seastack_app_lib)
+        target_include_directories(test_external_controller PRIVATE "${CMAKE_BINARY_DIR}")
+        target_compile_definitions(test_external_controller PRIVATE
+            "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+        set_tests_properties(test_external_controller PROPERTIES LABELS "unit")
+    endif()
+
     if(TARGET external_pto_example)
         add_test(
             NAME test_example_external_pto_mock
@@ -201,6 +213,14 @@ if(TARGET seastack_external)
                 "${CMAKE_SOURCE_DIR}/examples/external_pto/test_pto_python_api.py"
         )
         set_tests_properties(test_external_pto_python_api PROPERTIES
+            LABELS "unit;chrono-free" COST 1)
+
+        add_test(
+            NAME test_controller_python_api
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/python/test_controller_python_api.py"
+        )
+        set_tests_properties(test_controller_python_api PROPERTIES
             LABELS "unit;chrono-free" COST 1)
 
         # IPC-level equivalence: the same prescribed trace through the full IPC

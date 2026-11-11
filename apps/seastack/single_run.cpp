@@ -25,6 +25,7 @@
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 
 #ifdef SEASTACK_HAVE_EXTERNAL
+#include "external_controller.h"
 #include "external_pto_yaml.h"
 #endif
 
@@ -524,6 +525,26 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 return result;
             }
         }
+
+        // One controller per case; it may run alongside external PTOs.
+        std::unique_ptr<seastack::app::ExternalController> controller;
+        if (!config.controller_file.empty()) {
+            try {
+                controller = std::make_unique<seastack::app::ExternalController>(
+                    *system, seastack::app::LoadControllerFile(config.controller_file), loop_dt);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+#else
+        if (!config.controller_file.empty()) {
+            result.error_message =
+                "controller_file needs a build with -DSEASTACK_ENABLE_EXTERNAL=ON";
+            seastack::infra::cli::LogError(result.error_message);
+            return result;
+        }
 #endif
 
         std::string hydro_file_path;  // non-empty only when source is a file
@@ -987,6 +1008,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 double current_time = system->GetChTime();
                 try {
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
+#ifdef SEASTACK_HAVE_EXTERNAL
+                    if (controller) {
+                        controller->BeforeStep(system->GetChTime());
+                    }
+#endif
                     system->DoStepDynamics(loop_dt);
                     if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     step_count++;
@@ -1102,6 +1128,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                                     .count() >= kGuiFrameWallBudget) {
                             break;
                         }
+#ifdef SEASTACK_HAVE_EXTERNAL
+                        if (controller) {
+                            controller->BeforeStep(system->GetChTime());
+                        }
+#endif
                         system->DoStepDynamics(loop_dt);
                         step_count++;
                         if (exporter) {
