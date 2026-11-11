@@ -44,13 +44,20 @@ motion stay well below the draft and freeboard (5 m for this sphere).
 
 `regular_waves_nl` sits inside that range: its steady heave amplitude is about
 2% above `regular_waves_lin`. The comparison test
-`test_compare_linear_vs_nonlinear_hs_sphere_reg` shows the trend at T = 8 s:
+`test_compare_linear_vs_nonlinear_hs_sphere_reg` shows the trend at T = 8 s
+(free sphere, no PTO), with nonlinear Froude-Krylov for reference:
 
-| Wave amplitude | Nonlinear / linear heave amplitude |
-|----------------|------------------------------------|
-| 0.1 m | +0.3% |
-| 1.0 m | +2.0% |
-| 2.5 m | +16% |
+| Wave height H | Calm-water nonlinear / linear | Nonlinear Froude-Krylov / linear |
+|---------------|-------------------------------|----------------------------------|
+| 0.2 m | +0.3% | +0.2% |
+| 1 m | +0.7% | +0.2% |
+| 2 m | +2.0% | +0.2% |
+| 5 m | +16% | +0.1% |
+
+Without a PTO the sphere follows the wave at T = 8 s (heave about 1.03 times
+the wave amplitude), so the motion relative to the wave stays small and
+nonlinear Froude-Krylov stays close to linear even at H = 5 m. The calm-water
+model drifts because its buoyancy ignores the wave surface.
 
 With much larger waves (for example H = 10 m) the body is thrown clear of the
 water and then driven deep below it. SEA-Stack warns at start-up when

@@ -5,11 +5,14 @@
  * The same case is run with
  *   A) linear hydrostatics (BEM stiffness from H5)
  *   B) nonlinear hydrostatics (submerged volume of the OBJ mesh below the
- *      calm waterplane z = 0)
- * at several wave amplitudes. Wave excitation is linear in both runs.
+ *      calm waterplane z = 0); wave excitation stays linear
+ *   C) nonlinear Froude-Krylov (static + incident-wave pressure, Airy with
+ *      Wheeler stretching, on the hull below the wave surface); the linear
+ *      Froude-Krylov part of the excitation is removed
+ * at wave amplitudes 0.1, 0.5, 1.0 and 2.5 m (H = 0.2, 1, 2, 5 m) at T = 8 s.
  *
- * At small amplitude the two must agree (compare_*.py checks this). At larger
- * amplitude they diverge: B uses a calm-water buoyancy while the excitation
+ * At small amplitude all three must agree (compare_*.py checks this). At larger
+ * amplitude B diverges: it uses a calm-water buoyancy while the excitation
  * still contains the linear Froude-Krylov force on the mean hull, so B is only
  * valid while the relative motion stays well below the draft and freeboard.
  *
@@ -51,7 +54,20 @@ struct AmplitudeCase {
     double amplitude;  // [m]
     const char* tag;
 };
-const AmplitudeCase kCases[] = {{0.1, "a0p1"}, {1.0, "a1p0"}, {2.5, "a2p5"}};
+const AmplitudeCase kCases[] = {{0.1, "a0p1"}, {0.5, "a0p5"}, {1.0, "a1p0"}, {2.5, "a2p5"}};
+
+/// Hydrostatics / Froude-Krylov model; the name is the output file tag.
+enum class Model { kLinear, kCalmWater, kNlfk };
+const Model kModels[] = {Model::kLinear, Model::kCalmWater, Model::kNlfk};
+
+const char* Name(Model m) {
+    switch (m) {
+        case Model::kLinear: return "linear";
+        case Model::kCalmWater: return "nonlinear";
+        case Model::kNlfk: return "nlfk";
+    }
+    return "unknown";
+}
 
 void ConfigureSystem(ChSystemNSC& system) {
     system.SetGravitationalAcceleration(ChVector3d(0.0, 0.0, -9.81));
@@ -65,7 +81,7 @@ void ConfigureSystem(ChSystemNSC& system) {
     hht->SetStepControl(false);
 }
 
-bool RunCase(const std::string& h5, const std::string& mesh, bool nonlinear, double amplitude,
+bool RunCase(const std::string& h5, const std::string& mesh, Model model, double amplitude,
              double z_eq, const std::string& path) {
     ChSystemNSC system;
     ConfigureSystem(system);
@@ -96,9 +112,16 @@ bool RunCase(const std::string& h5, const std::string& mesh, bool nonlinear, dou
 
     std::vector<std::shared_ptr<ChBody>> bodies = {body};
     HydroSystem hydro(bodies, h5);
-    if (nonlinear) {
+    if (model == Model::kCalmWater) {
         hydro.EnableNonlinearHydrostatics();
         hydro.SetBodyMeshFiles({mesh});
+    } else if (model == Model::kNlfk) {
+        seastack::hydro::HydroModelBuilder::BodyHydrostaticsConfig cfg;
+        cfg.model = seastack::hydro::HydrostaticsModel::kNonlinear;
+        cfg.mesh_file = mesh;
+        cfg.froude_krylov = seastack::hydro::FroudeKrylovModel::kNonlinear;
+        cfg.fk_pressure = seastack::hydro::FroudeKrylovPressureModel::kAiryWheeler;
+        hydro.SetBodyHydrostatics({cfg});
     }
     hydro.AddWaves(wave);
 
@@ -137,12 +160,12 @@ int main(int /*argc*/, char* /*argv*/[]) {
     const double z_eq = data.GetCGVector(0)[2];
 
     for (const auto& c : kCases) {
-        for (bool nonlinear : {false, true}) {
-            const char* method = nonlinear ? "nonlinear" : "linear";
+        for (Model model : kModels) {
+            const char* method = Name(model);
             std::cout << "a = " << c.amplitude << " m, " << method << "...\n";
             const auto t0 = std::chrono::high_resolution_clock::now();
             const std::string path = out_dir + "/" + c.tag + "_" + method + "_heave.txt";
-            if (!RunCase(h5, mesh, nonlinear, c.amplitude, z_eq, path)) return 1;
+            if (!RunCase(h5, mesh, model, c.amplitude, z_eq, path)) return 1;
             const auto t1 = std::chrono::high_resolution_clock::now();
             std::cout << "  done in "
                       << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count()
