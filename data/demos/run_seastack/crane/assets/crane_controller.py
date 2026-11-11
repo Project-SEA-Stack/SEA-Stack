@@ -425,7 +425,7 @@ def NormalizeConfig(cfg: Dict[str, Any]) -> Dict[str, Any]:
     }
     limits = {
         "slew_rate_rad_s": _f(limits_n, "slew_rate_rad_s", 0.18),
-        "luff_rate_rad_s": _f(limits_n, "luff_rate_rad_s", 0.16),
+        "luff_rate_rad_s": _f(limits_n, "luff_rate_rad_s", 0.20),
         "knuckle_rate_rad_s": _f(limits_n, "knuckle_rate_rad_s", 0.18),
         "joint_accel_rad_s2": _f(limits_n, "joint_accel_rad_s2", 0.40),
         "max_travel_rad": _f(limits_n, "max_travel_rad", 2.20),

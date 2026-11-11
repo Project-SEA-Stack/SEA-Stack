@@ -9,13 +9,15 @@ The crane is driven by an external Python controller
 ([`assets/crane_controller.py`](assets/crane_controller.py)) through the
 external controller interface (preview,
 [`docs/extending/CONTROLLERS.md`](../../../../docs/extending/CONTROLLERS.md)).
-Three cases run the same sea with three control levels:
+Two cases run the same sea:
 
 | Case | Mode | What it does |
 |------|------|--------------|
 | `lift_baseline` | open loop | Joints follow the planned path in the parked vessel frame; hoist uses the parked tip height |
-| `lift_ahc` | AHC only | Joints as open loop; the hoist tracks the **live** tip height |
 | `lift_3dmc` | 3D-MC | Live tip XYZ inverse kinematics, vessel-motion feedforward, anti-sway, AHC hoist, controlled set-down |
+
+The controller also has an AHC-only mode (`mode: ahc`: open-loop joints, hoist
+tracks the live tip height); see [`CONTROLLER.md`](CONTROLLER.md).
 
 **Requires** `SEASTACK_ENABLE_EXTERNAL=ON` and `python` (3.8+, standard
 library only) on `PATH`.
@@ -40,14 +42,13 @@ Python.
 
 ```powershell
 .\build\bin\Release\run_seastack.exe data\demos\run_seastack\crane\lift_baseline --nogui
-.\build\bin\Release\run_seastack.exe data\demos\run_seastack\crane\lift_ahc --nogui
 .\build\bin\Release\run_seastack.exe data\demos\run_seastack\crane\lift_3dmc --nogui
 python data\demos\run_seastack\crane\summarize_runs.py
 ```
 
 Each run simulates 54 s at 1 kHz (about 15–20 s wall time on a desktop) and
 writes `outputs/results.irregular.h5` plus the controller's
-`outputs/crane_diagnostics.csv`. `summarize_runs.py` reads the three CSVs.
+`outputs/crane_diagnostics.csv`. `summarize_runs.py` reads both CSVs.
 
 To regenerate the case files after a layout or gain change:
 
@@ -80,7 +81,7 @@ Details and derivation: [`CONTROLLER.md`](CONTROLLER.md). In short:
 
 - The tip stays at its parked height for the whole lift; the winch does all
   vertical payload motion.
-- Joint rate limits: slew 0.18, luff 0.16, knuckle 0.18 rad/s; acceleration
+- Joint rate limits: slew 0.18, luff 0.20, knuckle 0.18 rad/s; acceleration
   limit 0.40 rad/s².
 - Hoist pay rate 1.5 m/s; the constant-tension floor is off
   (`tension_min_frac = 0`).
@@ -95,26 +96,22 @@ Details and derivation: [`CONTROLLER.md`](CONTROLLER.md). In short:
 ## Measured (Hs = 2 m, Tp = 8 s, seed 42)
 
 From `summarize_runs.py`, SEA-Stack v1.1 (dev, November 2026), Windows,
-Release build:
+Release build. Swing and peak tension are taken in flight, before set-down:
 
 | Case | Mean tip error, 10–48 s | Settle payload XY, 28–34 s | Max swing, 30–42 s | Peak tension / static, before 42 s | Touchdown speed / XY error |
 |------|------|------|------|------|------|
 | Open loop | 1.14 m | 1.96 m | 37.5° | 1.28 | 2.0 m/s / 3.9 m (misses the cradle) |
-| AHC only | 1.16 m | 1.33 m | 20.2° | 2.02 | 0.64 m/s / 2.1 m |
-| 3D-MC + anti-sway | **0.084 m** | **0.46 m** | **0.3°** | **1.26** | **0.31 m/s / 0.12 m** |
+| 3D-MC + anti-sway | **0.079 m** | **0.46 m** | **0.4°** | **1.26** | **0.07 m/s / 0.10 m** |
 
-3D-MC holds the tip fixed in space, damps the pendulum and puts the payload in
-the cradle. AHC removes the heave bounce but leaves the XY swing; the payload
-strikes the platform during lowering (slack rope from 41 s and the 2.0 peak
-tension just before). Open loop shows the plain wave-driven response.
+3D-MC holds the tip fixed in space, damps the pendulum and sets the payload
+into the cradle. Open loop shows the plain wave-driven response.
 
-**Set-down sensitivity.** The luff joint runs close to its 0.16 rad/s limit
-while compensating vessel roll. In this run it saturates during set-down
-(43–46 s): the tip rises about 0.3 m above its command, the winch pays out to
-compensate, and touchdown is 0.31 m/s. An earlier development run on the same
-sea, with slightly different vessel roll, stayed below the limit and touched
-down at 0.07 m/s. Treat the touchdown numbers as indicative; the luff rate
-limit is a stated assumption of this demo, not a property of a real crane.
+**Luff rate limit.** Compensating vessel roll keeps the luff joint close to
+its rate limit. With an earlier limit of 0.16 rad/s the luff saturated during
+set-down: the tip rose about 0.3 m above its command and touchdown was
+0.31 m/s. At 0.20 rad/s the luff stays below its limit until the payload has
+landed. The joint limits are assumptions of this demo, not data for a real
+crane.
 
 ## How the first 3D-MC version failed
 

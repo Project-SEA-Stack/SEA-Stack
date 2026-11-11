@@ -1,7 +1,7 @@
 # Crane controller (`crane_controller.py`)
 
-This note documents the Python IPC controller used by `lift_baseline`,
-`lift_ahc`, and `lift_3dmc`. It is the outer motion-compensation / mission
+This note documents the Python controller used by `lift_baseline` and
+`lift_3dmc`. It is the outer motion-compensation / mission
 layer. Joint tracking is not soft PID in Python: Chrono
 `ChLinkMotorRotationAngle` motors enforce the commanded angles.
 
@@ -94,7 +94,7 @@ kinematic `q` convention, not the Chrono motor sign.
 | Mode | Case | Joint IK vessel pose | Hoist tip height | Anti-sway |
 |------|------|----------------------|------------------|-----------|
 | `open_loop` | `lift_baseline` | Frozen park pose (first tick) | Frozen park FK | Off |
-| `ahc` | `lift_ahc` | Frozen park pose | **Live** vessel FK | Off |
+| `ahc` | none (set `mode: ahc` in a copy of `lift_3dmc`) | Frozen park pose | **Live** vessel FK | Off |
 | `3dmc` | `lift_3dmc` | **Predicted** live pose + correction | Live vessel FK | On |
 
 Intuition:

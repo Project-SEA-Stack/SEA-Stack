@@ -7,7 +7,7 @@ import math
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-CASES = ("lift_baseline", "lift_ahc", "lift_3dmc")
+CASES = ("lift_baseline", "lift_3dmc")
 SETTLE_T0 = 28.0  # settle hover window start (move_end)
 SETTLE_T1 = 34.0
 LOWER_END = 42.0  # end of flight / start of set-down

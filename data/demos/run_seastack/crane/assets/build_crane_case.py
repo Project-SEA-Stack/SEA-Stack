@@ -80,7 +80,7 @@ PAYLOAD_ATTACH = np.array([0.0, 0.0, 0.60])  # top of 1.2 m cube
 
 # 3D-MC class actuator limits (assumptions; see README).
 SLEW_RATE = 0.18
-LUFF_RATE = 0.16
+LUFF_RATE = 0.20
 KNUCKLE_RATE = 0.18
 JOINT_ACCEL = 0.40  # rad/s^2
 HOIST_RATE = 1.5  # m/s AHC-class winch
@@ -776,7 +776,6 @@ config:
 def write_case_yamls(L: dict) -> None:
     cases = [
         ("lift_baseline", "open_loop"),
-        ("lift_ahc", "ahc"),
         ("lift_3dmc", "3dmc"),
     ]
     for folder, mode in cases:
@@ -803,12 +802,6 @@ output:
 """
     (CRANE_ROOT / "lift_baseline" / "crane.setup.yaml").write_text(
         setup_tpl.format(title="Baseline lift — open-loop joints on mean vessel pose."),
-        encoding="utf-8",
-    )
-    (CRANE_ROOT / "lift_ahc" / "crane.setup.yaml").write_text(
-        setup_tpl.format(
-            title="AHC lift — joints frozen on open-loop trajectory; hoist tracks live tip Z."
-        ),
         encoding="utf-8",
     )
     (CRANE_ROOT / "lift_3dmc" / "crane.setup.yaml").write_text(
