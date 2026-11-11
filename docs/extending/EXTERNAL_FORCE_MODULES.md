@@ -80,6 +80,10 @@ unit-test paths still use `kind:"pto"` with `n_inputs:2` and
 (`kind:"pto_tsda"` or `"pto_rsda"`, 17 channels); set `rich_state: false` in
 YAML to keep the lean 2-channel contract.
 
+An optional `out_names` array labels the positional `out` channels. It is
+sent for `kind:"controller"` (see [CONTROLLERS.md](CONTROLLERS.md)), where a
+NaN in `out` means "hold the previous value".
+
 ### Replies (module → SEA-Stack)
 
 ```json
@@ -91,6 +95,11 @@ YAML to keep the lean 2-channel contract.
 
 - `initialize` reply must include `name`, `version`, and `n_states`.
 - `evaluate` reply must include `out` (array of doubles, length = `n_outputs`).
+- Any reply may end with an optional `log` array of strings, for example
+  `{"status":"ok","out":[0.0],"log":["gain = 2"]}`. SEA-Stack prints each line
+  prefixed with the script name. This is how module output reaches the console
+  on Windows, where the child process has no console. Put `log` last.
+- JSON strings may use the standard escapes (`\n`, `\t`, `\"`, `\uXXXX`).
 - Any `status` other than `"ok"`, malformed JSON, wrong array length, or
   IPC timeout raises a C++ exception and aborts the run. The child process
   is terminated on failure.

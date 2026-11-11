@@ -453,6 +453,22 @@ void IpcExternalForceModel::RequireOk(const std::string& reply,
     }
 }
 
+/// Keep any optional `log` lines from a reply for TakeLogLines().
+void IpcExternalForceModel::CollectLogLines(const std::string& reply) {
+    std::vector<std::string> lines;
+    if (protocol::ExtractStringArrayField(reply, "log", lines)) {
+        for (auto& line : lines) {
+            pending_log_.push_back(std::move(line));
+        }
+    }
+}
+
+std::vector<std::string> IpcExternalForceModel::TakeLogLines() {
+    std::vector<std::string> lines;
+    lines.swap(pending_log_);
+    return lines;
+}
+
 /// Accept the child TCP connection and complete the initialize handshake.
 ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
     if (shutdown_) {
@@ -504,6 +520,7 @@ ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
     const std::string req = protocol::MakeInitializeRequest(init);
     SendRequest(req);
     const std::string reply = RecvReply();
+    CollectLogLines(reply);
     RequireOk(reply, "initialize");
 
     int protocol = 0;
@@ -532,6 +549,7 @@ void IpcExternalForceModel::Evaluate(double time,
         protocol::MakeEvaluateRequest(time, last_dt_, in);
     SendRequest(req);
     const std::string reply = RecvReply();
+    CollectLogLines(reply);
     RequireOk(reply, "evaluate");
     if (!protocol::ParseEvaluateReply(reply, out)) {
         throw std::runtime_error("evaluate: missing/invalid out array");

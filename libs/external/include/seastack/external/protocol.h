@@ -62,6 +62,11 @@ bool DecodeJsonString(const std::string& json, size_t start,
 bool ExtractStringField(const std::string& json, const char* key,
                         std::string& value);
 
+/// Extract a JSON array of strings for key "key". Returns false if the key is
+/// absent or the array is malformed (values is then empty or partial).
+bool ExtractStringArrayField(const std::string& json, const char* key,
+                             std::vector<std::string>& values);
+
 /// Extract an integer value for key "key".
 bool ExtractIntField(const std::string& json, const char* key, int& value);
 

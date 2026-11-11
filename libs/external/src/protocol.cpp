@@ -274,6 +274,9 @@ std::string MakeInitializeRequest(const ExternalInit& init) {
     if (!init.in_names.empty()) {
         oss << ",\"in_names\":" << EncodeStringArray(init.in_names);
     }
+    if (!init.out_names.empty()) {
+        oss << ",\"out_names\":" << EncodeStringArray(init.out_names);
+    }
     oss << ",\"config\":" << cfg << '}';
     return oss.str();
 }
@@ -318,6 +321,37 @@ bool ParseInitializeReply(const std::string& json, ExternalMeta& meta) {
         meta.n_states = 0;
     }
     return true;
+}
+
+bool ExtractStringArrayField(const std::string& json, const char* key,
+                             std::vector<std::string>& values) {
+    values.clear();
+    size_t pos = 0;
+    if (!FindKey(json, key, pos)) {
+        return false;
+    }
+    if (pos >= json.size() || json[pos] != '[') {
+        return false;
+    }
+    pos = SkipWs(json, pos + 1);
+    if (pos < json.size() && json[pos] == ']') {
+        return true;
+    }
+    while (pos < json.size()) {
+        std::string item;
+        size_t end_pos = 0;
+        if (!DecodeJsonString(json, pos, item, end_pos)) {
+            return false;
+        }
+        values.push_back(std::move(item));
+        pos = SkipWs(json, end_pos);
+        if (pos < json.size() && json[pos] == ',') {
+            pos = SkipWs(json, pos + 1);
+            continue;
+        }
+        return pos < json.size() && json[pos] == ']';
+    }
+    return false;
 }
 
 bool ParseEvaluateReply(const std::string& json, std::vector<double>& out) {

@@ -66,6 +66,8 @@ class IpcExternalForceModel : public IExternalForceModel {
     void Rollback() override;
     /// Forward `shutdown`, close sockets, terminate the child process.
     void Shutdown() override;
+    /// Lines from the optional `log` array of initialize/evaluate replies.
+    std::vector<std::string> TakeLogLines() override;
 
   private:
     struct Impl;
@@ -77,6 +79,7 @@ class IpcExternalForceModel : public IExternalForceModel {
     bool shutdown_ = false;     ///< True after Shutdown() (object is spent).
     ExternalInit init_{};       ///< Copy of the last handshake inputs.
     double last_dt_ = 0.0;      ///< Nominal dt from Initialize (sent on evaluate).
+    std::vector<std::string> pending_log_;  ///< Unread `log` lines from replies.
 
     /// Write one length-prefixed JSON request on the client socket.
     void SendRequest(const std::string& json);
@@ -84,6 +87,8 @@ class IpcExternalForceModel : public IExternalForceModel {
     std::string RecvReply();
     /// Require `"status":"ok"` in `reply` or throw with `context`.
     void RequireOk(const std::string& reply, const char* context);
+    /// Append the reply's optional `log` lines to pending_log_.
+    void CollectLogLines(const std::string& reply);
 };
 
 }  // namespace external
