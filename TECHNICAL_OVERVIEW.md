@@ -1,11 +1,10 @@
 # SEA-Stack: Overview
 
-**Version:** v1.0.0
-**Date:** September 2026
+**Version:** v1.1.0
+**Date:** November 2026
 
-The lists below describe the v1.0.0 release. Nonlinear Froude-Krylov forces,
-and the hydrostatics warnings that go with them, were added after v1.0.0
-and are planned for v1.1. They are not in v1.0.0. See [docs/build/RELEASE_NOTES_v1.1.md](docs/build/RELEASE_NOTES_v1.1.md).
+The lists below describe the v1.1.0 release. Changes since v1.0.0 are listed
+in [docs/build/RELEASE_NOTES_v1.1.md](docs/build/RELEASE_NOTES_v1.1.md).
 
 ---
 
@@ -15,13 +14,14 @@ SEA-Stack is a modular C++17 simulation platform for offshore energy systems. It
 
 Its core architectural feature is the separation of domain physics from the solver engine. The hydrodynamics, PTO, and control libraries are Chrono-free, exposing Eigen-based interfaces that can run standalone or couple to other solvers via a thin adapter layer.
 
-This architecture is designed to enable multi-fidelity modelling: the same system models and domain logic can be reused across different simulation backends (e.g. potential flow, CFD, SPH). While v1.0.0 uses linear potential-flow hydrodynamics, the structure supports higher-fidelity methods without rewriting the system model.
+This architecture is designed to enable multi-fidelity modelling: the same system models and domain logic can be reused across different simulation backends (e.g. potential flow, CFD, SPH). While v1.1.0 uses potential-flow hydrodynamics (linear, with optional nonlinear hydrostatics and Froude-Krylov forces), the structure supports higher-fidelity methods without rewriting the system model.
 
 The aim is to support both rapid design iteration and progressive confidence-building. Early-stage concepts need fast, flexible simulation to explore alternatives, while later stages need a path to higher-fidelity methods before costly prototype deployment and sea trials. The same solver-independent interfaces also provide a basis for future hardware-in-the-loop workflows.
 
-SEA-Stack v1.0.0 includes:
+SEA-Stack v1.1.0 includes:
 
 - Linear potential-flow hydrodynamics with optional nonlinear hydrostatics
+  and nonlinear Froude-Krylov forces (new in v1.1)
 - BEMIO-formatted HDF5 import for BEM-derived hydrodynamic coefficients
 - Dense infinite-frequency added mass from BEM included in the Chrono mass
   matrix via `ChLoadHydrodynamics` (no lagged-force / prior-step-acceleration
@@ -53,12 +53,14 @@ The project is developed openly and is intended to be accessible to engineers an
 
 ---
 
-## 3. Scope of SEA-Stack v1.0.0
+## 3. Scope of SEA-Stack v1.1.0
 
 ### Supported now
 
 - Linear potential-flow hydrodynamics (6-DOF per body, multi-body)
 - Linear or nonlinear hydrostatics (mesh-based instantaneous submerged volume)
+- Nonlinear Froude-Krylov forces: incident-wave pressure integrated over the
+  instantaneous wetted hull (per body, YAML `wetted_surface`)
 - BEMIO-formatted HDF5 coefficient import
 - Regular, irregular (JONSWAP/PM), bimodal, and multi-directional wave fields
 - Precomputed elevation time-series import (eta-table) for IRF excitation
@@ -71,6 +73,8 @@ The project is developed openly and is intended to be accessible to engineers an
 - Rectified hydraulic PTO (check-valve bridge, HP/LP accumulators,
   motor-generator dynamics, optional controller)
 - Scalar control interface
+- External controller interface (preview): a controller in a separate
+  process (e.g. Python) reads and writes named model channels each step
 - Project Chrono multibody dynamics integration
 - Dense BEM infinite-frequency added mass in the solver mass matrix via
   `ChLoadHydrodynamics` (direct assembly, not a lagged applied force)
@@ -90,7 +94,7 @@ The project is developed openly and is intended to be accessible to engineers an
 
 ### Future direction
 
-- Nonlinear Froude-Krylov and viscous drag forces
+- Viscous drag forces
 - Higher-fidelity mooring models
 - More complex PTO and control subsystems
 - Python bindings
@@ -405,9 +409,9 @@ Nonlinear hydrodynamics (Froude–Krylov, viscous drag); multi-DOF PTO and riche
 
 ## 8. Conclusion
 
-SEA-Stack v1.0.0 separates domain physics from the dynamics engine: hydro as a reusable library, PTO/control as light modules, Chrono as the current backend with a thin adapter. That layout supports standalone use, alternative solvers in principle, and future fidelity options.
+SEA-Stack v1.1.0 separates domain physics from the dynamics engine: hydro as a reusable library, PTO/control as light modules, Chrono as the current backend with a thin adapter. That layout supports standalone use, alternative solvers in principle, and future fidelity options.
 
-v1.0.0 is buildable, tested, and packaged on Windows and macOS, with architecture reviewed against this design. Next focus: documentation, broader testing, community use, and the future directions above.
+v1.1.0 is buildable, tested, and packaged on Windows and macOS, with architecture reviewed against this design. Next focus: documentation, broader testing, community use, and the future directions above.
 
 ---
 

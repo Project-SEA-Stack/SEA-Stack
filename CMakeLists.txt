@@ -6,14 +6,15 @@ cmake_policy(SET CMP0091 NEW)
 cmake_policy(SET CMP0074 NEW)
 
 project(SEAStack
-    VERSION 1.0.0
+    VERSION 1.1.0
     DESCRIPTION "Modular offshore system simulation platform"
     LANGUAGES CXX
 )
 
 # Version suffix for prerelease tags (e.g., "-beta.1", "-rc.1", or empty for releases).
-# Keep this in sync with the current release branch name (release/v<PROJECT_VERSION><SUFFIX>).
-set(SEASTACK_VERSION_SUFFIX "")
+# Use "-rc.N" while a release branch is tested; "" only for the tagged release
+# (see docs/build/RELEASE_CHECKLIST.md).
+set(SEASTACK_VERSION_SUFFIX "-rc.1")
 set(SEASTACK_VERSION_FULL "${PROJECT_VERSION}${SEASTACK_VERSION_SUFFIX}")
 
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})

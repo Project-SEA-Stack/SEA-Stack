@@ -1,7 +1,7 @@
 # SEA-Stack
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 
 Open-source simulation software for offshore and marine energy systems—built for innovating, fast design exploration and engineering workflows.
@@ -45,7 +45,7 @@ SEA-Stack helps engineers and researchers explore design spaces efficiently, red
 - BEM hydrodynamic coefficients via BEMIO-format HDF5, including added mass, radiation IRFs, excitation, hydrostatic stiffness, and related data
 - Nonlinear hydrostatics with mesh-based submerged volume calculation
 - Nonlinear Froude-Krylov forces (incident-wave pressure on the instantaneous
-  wetted hull) for large waves. Added after v1.0.0, planned for v1.1
+  wetted hull) for large waves, new in v1.1
   ([v1.1 notes](docs/build/RELEASE_NOTES_v1.1.md))
 - Radiation damping via convolution or state-space approximation
 - Excitation via frequency-domain transfer functions or IRF convolution
@@ -110,7 +110,7 @@ Detailed walkthroughs (toolchains, optional modules, packaging, troubleshooting,
 
 ## Project status
 
-SEA-Stack is under active development. The current release (v1.0.0) provides a robust modular core, validated offshore simulation workflows, and a suite of representative demos and test cases. Packages are currently available for Windows and macOS. Linux packaging and CI/CD are planned. Multi-fidelity capabilities and integration with higher-fidelity methods are planned as the platform evolves.
+SEA-Stack is under active development. The current release (v1.1.0) provides a robust modular core, validated offshore simulation workflows, and a suite of representative demos and test cases. Packages are currently available for Windows and macOS. Linux packaging and CI/CD are planned. Multi-fidelity capabilities and integration with higher-fidelity methods are planned as the platform evolves.
 
 ## License
 

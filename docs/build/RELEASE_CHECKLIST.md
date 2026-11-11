@@ -1,24 +1,29 @@
 # SEA-Stack release checklist
 
 Short, repeatable steps for cutting a prerelease or release (e.g. `v1.0.0-beta.N`).
-Keep Windows and macOS in sync before tagging.
+Keep Windows, macOS and Linux in sync before tagging.
 
 ## 1. Branch and version bump
 
-1. Create / check out `release/vX.Y.Z[-suffix]` from `main`.
+1. Create / check out `release/vX.Y.Z` from `dev` once every feature for the
+   release is merged into `dev`. After the cut, only fixes go onto the
+   release branch.
 2. Bump every product-facing version string:
-   - [`CMakeLists.txt`](../../CMakeLists.txt) — `SEASTACK_VERSION_SUFFIX` (e.g. `"-rc.1"`, or `""` for a release)
+   - [`CMakeLists.txt`](../../CMakeLists.txt) — `project(VERSION X.Y.Z)` and
+     `SEASTACK_VERSION_SUFFIX` (e.g. `"-rc.1"`, or `""` for a release)
    - [`README.md`](../../README.md) — badge + “current release” prose
    - [`TECHNICAL_OVERVIEW.md`](../../TECHNICAL_OVERVIEW.md) — version header and body mentions
    - [`scripts/windows/stage_release_reports.ps1`](../../scripts/windows/stage_release_reports.ps1) — usage examples (`-Version v…`)
-3. Commit: `Bump version to vX.Y.Z[-suffix]`.
+3. Commit: `Bump version to vX.Y.Z-rc.1`.
 
-Keep `SEASTACK_VERSION_SUFFIX` in sync with the release branch name
-(`release/v<PROJECT_VERSION><SUFFIX>`).
+While the platforms are being tested, keep an `-rc.N` suffix so test ZIPs
+(e.g. `SEAStack-1.1.0-rc.1-win64.zip`) cannot be mistaken for the release.
+Bump `N` for each new round of packages after a fix. In the last commit
+before the tag, set the suffix to `""` (`Set version to vX.Y.Z`).
 
-If release candidates are tagged on a branch whose suffix is already `""`,
-their ZIPs carry the final version name (e.g. `SEAStack-1.0.0-win64.zip`).
-Keep those packages internal; publish only the ZIPs built from the final tag.
+If release candidates are built with the suffix already `""`, their ZIPs
+carry the final version name (e.g. `SEAStack-1.0.0-win64.zip`). Keep those
+packages internal; publish only the ZIPs built from the final tag.
 
 ## 2. Clean package (Windows)
 
@@ -127,14 +132,15 @@ reports):
 .\scripts\windows\run_benchmarks.ps1
 ```
 
-Repeat the equivalent runners on macOS via `scripts/unix/ctest_suite.sh`
+Repeat the equivalent runners on macOS and Linux via `scripts/unix/ctest_suite.sh`
 (`unit`, `chrono-free`, `regression`, `verification`, `comparison`,
 `benchmark`). If a fresh checkout reports `permission denied`, the scripts lost
 their executable bit — run `chmod +x scripts/unix/*.sh` (or invoke with
 `bash scripts/unix/...`).
 
 The six suite runners do **not** cover the `external` label. Run it separately
-on both platforms so the external-PTO Chrono regression is exercised:
+on every platform so the external-PTO and external-controller (crane) Chrono
+tests are exercised:
 
 ```bash
 ctest --test-dir build -C Release -L external --output-on-failure
@@ -201,11 +207,13 @@ Conventions used in this project:
   merge it into `main` when the cut is ready.
 - Tag the release commit with an annotated tag matching the version string, e.g.
   `v1.0.0` (same stem as the branch / `SEASTACK_VERSION_FULL`).
-- Beta / RC tags are published as **GitHub pre-releases**; attach the Windows and
-  macOS ZIPs plus any staged reports from `release-assets/`.
+- Beta / RC tags are published as **GitHub pre-releases**; attach the Windows,
+  macOS and Linux ZIPs plus any staged reports from `release-assets/`.
 - Prefer creating the GitHub Release in the web UI (or `gh release create`) after
   the tag exists — include a short summary of what changed since the previous
-  tag.
+  tag (the body of `docs/build/RELEASE_NOTES_vX.Y.md`).
+- After the tag, merge `main` back into `dev` so the version bump and any
+  release-branch fixes reach `dev`.
 
 ## Related docs
 
