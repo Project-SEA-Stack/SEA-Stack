@@ -930,6 +930,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         double initial_time = system->GetChTime();
         double previous_time = initial_time;
         bool diverged = false;
+        // Set when a step throws (solver error, external module failure);
+        // the run then stops early and must not report success.
+        std::string step_error;
 
         std::shared_ptr<::chrono::ChBody> first_body = nullptr;
         if (!system->GetBodies().empty()) {
@@ -1015,11 +1018,13 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     seastack::infra::cli::LogError(std::string("🔥 Exception during DoStepDynamics at step ") + std::to_string(step_count) + ": " + e.what());
                     seastack::infra::cli::LogError(std::string("Simulation time: ") + seastack::infra::FormatNumber(current_time, 6) + " s");
                     seastack::infra::cli::LogError(std::string("Step size: ") + seastack::infra::FormatNumber(loop_dt, 6) + " s");
+                    step_error = e.what();
                     break;
                 } catch (...) {
                     seastack::infra::cli::StopProgress();
                     seastack::infra::cli::LogError(std::string("🔥 Unknown exception during DoStepDynamics at step ") + std::to_string(step_count));
                     seastack::infra::cli::LogError(std::string("Simulation time: ") + seastack::infra::FormatNumber(current_time, 6) + " s");
+                    step_error = "unknown exception during DoStepDynamics";
                     break;
                 }
             }
@@ -1178,11 +1183,13 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     }
 
                     seastack::infra::cli::LogWarning("This may indicate numerical instability, constraint conflicts, or configuration issues");
+                    step_error = e.what();
                     break;
                 } catch (...) {
                     seastack::infra::cli::LogError(std::string("🔥 Unknown exception during DoStepDynamics at step ") + std::to_string(step_count));
                     seastack::infra::cli::LogError(std::string("Simulation time: ") + seastack::infra::FormatNumber(current_time, 6) + " s");
                     seastack::infra::cli::LogError("This indicates a serious system error");
+                    step_error = "unknown exception during DoStepDynamics";
                     break;
                 }
             }
@@ -1244,7 +1251,10 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
         // Populate result
-        result.exit_code = diverged ? 2 : 0;
+        result.exit_code = diverged ? 2 : (step_error.empty() ? 0 : 1);
+        if (!step_error.empty()) {
+            result.error_message = step_error;
+        }
         result.wall_time_s = wall_s;
         result.sim_time_final = system->GetChTime();
         result.diverged = diverged;
