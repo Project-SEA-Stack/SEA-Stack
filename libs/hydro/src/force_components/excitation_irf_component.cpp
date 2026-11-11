@@ -116,6 +116,8 @@ ExcitationIrfComponent::ExcitationIrfComponent(
                     "several directions. Use 'frequency_domain' or 'auto' for directional seas.");
             }
         }
+    } else {
+        wave_direction = waves_->GetEtaRecordDirection();
     }
     const Eigen::VectorXd& bem_headings = data_.GetSimulationInfo().wave_directions;
     if (wave_direction) {

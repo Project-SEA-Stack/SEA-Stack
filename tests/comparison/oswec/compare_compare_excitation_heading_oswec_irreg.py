@@ -5,6 +5,9 @@ oblique (30 deg) long-crested sea on the OSWEC.
 
 Pass/fail, using normalised RMS differences of flap pitch after the ramp:
   - IRF 30 deg vs FD 30 deg must agree (0.4 % on Windows, Nov 2026).
+  - IRF on a tabulated elevation record with direction 30 deg (the eta_file
+    path) vs IRF on the 30 deg component sea must agree (2e-8 on Windows,
+    Nov 2026; the record holds the same elevation at the origin).
   - IRF 30 deg vs IRF 0 deg must differ (the heading must not be ignored;
     before the fix the two were bit-identical).
 """
@@ -17,6 +20,7 @@ from compare_template_internal import np, plot_comparison, write_comparison_stat
 
 SKIP_TIME = 60.0          # s, after the 30 s ramp has settled
 MAX_IRF_VS_FD = 0.02      # normalised RMS, IRF 30 deg vs FD 30 deg
+MAX_ETA_VS_IRF = 0.01     # normalised RMS, eta-record IRF 30 deg vs IRF 30 deg
 MIN_30_VS_0 = 0.05        # normalised RMS, IRF 30 deg vs IRF 0 deg
 
 TEST_NAME = "compare_excitation_heading_oswec_irreg"
@@ -38,7 +42,8 @@ def main():
         sys.exit(1)
 
     base_dir = Path(sys.argv[1])
-    files = {name: base_dir / f"{name}.txt" for name in ("irf_0", "irf_30", "fd_30")}
+    names = ("irf_0", "irf_30", "fd_30", "eta_irf_30")
+    files = {name: base_dir / f"{name}.txt" for name in names}
     missing = [str(p) for p in files.values() if not p.exists()]
     if missing:
         print(f"Missing result files: {missing}")
@@ -47,27 +52,35 @@ def main():
     t, irf_0 = load(files["irf_0"])
     _, irf_30 = load(files["irf_30"])
     _, fd_30 = load(files["fd_30"])
-    n = min(len(irf_0), len(irf_30), len(fd_30))
-    t, irf_0, irf_30, fd_30 = t[:n], irf_0[:n], irf_30[:n], fd_30[:n]
+    _, eta_30 = load(files["eta_irf_30"])
+    n = min(len(irf_0), len(irf_30), len(fd_30), len(eta_30))
+    t, irf_0, irf_30, fd_30, eta_30 = t[:n], irf_0[:n], irf_30[:n], fd_30[:n], eta_30[:n]
     mask = t >= SKIP_TIME
 
     irf_vs_fd = nrms(irf_30, fd_30, mask)
+    eta_vs_irf = nrms(eta_30, irf_30, mask)
     d30_vs_d0 = nrms(irf_30, irf_0, mask)
-    passed = irf_vs_fd <= MAX_IRF_VS_FD and d30_vs_d0 >= MIN_30_VS_0
+    passed = irf_vs_fd <= MAX_IRF_VS_FD and eta_vs_irf <= MAX_ETA_VS_IRF and d30_vs_d0 >= MIN_30_VS_0
 
     metrics = {
         "nrms_irf30_vs_fd30": irf_vs_fd,
+        "nrms_eta_irf30_vs_irf30": eta_vs_irf,
         "nrms_irf30_vs_irf0": d30_vs_d0,
         "max_nrms_irf30_vs_fd30": MAX_IRF_VS_FD,
+        "max_nrms_eta_irf30_vs_irf30": MAX_ETA_VS_IRF,
         "min_nrms_irf30_vs_irf0": MIN_30_VS_0,
     }
     write_comparison_status(base_dir, TEST_NAME, metrics, passed)
     plot_comparison(t, fd_30, irf_30, label_a="FD 30 deg", label_b="IRF 30 deg",
                     title=f"{TEST_NAME}: FD vs IRF at 30 deg", y_label="Flap pitch (deg)",
                     output_path=str(base_dir / "plots" / "comparison.png"), skip_time=SKIP_TIME)
+    plot_comparison(t, irf_30, eta_30, label_a="IRF 30 deg (components)", label_b="IRF 30 deg (eta record)",
+                    title=f"{TEST_NAME}: eta record vs components at 30 deg", y_label="Flap pitch (deg)",
+                    output_path=str(base_dir / "plots" / "comparison_eta.png"), skip_time=SKIP_TIME)
 
-    print(f"  IRF 30 vs FD 30 : normalised RMS = {irf_vs_fd:.4f} (max {MAX_IRF_VS_FD})")
-    print(f"  IRF 30 vs IRF 0 : normalised RMS = {d30_vs_d0:.4f} (min {MIN_30_VS_0})")
+    print(f"  IRF 30 vs FD 30         : normalised RMS = {irf_vs_fd:.4f} (max {MAX_IRF_VS_FD})")
+    print(f"  eta IRF 30 vs IRF 30    : normalised RMS = {eta_vs_irf:.4f} (max {MAX_ETA_VS_IRF})")
+    print(f"  IRF 30 vs IRF 0         : normalised RMS = {d30_vs_d0:.4f} (min {MIN_30_VS_0})")
     print(f"  {TEST_NAME}: {'PASS' if passed else 'FAIL'}")
     sys.exit(0 if passed else 1)
 

@@ -4,12 +4,15 @@
  *
  * The IRF path convolves the elevation at the origin, which carries no
  * direction, so it must use the excitation kernel for the sea's heading.
- * Runs three cases with the same JONSWAP sea and writes flap pitch [deg]:
- *   irf_0.txt   IRF, direction 0 deg
- *   irf_30.txt  IRF, direction 30 deg
- *   fd_30.txt   frequency domain, direction 30 deg
- * The Python check requires irf_30 ~ fd_30, and irf_30 clearly different
- * from irf_0 (the heading must not be ignored).
+ * Runs four cases with the same JONSWAP sea and writes flap pitch [deg]:
+ *   irf_0.txt       IRF, direction 0 deg
+ *   irf_30.txt      IRF, direction 30 deg
+ *   fd_30.txt       frequency domain, direction 30 deg
+ *   eta_irf_30.txt  IRF on a tabulated elevation record (EtaTableWaveField)
+ *                   with direction 30 deg; the record is the 30 deg sea's
+ *                   elevation at the origin, as an eta_file import would supply
+ * The Python check requires irf_30 ~ fd_30, eta_irf_30 ~ irf_30, and irf_30
+ * clearly different from irf_0 (the heading must not be ignored).
  */
 
 #include <seastack/adapters/chrono/helper.h>
@@ -17,6 +20,7 @@
 #include <seastack/core/math_constants.h>
 #include <seastack/hydro/excitation_types.h>
 #include <seastack/hydro/waves/component_sampler.h>
+#include <seastack/hydro/waves/eta_table_wave_field.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 #include <seastack/hydro/waves/wave_component.h>
 
@@ -42,7 +46,7 @@ struct RunResult {
 };
 
 RunResult RunOswec(const std::filesystem::path& data_dir, double direction_deg, ExcitationMethod method,
-                   const std::string& label) {
+                   bool eta_table, const std::string& label) {
     const auto flap_mesh = (data_dir / "demos" / "oswec" / "geometry" / "flap.obj").lexically_normal().generic_string();
     const auto base_mesh = (data_dir / "demos" / "oswec" / "geometry" / "base.obj").lexically_normal().generic_string();
     const auto h5        = (data_dir / "demos" / "oswec" / "hydroData" / "oswec.h5").lexically_normal().generic_string();
@@ -105,7 +109,23 @@ RunResult RunOswec(const std::filesystem::path& data_dir, double direction_deg, 
     sea_state.n_omega   = 1000;
     sea_state.seed      = 1;
 
-    auto wave_field = std::make_shared<LinearDirectionalWaveField>(ComponentSampler::Build(sea_state), sea_state.depth);
+    std::shared_ptr<WaveBase> wave_field =
+        std::make_shared<LinearDirectionalWaveField>(ComponentSampler::Build(sea_state), sea_state.depth);
+    if (eta_table) {
+        // The excitation IRF is non-causal, so the record extends past the
+        // end of the run by more than the kernel length.
+        const double record_dt  = 0.005;
+        const double record_end = duration + 100.0;
+        std::vector<double> t_rec;
+        std::vector<double> eta_rec;
+        for (double t = 0.0; t <= record_end; t += record_dt) {
+            t_rec.push_back(t);
+            eta_rec.push_back(wave_field->GetElevation(Eigen::Vector3d::Zero(), t));
+        }
+        auto eta_field = std::make_shared<EtaTableWaveField>(std::move(t_rec), std::move(eta_rec), sea_state.depth);
+        eta_field->SetDirection(direction_deg * M_PI / 180.0);
+        wave_field = eta_field;
+    }
     wave_field->SetRampDuration(30.0);
 
     std::vector<std::shared_ptr<ChBody>> bodies = {flap, base};
@@ -149,11 +169,12 @@ int main(int /*argc*/, char* /*argv*/[]) {
     const std::string out_dir = seastack::chrono::GetTestOutDir() + "/" + RESULTS_DIR_NAME;
     std::filesystem::create_directories(out_dir);
 
-    const auto irf_0  = RunOswec(data_path, 0.0, ExcitationMethod::kIrfConvolution, "IRF 0 deg");
-    const auto irf_30 = RunOswec(data_path, 30.0, ExcitationMethod::kIrfConvolution, "IRF 30 deg");
-    const auto fd_30  = RunOswec(data_path, 30.0, ExcitationMethod::kFrequencyDomain, "FD 30 deg");
+    const auto irf_0      = RunOswec(data_path, 0.0, ExcitationMethod::kIrfConvolution, false, "IRF 0 deg");
+    const auto irf_30     = RunOswec(data_path, 30.0, ExcitationMethod::kIrfConvolution, false, "IRF 30 deg");
+    const auto fd_30      = RunOswec(data_path, 30.0, ExcitationMethod::kFrequencyDomain, false, "FD 30 deg");
+    const auto eta_irf_30 = RunOswec(data_path, 30.0, ExcitationMethod::kIrfConvolution, true, "eta IRF 30 deg");
 
     const bool ok = WriteResults(irf_0, out_dir + "/irf_0.txt") && WriteResults(irf_30, out_dir + "/irf_30.txt") &&
-                    WriteResults(fd_30, out_dir + "/fd_30.txt");
+                    WriteResults(fd_30, out_dir + "/fd_30.txt") && WriteResults(eta_irf_30, out_dir + "/eta_irf_30.txt");
     return ok ? 0 : 1;
 }

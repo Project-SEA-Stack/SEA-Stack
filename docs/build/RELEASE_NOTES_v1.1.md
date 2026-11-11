@@ -64,6 +64,13 @@ published:
   [EXAMPLE_WORKFLOWS.md](../usage/EXAMPLE_WORKFLOWS.md#initial-body-velocity)
   and covered by `test_initial_velocity` (IEA sphere decay from 0.5 m/s at
   equilibrium: same damped period as the 1 m offset decay, within 0.03%).
+- **Wave elevation records now take a direction.** `waves.direction` [deg]
+  was ignored when the waves came from an `eta_file`: the DFT import used
+  0 deg and `method: irf_convolution` used the first BEM heading. Both now
+  use `direction`. Cases without `direction` are unchanged. The OSWEC
+  heading comparison test now includes a 30 deg record and matches the same
+  sea built from components. See
+  [EXAMPLE_WORKFLOWS.md](../usage/EXAMPLE_WORKFLOWS.md#wave-elevation-records-eta_file).
 - **Demo tools in `demos/features/`.** New `MHKiT_writer.py` downloads NDBC
   buoy data with MHKiT and writes the hydro YAML wave block (regular waves
   use the energy-equivalent height Hm0/√2). The HDF5 plotter

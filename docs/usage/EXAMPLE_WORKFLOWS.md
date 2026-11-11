@@ -56,6 +56,33 @@ bodies:
 0.5 m/s upward and checks it against the 1 m offset decay: same damped period
 (4.35 s) within 0.03%.
 
+## Wave elevation records (eta_file)
+
+A measured or generated elevation record (lines of `time:elevation`, in s
+and m) can drive the waves. The record stands for a long-crested sea at the
+origin; `waves.direction` gives its propagation direction:
+
+```yaml
+waves:
+  type: irregular
+  eta_file: eta_record.txt
+  direction: 30.0          # [deg], counter-clockwise from +x; default 0
+  method: irf_convolution  # optional; omit for the DFT import
+```
+
+- Without `method: irf_convolution`, the record is split into Fourier
+  components (DFT import), and all components travel along `direction`.
+- With `method: irf_convolution`, the record is used as is and convolved
+  with the excitation impulse response for `direction` (the BEM heading, or
+  a linear blend of the two nearest headings).
+- Before v1.1 `direction` was ignored for eta records: the DFT import used
+  0 deg and the IRF path used the first BEM heading. Cases without
+  `direction` and with a 0 deg first BEM heading are unchanged.
+
+`test_comparison_oswec_compare_excitation_heading_oswec_irreg` runs the
+OSWEC with a record of a 30 deg sea and matches the run with the same sea
+built from components.
+
 ## Large waves: nonlinear Froude-Krylov
 
 This option was added after v1.0.0 and is planned for v1.1. See

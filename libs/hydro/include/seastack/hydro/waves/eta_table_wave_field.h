@@ -59,6 +59,13 @@ class EtaTableWaveField : public WaveBase {
     void SetRampDuration(double seconds) override { ramp_duration_ = seconds; }
     double GetRampDuration() const override { return ramp_duration_; }
 
+    /// Direction the recorded long-crested sea propagates in [rad],
+    /// counter-clockwise from +x (YAML waves.direction, in degrees). The
+    /// elevation itself does not depend on position; IRF excitation uses the
+    /// direction to pick the BEM heading of its kernel. Default 0.
+    void SetDirection(double direction_rad) { direction_rad_ = direction_rad; }
+    std::optional<double> GetEtaRecordDirection() const override { return direction_rad_; }
+
     /// Linear ramp matching ExcitationIrfComponent::RampFactor (eta-table + IRF workflows).
     double GetExcitationRampForVisualization(double time) const override;
 
@@ -68,6 +75,7 @@ class EtaTableWaveField : public WaveBase {
     std::vector<double> time_table_;
     std::vector<double> eta_table_;
     double ramp_duration_ = 0.0;
+    double direction_rad_ = 0.0;
 };
 
 }  // namespace seastack::hydro

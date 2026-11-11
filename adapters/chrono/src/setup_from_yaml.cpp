@@ -221,9 +221,11 @@ std::shared_ptr<WaveBase> CreateWaveFromSettings(const WaveSettings& wave_settin
                                               ? wave_settings.ramp_duration
                                               : ramp_duration;
             eta_waves->SetRampDuration(effective_ramp);
+            eta_waves->SetDirection(wave_settings.direction * M_PI / 180.0);
             seastack::infra::debug::LogDebug(
                 std::string("Attached wave model: EtaTableWaveField, eta_file=") +
-                wave_settings.eta_file);
+                wave_settings.eta_file + ", direction=" + std::to_string(wave_settings.direction) +
+                " deg");
             return eta_waves;
         }
     }
@@ -231,9 +233,11 @@ std::shared_ptr<WaveBase> CreateWaveFromSettings(const WaveSettings& wave_settin
     // Build a unified SeaStateDefinition from YAML settings.
     SeaStateDefinition def = BuildSeaStateDefinition(wave_settings);
 
-    // Eta-file import (legacy): DFT extraction in ComponentSampler::Build.
+    // Eta-file import (legacy): DFT extraction in ComponentSampler::Build. The
+    // record is long-crested along waves.direction [deg].
     if (!wave_settings.eta_file.empty()) {
         def.eta_file_path = wave_settings.eta_file;
+        def.direction_deg = wave_settings.direction;
     }
 
     auto components = ComponentSampler::Build(def);
