@@ -301,6 +301,11 @@ build_unit_test(test_excitation_nonuniform_grid)
 target_link_libraries(test_excitation_nonuniform_grid PRIVATE SEAStack::Hydro)
 set_tests_properties(test_excitation_nonuniform_grid PROPERTIES LABELS "unit;chrono-free")
 
+# Excitation heading bracket and IRF kernel selection by wave direction (Chrono-free, HDF5-free)
+build_unit_test(test_excitation_irf_heading)
+target_link_libraries(test_excitation_irf_heading PRIVATE SEAStack::Hydro)
+set_tests_properties(test_excitation_irf_heading PROPERTIES LABELS "unit;chrono-free")
+
 # Two-TU Eigen allocator ABI: Core-style TU vs Chrono-facing TU must share the
 # same Eigen heap protocol (allocate in one, destroy in the other, both ways).
 # OBJECT libraries keep Chrono INTERFACE flags off the Core TU.

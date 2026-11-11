@@ -13,8 +13,10 @@
  * This component reproduces the force computation of the removed
  * IrregularWaves class and is intended for long-crested seas where
  * backward compatibility with the IRF-calibrated regression tests is
- * required.  For directional / multi-heading seas, use the
- * frequency-domain ExcitationComponent instead.
+ * required.  The kernel K_exc is taken for the sea's wave direction,
+ * interpolated between BEM headings (see SelectKernelForHeading).
+ * Seas with several directions are rejected: use the frequency-domain
+ * ExcitationComponent instead.
  *********************************************************************/
 
 #ifndef SEASTACK_HYDRO_FORCE_COMPONENTS_EXCITATION_IRF_COMPONENT_H
@@ -31,6 +33,17 @@
 namespace seastack::hydro {
 
 class HydroData;
+
+/// Excitation IRF kernel (6 x Nt) for a wave direction [rad, CCW from +X].
+/// A direction on a BEM heading returns that heading's kernel unchanged;
+/// otherwise kernels are blended linearly between the bracketing headings
+/// with FindHeadingBracket(), as in the frequency-domain path. Returns
+/// `fallback` when there is at most one heading or the kernel count does not
+/// match bem_headings.
+Eigen::MatrixXd SelectKernelForHeading(const std::vector<Eigen::MatrixXd>& kernels_by_heading,
+                                       const Eigen::VectorXd& bem_headings,
+                                       double direction_rad,
+                                       const Eigen::MatrixXd& fallback);
 
 class ExcitationIrfComponent : public IHydroForceComponent {
   public:

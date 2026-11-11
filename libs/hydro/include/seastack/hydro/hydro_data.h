@@ -67,7 +67,10 @@ class HydroData {
     };
     struct IrregularWaveInfo {
         Eigen::VectorXd excitation_irf_time;           ///< Excitation IRF time vector [s]
-        Eigen::MatrixXd excitation_irf_matrix;         ///< Excitation IRF [N/m/s], 6 x Nt
+        Eigen::MatrixXd excitation_irf_matrix;         ///< Excitation IRF [N/m/s], 6 x Nt, first BEM heading only
+        /// Excitation IRF [N/m/s] for every BEM heading, each 6 x Nt, in the
+        /// order of SimulationParameters::wave_directions.
+        std::vector<Eigen::MatrixXd> excitation_irf_by_heading;
         std::optional<Eigen::MatrixXd> excitation_irf_resampled;      ///< Resampled excitation IRF [N/m/s]
         std::optional<Eigen::MatrixXd> excitation_irf_time_resampled; ///< Resampled time vector [s]
     };

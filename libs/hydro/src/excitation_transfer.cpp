@@ -68,7 +68,7 @@ ExcitationTFData InterpolateExcitationTransfer(
         ? reg_h5_data[0].freq_list.size() : 0;
     const Eigen::Index n_h5_dir = h5_wave_directions.size();
 
-    if (n_h5_dir <= 1 && n_comp > 1) {
+    if (n_h5_dir <= 1 && n_comp > 0) {
         std::set<double> unique_dirs;
         for (const auto& c : components) unique_dirs.insert(c.direction);
         if (unique_dirs.size() > 1) {
@@ -76,6 +76,8 @@ ExcitationTFData InterpolateExcitationTransfer(
                 << " wave heading(s) but the sea state has "
                 << unique_dirs.size() << " distinct component directions. "
                 << "Excitation forces will use a single-heading approximation.");
+        } else {
+            WarnIfSingleHeadingMismatch(h5_wave_directions, *unique_dirs.begin(), "frequency_domain");
         }
     }
 
@@ -162,41 +164,10 @@ ExcitationTFData InterpolateExcitationTransfer(
                 f_frac = std::clamp(freq_idx - static_cast<double>(f_lo), 0.0, 1.0);
             }
 
-            int h_lo = 0;
-            int h_hi = 0;
-            double h_frac = 0.0;
-
-            if (n_h5_dir > 1) {
-                constexpr double kDirEps = 1e-12;
-
-                double comp_dir = std::fmod(components[ci].direction, kTwoPi);
-                if (comp_dir < 0.0) comp_dir += kTwoPi;
-
-                const double* dir_begin = h5_wave_directions.data();
-                const double* dir_end   = dir_begin + n_h5_dir;
-                const double* it = std::lower_bound(dir_begin, dir_end, comp_dir);
-
-                if (it == dir_begin || it == dir_end) {
-                    h_lo = static_cast<int>(n_h5_dir - 1);
-                    h_hi = 0;
-                    double gap = (h5_wave_directions[0] + kTwoPi) - h5_wave_directions[h_lo];
-                    if (gap > kDirEps) {
-                        double dist = comp_dir - h5_wave_directions[h_lo];
-                        if (dist < 0.0) dist += kTwoPi;
-                        h_frac = dist / gap;
-                        h_frac = std::clamp(h_frac, 0.0, 1.0);
-                    }
-                } else {
-                    h_lo = static_cast<int>(it - dir_begin - 1);
-                    h_hi = h_lo + 1;
-                    const double dir_lo = h5_wave_directions[h_lo];
-                    const double dir_hi = h5_wave_directions[h_hi];
-                    if (std::abs(dir_hi - dir_lo) > kDirEps) {
-                        h_frac = (comp_dir - dir_lo) / (dir_hi - dir_lo);
-                        h_frac = std::clamp(h_frac, 0.0, 1.0);
-                    }
-                }
-            }
+            const HeadingBracket heading = FindHeadingBracket(h5_wave_directions, components[ci].direction);
+            const int h_lo      = heading.lo;
+            const int h_hi      = heading.hi;
+            const double h_frac = heading.frac;
 
             for (int dof = 0; dof < kDofPerBody; ++dof) {
                 if (interp_method == ExcitationInterpolation::kPolar) {
@@ -250,6 +221,60 @@ ExcitationTFData InterpolateExcitationTransfer(
     }
 
     return result;
+}
+
+HeadingBracket FindHeadingBracket(const Eigen::VectorXd& h5_wave_directions, double direction_rad) {
+    HeadingBracket bracket;
+    const Eigen::Index n_h5_dir = h5_wave_directions.size();
+    if (n_h5_dir <= 1) {
+        return bracket;
+    }
+    constexpr double kDirEps = 1e-12;
+
+    double dir = std::fmod(direction_rad, kTwoPi);
+    if (dir < 0.0) dir += kTwoPi;
+
+    const double* dir_begin = h5_wave_directions.data();
+    const double* dir_end   = dir_begin + n_h5_dir;
+    const double* it        = std::lower_bound(dir_begin, dir_end, dir);
+
+    if (it == dir_begin || it == dir_end) {
+        bracket.lo = static_cast<int>(n_h5_dir - 1);
+        bracket.hi = 0;
+        const double gap = (h5_wave_directions[0] + kTwoPi) - h5_wave_directions[bracket.lo];
+        if (gap > kDirEps) {
+            double dist = dir - h5_wave_directions[bracket.lo];
+            if (dist < 0.0) dist += kTwoPi;
+            bracket.frac = std::clamp(dist / gap, 0.0, 1.0);
+        }
+    } else {
+        bracket.lo = static_cast<int>(it - dir_begin - 1);
+        bracket.hi = bracket.lo + 1;
+        const double dir_lo = h5_wave_directions[bracket.lo];
+        const double dir_hi = h5_wave_directions[bracket.hi];
+        if (std::abs(dir_hi - dir_lo) > kDirEps) {
+            bracket.frac = std::clamp((dir - dir_lo) / (dir_hi - dir_lo), 0.0, 1.0);
+        }
+    }
+    return bracket;
+}
+
+void WarnIfSingleHeadingMismatch(const Eigen::VectorXd& h5_wave_directions, double direction_rad,
+                                 const char* excitation_method) {
+    if (h5_wave_directions.size() > 1) {
+        return;
+    }
+    constexpr double kHeadingTolRad = 1e-6;
+    const double bem_heading = (h5_wave_directions.size() == 1) ? h5_wave_directions[0] : 0.0;
+    double diff = std::fmod(direction_rad - bem_heading, kTwoPi);
+    if (diff < 0.0) diff += kTwoPi;
+    if (std::min(diff, kTwoPi - diff) <= kHeadingTolRad) {
+        return;
+    }
+    LOG_WARNING("Excitation (" << excitation_method << "): waves.direction = "
+                << direction_rad * 180.0 / M_PI << " deg, but the H5 file has only one BEM heading ("
+                << bem_heading * 180.0 / M_PI << " deg). Excitation forces are computed for the BEM "
+                << "heading. Re-run the BEM solver with this heading for direction-dependent excitation.");
 }
 
 }  // namespace seastack::hydro

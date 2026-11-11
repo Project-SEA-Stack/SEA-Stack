@@ -129,6 +129,8 @@ set_tests_properties(${CTEST_RM3_TOPO} PROPERTIES
     ENVIRONMENT "SEASTACK_DATA_DIR=${SEASTACK_BUILD_DATA}"
     COST 10)
 
+build_comparison_test(oswec  compare_excitation_heading_oswec_irreg)
+
 build_comparison_test(rm3  compare_linear_vs_hydraulic_pto_rm3_irreg)
 build_comparison_test(rm3  compare_radiation_methods_rm3_reg)
 build_comparison_test(rm3  compare_nlfk_float_rm3_reg)
