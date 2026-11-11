@@ -14,6 +14,7 @@
 #include <seastack/hydro/waves/wave_component.h>
 
 #include <Eigen/Core>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -104,6 +105,12 @@ class WaveBase {
 
     /// Dominant-component period [s]; 0 if unknown or no wave.
     virtual double GetCharacteristicPeriod() const { return 0.0; }
+
+    /// Propagation direction [rad] of a wave model that has no discrete
+    /// components but stands for a long-crested sea (a tabulated elevation
+    /// record). Counter-clockwise from +x. Empty when not applicable; wave
+    /// models with components give their directions in GetWaveComponents().
+    virtual std::optional<double> GetEtaRecordDirection() const { return std::nullopt; }
 
     /// Compute elevation at the origin over a uniform time grid.
     std::pair<std::vector<double>, std::vector<double>>
