@@ -1,7 +1,6 @@
 # Nonlinear Froude-Krylov and hydrostatic forces
 
-**Status:** implemented after v1.0.0, planned for v1.1. Not in the v1.0.0
-release
+**Status:** released in v1.1
 ([release notes](../build/RELEASE_NOTES_v1.1.md)). Sections 1–8 are the
 design, written before the code. Sections 9 and 10 record the pass criteria
 and the results.

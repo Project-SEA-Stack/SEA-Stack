@@ -85,7 +85,7 @@ built from components.
 
 ## Large waves: nonlinear Froude-Krylov
 
-This option was added after v1.0.0 and is planned for v1.1. See
+New in v1.1. See
 [RELEASE_NOTES_v1.1.md](../build/RELEASE_NOTES_v1.1.md).
 
 Set `wetted_surface: instantaneous` and a `mesh_file` on a body. At each
