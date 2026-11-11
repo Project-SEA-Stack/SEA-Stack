@@ -68,7 +68,7 @@ const std::vector<ControllerChannelSpec>& ControllerChannelRegistry() {
         {"tsda", "", "length", "m", false, "Distance between the two attachment points"},
         {"tsda", "", "length_dt", "m/s", false, "Rate of change of length, positive when extending"},
         {"tsda", "", "rest_length", "m", true, "Rest (free) length used by the TSDA force law. Write: new rest length"},
-        {"tsda", "", "force", "N", false, "Chrono TSDA force, f - k (L - L0) - c dL/dt: negative in tension"},
+        {"tsda", "", "force", "N", false, "Chrono TSDA force, negative in tension (linear law: f - k (L - L0) - c dL/dt)"},
         {"rsda", "", "angle", "rad", false, "Chrono RSDA angle (`GetAngle`) about the RSDA axis"},
         {"rsda", "", "angle_dt", "rad/s", false, "Rate of change of angle"},
         {"rsda", "", "rest_angle", "rad", true, "Rest angle used by the RSDA torque law (radians even if `angle_degrees: true`). Write: new rest angle"},
@@ -115,10 +115,22 @@ size_t EditDistance(const std::string& a, const std::string& b) {
     return prev[b.size()];
 }
 
-/// " Did you mean 'x'?" for a close candidate, else "". Close = small edit
-/// distance, or the same first three letters (e.g. body -> bodies).
+/// " Did you mean 'x'?" for a close candidate, else "". A candidate that
+/// starts with the word wins (ea -> ea_N); otherwise close = small edit
+/// distance, or the same first three letters (body -> bodies).
 std::string DidYouMean(const std::string& word, const std::vector<std::string>& candidates) {
     std::string best;
+    if (word.size() >= 2) {
+        for (const auto& c : candidates) {
+            if (c.size() > word.size() && c.compare(0, word.size(), word) == 0 &&
+                (best.empty() || c.size() < best.size())) {
+                best = c;
+            }
+        }
+        if (!best.empty()) {
+            return " Did you mean '" + best + "'?";
+        }
+    }
     size_t best_d = std::numeric_limits<size_t>::max();
     const size_t max_d = std::max<size_t>(2, word.size() / 3);
     for (const auto& c : candidates) {
@@ -143,7 +155,7 @@ std::string JoinNames(const std::vector<std::string>& names) {
     return out;
 }
 
-std::string FormatSeconds(double t) {
+std::string FormatNumber(double t) {
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%.6g", t);
     return buf;
@@ -523,6 +535,102 @@ ControllerConfig LoadControllerFile(const std::filesystem::path& path) {
 }
 
 // ---------------------------------------------------------------------------
+// Tension-only ropes
+// ---------------------------------------------------------------------------
+
+std::vector<RopeConfig> LoadRopesFile(const std::filesystem::path& path) {
+    if (!std::filesystem::exists(path)) {
+        throw std::runtime_error("ropes_file not found: " + path.string());
+    }
+    const std::string where = "ropes_file " + path.filename().string();
+    YAML::Node root;
+    try {
+        root = YAML::LoadFile(path.string());
+    } catch (const YAML::Exception& e) {
+        throw std::runtime_error(where + ": YAML syntax error: " + e.what());
+    }
+    if (!root.IsMap()) {
+        throw std::runtime_error(where + " must be a YAML map with a 'ropes:' list");
+    }
+    CheckKeys(root, {"ropes"}, where);
+    const YAML::Node list = root["ropes"];
+    if (!list || !list.IsSequence() || list.size() == 0) {
+        throw std::runtime_error(where + ": 'ropes' must be a non-empty list, e.g. "
+                                 "ropes: [{link: hoist, ea_N: 8.0e6, damping_Ns_per_m: 8.0e4}]");
+    }
+
+    auto read_number = [](const YAML::Node& n, const std::string& at) {
+        try {
+            return n.as<double>();
+        } catch (const YAML::Exception&) {
+            throw std::runtime_error(at + " must be a number");
+        }
+    };
+
+    std::vector<RopeConfig> ropes;
+    std::set<std::string> seen;
+    for (size_t i = 0; i < list.size(); ++i) {
+        const YAML::Node item = list[i];
+        const std::string at = where + ": ropes[" + std::to_string(i) + "]";
+        if (!item.IsMap()) {
+            throw std::runtime_error(at + " must be a map with keys link, ea_N, damping_Ns_per_m");
+        }
+        CheckKeys(item, {"link", "law", "ea_N", "damping_Ns_per_m"}, at);
+        if (!item["link"] || !item["link"].IsScalar() || item["link"].Scalar().empty()) {
+            throw std::runtime_error(at + ": 'link' (the TSDA name) is required");
+        }
+        RopeConfig rope;
+        rope.link = item["link"].Scalar();
+        if (!seen.insert(rope.link).second) {
+            throw std::runtime_error(where + " lists TSDA '" + rope.link + "' twice");
+        }
+        if (item["law"] && item["law"].as<std::string>() != "tension_only") {
+            throw std::runtime_error(at + ": law '" + item["law"].as<std::string>() +
+                                     "' is not supported; the only law is tension_only");
+        }
+        if (!item["ea_N"]) {
+            throw std::runtime_error(at + ": 'ea_N' (axial stiffness EA [N]) is required");
+        }
+        rope.ea_N = read_number(item["ea_N"], at + ".ea_N");
+        if (!(rope.ea_N > 0.0) || !std::isfinite(rope.ea_N)) {
+            throw std::runtime_error(at + ": ea_N must be > 0 N");
+        }
+        if (item["damping_Ns_per_m"]) {
+            rope.damping_Ns_per_m = read_number(item["damping_Ns_per_m"], at + ".damping_Ns_per_m");
+            if (!(rope.damping_Ns_per_m >= 0.0) || !std::isfinite(rope.damping_Ns_per_m)) {
+                throw std::runtime_error(at + ": damping_Ns_per_m must be >= 0 N*s/m");
+            }
+        }
+        ropes.push_back(rope);
+    }
+    return ropes;
+}
+
+double TensionOnlyRopeForce::evaluate(double /*time*/, double rest_length, double length,
+                                      double vel, const ::chrono::ChLinkTSDA& /*link*/) {
+    const double l0 = std::max(rest_length, 1e-6);
+    const double tension = ea_N_ / l0 * (length - rest_length) + damping_Ns_per_m_ * vel;
+    return -std::max(tension, 0.0);
+}
+
+void ApplyRopes(::chrono::ChSystem& system, const std::vector<RopeConfig>& ropes) {
+    for (const auto& rope : ropes) {
+        auto tsda = FindLink<::chrono::ChLinkTSDA>(system, rope.link, "ropes_file", "TSDA");
+        // The functor replaces the model-YAML spring-damper law entirely.
+        tsda->SetSpringCoefficient(0.0);
+        tsda->SetDampingCoefficient(0.0);
+        tsda->SetActuatorForce(0.0);
+        tsda->RegisterForceFunctor(
+            std::make_shared<TensionOnlyRopeForce>(rope.ea_N, rope.damping_Ns_per_m));
+        seastack::infra::cli::LogInfo(
+            "rope '" + rope.link + "': tension-only, EA = " + FormatNumber(rope.ea_N) +
+            " N, c = " + FormatNumber(rope.damping_Ns_per_m) + " N*s/m, rest length = " +
+            FormatNumber(tsda->GetRestLength()) + " m, length = " +
+            FormatNumber(tsda->GetLength()) + " m");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ExternalController
 // ---------------------------------------------------------------------------
 
@@ -558,9 +666,9 @@ ExternalController::ExternalController(
     if (steps_per_tick_ < 1 || std::abs(ratio - steps_per_tick_) > 1e-6 * ratio) {
         const int lo = std::max(1, static_cast<int>(std::floor(ratio)));
         throw std::runtime_error(
-            "controller_file: control_dt = " + FormatSeconds(control_dt_) +
-            " s must be a whole multiple of the simulation time_step = " + FormatSeconds(sim_dt) +
-            " s, e.g. " + FormatSeconds(lo * sim_dt) + " or " + FormatSeconds((lo + 1) * sim_dt) +
+            "controller_file: control_dt = " + FormatNumber(control_dt_) +
+            " s must be a whole multiple of the simulation time_step = " + FormatNumber(sim_dt) +
+            " s, e.g. " + FormatNumber(lo * sim_dt) + " or " + FormatNumber((lo + 1) * sim_dt) +
             " s");
     }
 
@@ -780,7 +888,7 @@ void ExternalController::BeforeStep(double time) {
                    "to see why)";
         }
         throw std::runtime_error("controller '" + label_ + "' failed at t = " +
-                                 FormatSeconds(time) + " s: " + what + hint);
+                                 FormatNumber(time) + " s: " + what + hint);
     }
     PrintModuleLog();
 
@@ -814,7 +922,7 @@ void ExternalController::LogChannelSummary() const {
     std::string summary = "controller '" + label_ + "' attached: " +
                           std::to_string(sensor_names_.size()) + " sensor and " +
                           std::to_string(actuator_names_.size()) +
-                          " actuator channels, control_dt = " + FormatSeconds(control_dt_) +
+                          " actuator channels, control_dt = " + FormatNumber(control_dt_) +
                           " s";
     if (steps_per_tick_ > 1) {
         summary += " (every " + std::to_string(steps_per_tick_) + " steps)";

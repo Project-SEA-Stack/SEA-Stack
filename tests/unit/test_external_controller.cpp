@@ -449,6 +449,96 @@ void TestRsdaStepMatchesAnalytic(TestResults& test_results) {
     TEST_ASSERT(max_err < 1e-3 * a0, "RSDA step response within 0.1% of a0 of the analytic solution");
 }
 
+/// Tension-only rope: force law, a hanging mass (static stretch m g L0 / EA),
+/// free fall while slack, and ropes_file validation.
+void TestRopes(TestResults& test_results) {
+    using namespace ::chrono;
+    const double ea = 1.0e6;  // [N]
+    const double c = 2.0e3;   // [N s/m]
+    const ChLinkTSDA unused;
+    seastack::app::TensionOnlyRopeForce law(ea, c);
+    TEST_NEAR(law.evaluate(0, 10.0, 9.0, 0.0, unused), 0.0, 0.0, "slack rope: no force");
+    TEST_NEAR(law.evaluate(0, 10.0, 9.0, 5.0, unused), 0.0, 0.0,
+              "slack rope closing, far from taut: no force");
+    TEST_NEAR(law.evaluate(0, 10.0, 9.999, 1.0, unused), -(ea / 10.0 * -0.001 + c * 1.0), 1e-9,
+              "slack rope closing within c v L0 / EA of taut: damping pulls (continuous law)");
+    TEST_NEAR(law.evaluate(0, 10.0, 10.01, 0.0, unused), -ea / 10.0 * 0.01, 1e-9,
+              "taut rope: -EA/L0 (L - L0), negative = tension");
+    TEST_NEAR(law.evaluate(0, 10.0, 10.01, -10.0, unused), 0.0, 0.0,
+              "taut rope recoiling fast: clamped at zero tension");
+
+    // Mass m hanging from the ground on a rope with rest length L0.
+    const double m = 100.0, g = 9.81, l0 = 10.0, dt = 1e-3;
+    auto make_system = [&](double z0, std::shared_ptr<ChBody>& mass,
+                           std::shared_ptr<ChLinkTSDA>& rope) {
+        auto sys = std::make_unique<ChSystemNSC>();
+        sys->SetGravitationalAcceleration(ChVector3d(0, 0, -g));
+        auto ground = chrono_types::make_shared<ChBody>();
+        ground->SetFixed(true);
+        sys->AddBody(ground);
+        mass = chrono_types::make_shared<ChBody>();
+        mass->SetMass(m);
+        mass->SetPos(ChVector3d(0, 0, z0));
+        sys->AddBody(mass);
+        rope = chrono_types::make_shared<ChLinkTSDA>();
+        rope->SetName("hoist");
+        rope->Initialize(ground, mass, false, ChVector3d(0, 0, 0), ChVector3d(0, 0, z0));
+        rope->SetRestLength(l0);
+        rope->SetSpringCoefficient(123.0);  // must be ignored once the rope law is applied
+        sys->AddLink(rope);
+        seastack::app::ApplyRopes(*sys, {{"hoist", ea, c}});
+        return sys;
+    };
+
+    std::shared_ptr<ChBody> mass;
+    std::shared_ptr<ChLinkTSDA> rope;
+    auto sys = make_system(-l0, mass, rope);
+    for (int i = 0; i < 5000; ++i) sys->DoStepDynamics(dt);
+    const double stretch = m * g * l0 / ea;  // 9.81e-3 m
+    TEST_NEAR(-mass->GetPos().z() - l0, stretch, 1e-3 * stretch,
+              "hanging mass: static stretch = m g L0 / EA within 0.1%");
+    TEST_NEAR(rope->GetForce(), -m * g, 1e-3 * m * g, "hanging mass: rope force = -m g");
+
+    // Start 1 m above the rope's reach: free fall until the rope goes taut.
+    sys = make_system(-(l0 - 1.0), mass, rope);
+    for (int i = 0; i < 200; ++i) sys->DoStepDynamics(dt);
+    const double t = 0.2;  // [s] fall = g t^2 / 2 = 0.196 m < 1 m: still slack
+    TEST_NEAR(mass->GetPos().z(), -(l0 - 1.0) - 0.5 * g * t * t, 2e-3,
+              "slack rope: free fall (z within 2 mm of -g t^2 / 2 at t = 0.2 s)");
+    TEST_NEAR(rope->GetForce(), 0.0, 0.0, "slack rope: zero force");
+
+    std::string msg = ErrorOf([&] {
+        ChSystemNSC empty;
+        seastack::app::ApplyRopes(empty, {{"hoist", ea, c}});
+    });
+    TEST_ASSERT(Contains(msg, "no TSDA named 'hoist'"), "ropes: unknown TSDA (" + msg + ")");
+
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "seastack_test_ropes_yaml";
+    fs::create_directories(dir);
+    auto load = [&](const std::string& yaml) {
+        { std::ofstream(dir / "r.ropes.yaml") << yaml; }
+        return ErrorOf([&] { (void)seastack::app::LoadRopesFile(dir / "r.ropes.yaml"); });
+    };
+    TEST_ASSERT(load("ropes:\n  - {link: hoist, ea_N: 8.0e6, damping_Ns_per_m: 8.0e4}\n").empty(),
+                "ropes_file: valid file loads");
+    const std::vector<std::pair<std::string, std::string>> cases = {
+        {"rope:\n  - {link: hoist, ea_N: 1}\n", "Did you mean 'ropes'"},
+        {"ropes:\n  - {link: hoist, ea: 1}\n", "Did you mean 'ea_N'"},
+        {"ropes:\n  - {link: hoist}\n", "'ea_N' (axial stiffness EA [N]) is required"},
+        {"ropes:\n  - {link: hoist, ea_N: -1}\n", "ea_N must be > 0"},
+        {"ropes:\n  - {link: hoist, ea_N: 1, damping_Ns_per_m: -1}\n", "damping_Ns_per_m must be >= 0"},
+        {"ropes:\n  - {link: hoist, ea_N: 1, law: linear}\n", "the only law is tension_only"},
+        {"ropes:\n  - {link: hoist, ea_N: 1}\n  - {link: hoist, ea_N: 2}\n", "lists TSDA 'hoist' twice"},
+        {"ropes: []\n", "non-empty list"},
+    };
+    for (const auto& [yaml, expect] : cases) {
+        msg = load(yaml);
+        TEST_ASSERT(Contains(msg, expect), "ropes_file case -> '" + expect + "' (got: " + msg + ")");
+    }
+    fs::remove_all(dir);
+}
+
 }  // namespace
 
 int main() {
@@ -459,6 +549,7 @@ int main() {
     TestValidationMessages(test_results);
     TestYamlValidation(test_results);
     TestRsdaStepMatchesAnalytic(test_results);
+    TestRopes(test_results);
     test_results.Summary();
     return test_results.failed > 0 ? 1 : 0;
 }

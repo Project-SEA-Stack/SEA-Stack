@@ -27,6 +27,7 @@
 
 #include <seastack/external/external_force_model.h>
 
+#include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChSystem.h>
 
 #include <filesystem>
@@ -76,6 +77,49 @@ const std::vector<ControllerChannelSpec>& ControllerChannelRegistry();
 
 /// The registry as the Markdown table used in docs/extending/CONTROLLERS.md.
 std::string ControllerChannelTableMarkdown();
+
+/// One tension-only rope (`ropes_file:` in the setup YAML, preview). It
+/// replaces the force law of a model-YAML TSDA; the TSDA's rest length
+/// (which a controller may write) is the unstretched rope length.
+struct RopeConfig {
+    std::string link;               ///< TSDA name in the model YAML
+    double ea_N = 0.0;              ///< Axial stiffness EA [N]
+    double damping_Ns_per_m = 0.0;  ///< Axial damping c [N*s/m], only while taut
+};
+
+/// Read and validate a ropes YAML file (a `ropes:` list). Throws with the
+/// file name, the bad key and the valid choices.
+std::vector<RopeConfig> LoadRopesFile(const std::filesystem::path& path);
+
+/// Install TensionOnlyRopeForce on each named TSDA. Call before attaching
+/// external PTOs or a controller. Throws if a TSDA is missing.
+void ApplyRopes(::chrono::ChSystem& system, const std::vector<RopeConfig>& ropes);
+
+/**
+ * @brief Tension-only rope law for a ChLinkTSDA.
+ *
+ * With L the length, L0 the rest length and dL/dt the extension rate:
+ *   T = max(0, EA/L0 (L - L0) + c dL/dt)
+ * Returns -T: in Chrono's TSDA sign convention a negative force pulls the
+ * end points together.
+ *
+ * T is continuous in L and dL/dt, which keeps implicit integrators from
+ * chattering at the slack/taut transition. The price: while a slack rope is
+ * closing fast, the damping term can pull slightly before L reaches L0
+ * (within c (dL/dt) L0 / EA of taut).
+ */
+class TensionOnlyRopeForce : public ::chrono::ChLinkTSDA::ForceFunctor {
+  public:
+    TensionOnlyRopeForce(double ea_N, double damping_Ns_per_m)
+        : ea_N_(ea_N), damping_Ns_per_m_(damping_Ns_per_m) {}
+
+    double evaluate(double time, double rest_length, double length, double vel,
+                    const ::chrono::ChLinkTSDA& link) override;
+
+  private:
+    double ea_N_;
+    double damping_Ns_per_m_;
+};
 
 /**
  * @brief Runs one external controller module against a Chrono system.

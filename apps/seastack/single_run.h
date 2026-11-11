@@ -72,6 +72,10 @@ struct SingleRunConfig {
     /// Optional out-of-process controller YAML (resolved path; empty = none).
     /// Requires a build with SEASTACK_ENABLE_EXTERNAL.
     std::string controller_file;
+
+    /// Optional tension-only ropes YAML (resolved path; empty = none).
+    /// Requires a build with SEASTACK_ENABLE_EXTERNAL.
+    std::string ropes_file;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).

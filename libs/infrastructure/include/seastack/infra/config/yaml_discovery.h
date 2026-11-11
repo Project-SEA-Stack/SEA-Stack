@@ -67,6 +67,11 @@ struct SetupConfig {
     /// requires SEASTACK_ENABLE_EXTERNAL). Path as given in setup.
     std::string controller_file;
     bool has_controller_file = false;
+
+    /// Optional tension-only rope laws for model TSDAs (`ropes_file`, preview;
+    /// requires SEASTACK_ENABLE_EXTERNAL). Path as given in setup.
+    std::string ropes_file;
+    bool has_ropes_file = false;
 };
 
 /// Parse a model.setup.yaml file and return configuration

@@ -223,6 +223,14 @@ if(TARGET seastack_external)
         set_tests_properties(test_controller_python_api PROPERTIES
             LABELS "unit;chrono-free" COST 1)
 
+        add_test(
+            NAME test_crane_controller_python
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_CURRENT_SOURCE_DIR}/python/test_crane_controller_python.py"
+        )
+        set_tests_properties(test_crane_controller_python PROPERTIES
+            LABELS "unit;chrono-free" COST 1)
+
         # IPC-level equivalence: the same prescribed trace through the full IPC
         # transport must match a direct in-process run of each module. Verifies
         # framing / JSON / config passing / C++ time-caching (no Chrono).

@@ -137,7 +137,7 @@ The table below is generated from the C++ channel registry. A unit test
 | `tsda.<name>.length` | any tsda | m | read | Distance between the two attachment points |
 | `tsda.<name>.length_dt` | any tsda | m/s | read | Rate of change of length, positive when extending |
 | `tsda.<name>.rest_length` | any tsda | m | read/write | Rest (free) length used by the TSDA force law. Write: new rest length |
-| `tsda.<name>.force` | any tsda | N | read | Chrono TSDA force, f - k (L - L0) - c dL/dt: negative in tension |
+| `tsda.<name>.force` | any tsda | N | read | Chrono TSDA force, negative in tension (linear law: f - k (L - L0) - c dL/dt) |
 | `rsda.<name>.angle` | any rsda | rad | read | Chrono RSDA angle (`GetAngle`) about the RSDA axis |
 | `rsda.<name>.angle_dt` | any rsda | rad/s | read | Rate of change of angle |
 | `rsda.<name>.rest_angle` | any rsda | rad | read/write | Rest angle used by the RSDA torque law (radians even if `angle_degrees: true`). Write: new rest angle |
@@ -187,6 +187,41 @@ SEA-Stack stops with an error if a listed motor is a SPEED or FORCE motor, or
 if its `actuation_function` is not `CONTROLLER`. It warns if a `CONTROLLER`
 motor is not listed under `actuators:`, because that motor would hold its
 initial set-point for the whole run.
+
+## Tension-only ropes (ropes_file)
+
+A TSDA in the model YAML is a linear spring-damper: it pushes as well as
+pulls. For a winch rope or hoist, add a `ropes_file` to the setup file to
+replace the force law of named TSDAs with a tension-only rope:
+
+```yaml
+# my_case.setup.yaml
+ropes_file: ../common/my.ropes.yaml
+```
+
+```yaml
+# my.ropes.yaml
+ropes:
+  - link: winch_rope          # TSDA name in the model YAML
+    law: tension_only         # the only law in v1.1
+    ea_N: 1.0e8               # [N] axial stiffness EA (> 0)
+    damping_Ns_per_m: 2.0e3   # [N s/m] optional, default 0
+```
+
+With L the TSDA length, L0 its rest length and dL/dt the extension rate, the
+rope tension is
+
+\[
+T = \max\!\left(0,\ \frac{EA}{L_0}(L - L_0) + c\,\frac{dL}{dt}\right).
+\]
+
+The rope never pushes. The law is continuous, which keeps the implicit solver
+from chattering when the rope goes slack or snaps taut. The TSDA's own spring
+and damper coefficients are ignored. The `force` sensor channel reports
+\(-T\) (Chrono's sign: negative in tension). Drive `rest_length` from a
+controller to model a winch. `ropes_file` works with or without a
+`controller_file`. Unknown keys, unknown TSDA names and duplicates stop the
+run before it starts.
 
 ## Timing: control_dt and the zero-order hold
 
@@ -342,5 +377,7 @@ NaN meaning "hold". See
 - Coupling is explicit: commands are computed from the state at the start of
   the tick. Fast loops need a small `control_dt`.
 - Only position motors, TSDA rest lengths and RSDA rest angles can be driven.
+- `ropes_file` has one law (`tension_only`); no rope mass, drum or
+  hydrodynamic drag.
   Bodies are read-only; apply body forces with an external PTO or force
   module instead.

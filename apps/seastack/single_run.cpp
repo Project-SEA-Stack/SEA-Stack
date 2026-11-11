@@ -501,6 +501,18 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
 #ifdef SEASTACK_HAVE_EXTERNAL
+        // Rope laws first: the controller reads the rope's initial rest length,
+        // and an external PTO on the same TSDA would replace the rope law.
+        if (!config.ropes_file.empty()) {
+            try {
+                seastack::app::ApplyRopes(*system, seastack::app::LoadRopesFile(config.ropes_file));
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+
         // Keep every attachment alive for the whole run (RAII owns the child
         // process + Chrono force functor). One attachment per external PTO link.
         std::vector<seastack::app::ExternalPtoAttachment> external_pto_attachments;
@@ -539,9 +551,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             }
         }
 #else
-        if (!config.controller_file.empty()) {
+        if (!config.controller_file.empty() || !config.ropes_file.empty()) {
             result.error_message =
-                "controller_file needs a build with -DSEASTACK_ENABLE_EXTERNAL=ON";
+                "controller_file and ropes_file need a build with -DSEASTACK_ENABLE_EXTERNAL=ON";
             seastack::infra::cli::LogError(result.error_message);
             return result;
         }

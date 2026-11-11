@@ -145,6 +145,26 @@ static bool ResolveInputFiles(const std::filesystem::path& input_dir,
             return false;
 #endif
         }
+        if (setup_config.has_ropes_file) {
+#ifdef SEASTACK_HAVE_EXTERNAL
+            std::filesystem::path ropes_path(setup_config.ropes_file);
+            if (ropes_path.is_relative()) {
+                ropes_path = input_dir / ropes_path;
+            }
+            setup_config.ropes_file = ropes_path.lexically_normal().generic_string();
+            try {
+                (void)LoadRopesFile(ropes_path);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                return false;
+            }
+#else
+            seastack::infra::cli::LogError(
+                "ropes_file is set in the setup YAML, but this run_seastack was built "
+                "without external module support (-DSEASTACK_ENABLE_EXTERNAL=ON).");
+            return false;
+#endif
+        }
         
         if (!model_file_arg.empty()) {
             model_file = model_file_arg;
@@ -272,6 +292,12 @@ static void DisplaySimulationSummary(const std::string& input_directory,
         summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
             "🎛️", "Controller",
             std::filesystem::path(setup_config.controller_file).filename().string() +
+                " (preview)"));
+    }
+    if (setup_config.has_ropes_file) {
+        summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+            "🪢", "Ropes",
+            std::filesystem::path(setup_config.ropes_file).filename().string() +
                 " (preview)"));
     }
     
@@ -477,6 +503,7 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.external_pto = setup_config.external_pto;
         run_config.external_ptos = setup_config.external_ptos;
         run_config.controller_file = setup_config.controller_file;
+        run_config.ropes_file = setup_config.ropes_file;
 
         SingleRunResult result = RunSingleCase(run_config);
 

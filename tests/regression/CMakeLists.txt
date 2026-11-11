@@ -426,5 +426,22 @@ if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
             set_tests_properties(test_controller_robustness PROPERTIES
                 ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
         endif()
+
+        # Crane demo: 15 s lift_baseline and lift_3dmc runs; finite output,
+        # tension-only rope, 3D-MC tip error well below open loop.
+        add_test(
+            NAME test_crane_lift
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_crane_lift.py"
+                --exe $<TARGET_FILE:run_seastack>
+        )
+        set_tests_properties(test_crane_lift PROPERTIES
+            LABELS "external;chrono;execute"
+            COST 15
+        )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            set_tests_properties(test_crane_lift PROPERTIES
+                ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+        endif()
     endif()
 endif()
