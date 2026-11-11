@@ -714,7 +714,14 @@ ExternalController::ExternalController(
         model_->Initialize(init);
     } catch (const std::exception& e) {
         PrintModuleLog();
-        throw std::runtime_error("controller '" + label_ + "' failed to start: " + e.what());
+        // On POSIX a bad interpreter fails in the child after fork, so the
+        // IPC layer reports "exited before connecting". Map that to the same
+        // "could not be started" wording Windows gets from CreateProcess.
+        const std::string detail = e.what();
+        if (detail.find("exited before connecting") != std::string::npos) {
+            throw std::runtime_error("controller '" + label_ + "' could not be started: " + detail);
+        }
+        throw std::runtime_error("controller '" + label_ + "' failed to start: " + detail);
     }
     PrintModuleLog();
     LogChannelSummary();

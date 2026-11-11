@@ -62,6 +62,21 @@ constexpr double kRho  = 1025.0;
 constexpr double kG    = 9.81;
 constexpr double kRhoG = kRho * kG;
 const double kPi       = std::acos(-1.0);
+
+/// J1(x) via the same integral as nlfk_reference._bessel_j1. Used instead of
+/// std::cyl_bessel_j, which on some libcs (notably Apple) is inaccurate enough
+/// here that U6's analytic reference is wrong by several percent.
+double BesselJ1(double x) {
+    constexpr int n = 2000;  // 2001 sample points, as in the Python reference
+    double sum = 0.0;
+    for (int i = 0; i <= n; ++i) {
+        const double th = kPi * static_cast<double>(i) / static_cast<double>(n);
+        const double f  = std::cos(th - x * std::sin(th));
+        const double w  = (i == 0 || i == n) ? 0.5 : 1.0;
+        sum += w * f;
+    }
+    return sum * (kPi / static_cast<double>(n)) / kPi;
+}
 const Eigen::Vector3d kGravity(0.0, 0.0, -kG);
 
 using Vec6     = Eigen::Matrix<double, 6, 1>;
@@ -271,7 +286,7 @@ int main() {
     {
         const double radius = 5.0, draft = 4.0, omega = 0.8, k = omega * omega / kG;
         const double expected = kRhoG * std::exp(-k * draft) * kPi * radius * radius * 2.0 *
-                                std::cyl_bessel_j(1.0, k * radius) / (k * radius);
+                                BesselJ1(k * radius) / (k * radius);
         double err_prev = 1.0;
         bool monotone = true;
         for (int n_theta : {32, 64, 128}) {

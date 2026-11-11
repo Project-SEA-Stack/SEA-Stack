@@ -352,7 +352,7 @@ cell is marked failed). The message names the script and the time, for example
 | a Python traceback | `step()` or `setup()` raised |
 | `(no reply within timeout_ms = ...)` | `step()` blocked or was too slow |
 | `(the controller process exited ...)` | the script exited (for example `sys.exit`) or crashed |
-| `could not be started` | wrong interpreter or missing script |
+| `could not be started` | wrong interpreter or missing script (same wording on Windows, macOS and Linux; the host notices a dead child within about 100 ms) |
 
 ## Cost
 

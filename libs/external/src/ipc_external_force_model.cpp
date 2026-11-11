@@ -234,7 +234,12 @@ bool ChildAlreadyExited(ChildProcess& child) {
         return true;
     }
     int status = 0;
-    return waitpid(child.pid, &status, WNOHANG) == child.pid;
+    const pid_t r = waitpid(child.pid, &status, WNOHANG);
+    if (r == child.pid) {
+        child.pid = -1;  // reaped; TerminateChild must not kill this pid again
+        return true;
+    }
+    return false;
 #endif
 }
 
@@ -481,21 +486,42 @@ ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
     last_dt_ = init.dt;
 
     // Wait for the child to connect, then run the initialize handshake.
-    if (!WaitReadable(impl_->listen_sock, impl_->timeout_ms)) {
-        // If the launcher already exited it never connected: usually the
-        // interpreter is missing (no `python`/`python3` on PATH) or the script
-        // path is wrong. Surface that instead of only a generic timeout.
-        const bool launcher_gone = ChildAlreadyExited(impl_->child);
-        TerminateChild(impl_->child);
-        if (launcher_gone && !options_.command.empty()) {
-            throw std::runtime_error(
-                "External force module '" + options_.command.front() +
-                "' exited before connecting: check that the interpreter is on "
-                "PATH (macOS/Linux need `python` or `python3`) and the script "
-                "path in the external_pto `command` is correct");
+    // Poll in short slices so a child that dies on exec (missing interpreter
+    // on POSIX) fails in ~100 ms instead of waiting the full timeout_ms.
+    {
+        const int total_ms = impl_->timeout_ms;
+        int waited_ms = 0;
+        bool readable = false;
+        while (waited_ms < total_ms) {
+            const int slice_ms = (total_ms - waited_ms) < 100 ? (total_ms - waited_ms) : 100;
+            if (WaitReadable(impl_->listen_sock, slice_ms)) {
+                readable = true;
+                break;
+            }
+            waited_ms += slice_ms;
+            if (!options_.command.empty() && ChildAlreadyExited(impl_->child)) {
+                TerminateChild(impl_->child);
+                throw std::runtime_error(
+                    "External force module '" + options_.command.front() +
+                    "' exited before connecting: check that the interpreter is on "
+                    "PATH (macOS/Linux need `python` or `python3`) and the script "
+                    "path in the external_pto `command` is correct");
+            }
         }
-        throw std::runtime_error(
-            "Timed out waiting for external force module to connect");
+        if (!readable) {
+            const bool launcher_gone =
+                !options_.command.empty() && ChildAlreadyExited(impl_->child);
+            TerminateChild(impl_->child);
+            if (launcher_gone) {
+                throw std::runtime_error(
+                    "External force module '" + options_.command.front() +
+                    "' exited before connecting: check that the interpreter is on "
+                    "PATH (macOS/Linux need `python` or `python3`) and the script "
+                    "path in the external_pto `command` is correct");
+            }
+            throw std::runtime_error(
+                "Timed out waiting for external force module to connect");
+        }
     }
 
     sockaddr_in client_addr{};
