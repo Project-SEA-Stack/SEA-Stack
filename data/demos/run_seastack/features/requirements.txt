@@ -7,6 +7,8 @@
 mhkit[wave]
 # Comment-preserving round-trip YAML writes (keeps existing hydro YAML comments).
 ruamel.yaml>=0.17
+# Reads the simulation YAML (MHKiT_writer.py does `import yaml`).
+PyYAML>=5.4
 
 # --- h5_reader.py: plot SEA-Stack .h5 outputs ---
 # Lightweight. If you only need the reader, you can install just these three.

@@ -8,6 +8,9 @@ It supports:
 - Joint reactions (force & torque)
 - Translational spring-damper actuators (TSDAs) outputs (energy, power, reaction forces)
 
+Rotational spring-dampers (RSDAs) are not plotted yet;
+their outputs are under `results/model/rsdas` in the H5 file.
+
 With capabilities such as
 - Multiple devices plotting
 - Various naming conventions
@@ -70,11 +73,12 @@ Options:
 - surge
 - sway
 - heave  
-- roll
-- pitch
-- yaw
 
-**Used with:** body fields  (not acceleration)
+**Used with:** body fields
+
+Rotational DOFs (roll, pitch, yaw) are not plotted yet. The H5 file stores
+them under `results/model/bodies/<body>/orientation_xyz` [rad] and
+`angular_velocity` [rad/s] if you want to read them directly.
 
 **Example:**
 ```bash

@@ -29,8 +29,11 @@ From a Visual Studio / `vcvars64` environment:
 ```
 
 Expect: `build/SEAStack-<version>-win64.zip`. Confirm layout in
-[PACKAGE_LAYOUT.md](PACKAGE_LAYOUT.md), then check the ZIP contents (demo
-allowlist, `bin/run_seastack.exe` as the only executable, nothing forbidden):
+[PACKAGE_LAYOUT.md](PACKAGE_LAYOUT.md). Packaging installs only git-tracked
+files from `data/demos/run_seastack/` (so build from a git checkout), then
+checks the ZIP contents and fails the build on a mismatch (demo allowlist,
+`bin/run_seastack.exe` as the only executable, nothing forbidden). To re-run
+the check by hand:
 
 ```powershell
 python scripts/check_package_contents.py build/SEAStack-<version>-win64.zip --platform win64
@@ -43,7 +46,8 @@ python scripts/check_package_contents.py build/SEAStack-<version>-win64.zip --pl
 ```
 
 Expect: `build/SEAStack-<version>-darwin-*.zip` or
-`build/SEAStack-<version>-linux-x64.zip`. Same content check as Windows:
+`build/SEAStack-<version>-linux-x64.zip`. Same automatic content check as
+Windows; to re-run it by hand:
 
 ```bash
 python3 scripts/check_package_contents.py build/SEAStack-<version>-*.zip --platform darwin     # or linux-x64

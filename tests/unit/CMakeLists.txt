@@ -18,6 +18,20 @@ function(build_unit_test TEST_NAME)
     endif()
 endfunction()
 
+# Windows: an unactivated conda interpreter cannot load numpy/h5py DLLs unless
+# its root, Library/bin and DLLs folders are on PATH (what `conda activate`
+# adds). Prepend them for Python tests, as the comparison tests do.
+function(seastack_python_interpreter_dll_path TEST_NAME)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Windows" OR CMAKE_VERSION VERSION_LESS "3.22")
+        return()
+    endif()
+    get_filename_component(_py_root "${Python3_EXECUTABLE}" DIRECTORY)
+    set_property(TEST ${TEST_NAME} APPEND PROPERTY ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:${_py_root}/DLLs"
+        "PATH=path_list_prepend:${_py_root}/Library/bin"
+        "PATH=path_list_prepend:${_py_root}")
+endfunction()
+
 # Radiation state-space tests (Chrono-free, HDF5-free)
 # These need access to private headers in libs/hydro/src
 build_unit_test(test_radiation_ss_model)
@@ -260,10 +274,29 @@ if(TARGET seastack_external)
                 set_tests_properties(test_external_pto_rm3_regression PROPERTIES
                     ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_ext_pto_run_path}")
             endif()
+            seastack_python_interpreter_dll_path(test_external_pto_rm3_regression)
         endif()
     else()
         message(STATUS "Skipping test_external_pto_examples_golden (Python3 not found)")
     endif()
+endif()
+
+# Demo feature tools (h5_reader.py, MHKiT_writer.py). Writer tests skip
+# without MHKiT; exit code 77 = pytest not installed.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+    add_test(
+        NAME test_demo_features_python
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/python/test_demo_features.py"
+    )
+    set_tests_properties(test_demo_features_python PROPERTIES
+        LABELS "unit" COST 5 SKIP_RETURN_CODE 77)
+    if(TARGET run_seastack)
+        set_property(TEST test_demo_features_python APPEND PROPERTY
+            ENVIRONMENT "SEASTACK_RUN_SEASTACK=$<TARGET_FILE:run_seastack>")
+    endif()
+    seastack_python_interpreter_dll_path(test_demo_features_python)
 endif()
 
 # Doctor diagnostics tests (Chrono-free, uses Infra only).

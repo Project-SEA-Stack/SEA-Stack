@@ -27,7 +27,7 @@ def parse_args():
                         help="Degree of freedom(s)")
     
     parser.add_argument("--joints", nargs="*", type=str,
-                        help="Joint number(s) ie. 12 23 34 etc. (default: all)")
+                        help="Joint name(s) as shown by --list, e.g. float_plate_joint (default: all)")
 
     parser.add_argument("--tsdas", nargs="*", type=str,
                     help="TSDA names (default: all)")
@@ -95,7 +95,7 @@ FIELD_META = {
         "title": "Reaction Force",
         "ylabel": "Force [N]"
     },
-    "reactTorque": {
+    "joint_torque": {
         "title": "Reaction Torque",
         "ylabel": "Torque [N m]"
     }
@@ -471,6 +471,10 @@ def plot_mooring(results, field):
 
 def main():
     args = parse_args()
+
+    if args.path is None and not args.compare and args.mooring is None:
+        raise SystemExit("error: give the path to a results .h5 file, e.g. "
+                         "python h5_reader.py ../rm3/regular_waves/outputs/results.regular.h5")
 
     if args.list:
         if args.path is None:

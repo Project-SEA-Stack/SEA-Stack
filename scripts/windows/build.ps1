@@ -1167,10 +1167,22 @@ if ($Package) {
     $pkg = Get-ChildItem -Path $buildDir -Filter "SEAStack-*.zip" -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
-    if ($pkg) {
-        Write-OK ($pkg.Name + ' (' + [string][math]::Round($pkg.Length / 1MB, 1) + ' MB)')
-        $packageZipFullPath = $pkg.FullName
+    if (-not $pkg) {
+        Write-Fail "CPack did not produce build\SEAStack-*.zip"
+        exit 1
     }
+    Write-OK ($pkg.Name + ' (' + [string][math]::Round($pkg.Length / 1MB, 1) + ' MB)')
+    $packageZipFullPath = $pkg.FullName
+
+    # Fail the build if the ZIP does not match the expected release contents
+    # (demo allowlist, executables, forbidden files such as run outputs).
+    $checkScript = Join-Path $repoRoot "scripts\check_package_contents.py"
+    $checkArgs = @($checkScript, $packageZipFullPath, "--platform", "win64")
+    if (-not (Invoke-SeaStackTool -StepName "Check package contents" -Executable "python" -Arguments $checkArgs -DiagLogPath $diagLogPath -ShowOutputOnHost:$true)) {
+        Write-Fail "Package contents check failed (see scripts/check_package_contents.py output above)"
+        exit 1
+    }
+    Write-OK "Package contents match the release allowlist"
 }
 
 # =============================================================================
