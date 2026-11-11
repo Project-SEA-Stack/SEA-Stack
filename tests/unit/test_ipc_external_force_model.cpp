@@ -85,6 +85,54 @@ int main(int argc, char** argv) {
         TEST_NEAR(out[0], -100.0, 1e-12, "out[0]");
     }
 
+    // Controller handshake fields and reply extras.
+    {
+        seastack::external::ExternalInit init;
+        init.kind = "controller";
+        init.n_inputs = 1;
+        init.n_outputs = 1;
+        init.in_names = {"tsda.rope.length"};
+        init.out_names = {"tsda.rope.rest_length"};
+        const std::string req =
+            seastack::external::protocol::MakeInitializeRequest(init);
+        TEST_ASSERT(req.find("\"out_names\":[\"tsda.rope.rest_length\"]") !=
+                        std::string::npos,
+                    "initialize request carries out_names");
+
+        // Python json.dumps writes NaN for a held channel.
+        const std::string reply =
+            "{\"status\":\"ok\",\"out\":[NaN, 2.5],\"log\":[\"a\\nb\", \"t=1\"]}";
+        std::vector<double> out;
+        TEST_ASSERT(seastack::external::protocol::ParseEvaluateReply(reply, out),
+                    "parse out with NaN");
+        TEST_ASSERT(out.size() == 2 && std::isnan(out[0]) && out[1] == 2.5,
+                    "NaN and number decoded");
+        std::vector<std::string> log;
+        TEST_ASSERT(seastack::external::protocol::ExtractStringArrayField(
+                        reply, "log", log),
+                    "parse log array");
+        TEST_ASSERT(log.size() == 2 && log[0] == "a\nb" && log[1] == "t=1",
+                    "log lines decoded");
+        TEST_ASSERT(!seastack::external::protocol::ExtractStringArrayField(
+                        "{\"status\":\"ok\",\"out\":[1]}", "log", log) &&
+                        log.empty(),
+                    "absent log array");
+    }
+
+    // Error messages keep their escapes (multi-line Python tracebacks).
+    {
+        std::string status;
+        std::string message;
+        TEST_ASSERT(seastack::external::protocol::ParseStatusReply(
+                        "{\"status\":\"error\",\"message\":"
+                        "\"line 1\\n\\tline \\\"2\\\" C:\\\\x \\u00b0 \\ud83d\\ude00\"}",
+                        status, message),
+                    "parse error status with escapes");
+        TEST_ASSERT(status == "error", "status is error");
+        TEST_ASSERT(message == "line 1\n\tline \"2\" C:\\x \xC2\xB0 \xF0\x9F\x98\x80",
+                    "escapes decoded (\\n, \\t, \\\", \\\\, \\u00b0, surrogate pair)");
+    }
+
     // --- Full IPC round-trip with spawned mock module ---
     {
         seastack::external::IpcExternalForceOptions opts;

@@ -30,8 +30,9 @@ EXPECTED_DEMO_FEATURE_FILES = {"MHKiT_writer.py", "MHKiT_writer_README.md", "h5_
 EXPECTED_DEMO_CASES = {
     "5sa": {"assets", "bimodal", "irregular_waves", "mooring", "power_matrix",
             "regular_waves", "spreading"},
+    "crane": {"assets", "common", "lift_3dmc", "lift_baseline"},
     "f3of": {"assets", "decay_dt3", "irregular_waves"},
-    "iea_sphere": {"assets", "decay", "decay_lin_5m", "decay_nl_1m", "decay_nl_5m",
+    "iea_sphere": {"assets", "controller_winch", "decay", "decay_lin_5m", "decay_nl_1m", "decay_nl_5m",
                    "decay_ss", "irregular_waves_ss", "regular_waves_lin", "regular_waves_nl",
                    "regular_waves_nlfk"},
     "oswec": {"assets", "decay", "divergence_limits", "external_pto",

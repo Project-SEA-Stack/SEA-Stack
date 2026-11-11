@@ -44,6 +44,9 @@ struct ExternalInit {
     /// Optional channel names for the positional `in` array (additive v1 field).
     /// Empty means the module must rely on its default layout for `kind`.
     std::vector<std::string> in_names;
+    /// Optional channel names for the positional `out` array (additive v1
+    /// field). Used by `kind: "controller"`; empty for force/PTO modules.
+    std::vector<std::string> out_names;
 };
 
 /// Metadata returned by a successful Initialize.
@@ -97,6 +100,11 @@ class IExternalForceModel {
 
     /// Tear down the module (close sockets, join process, free FMU).
     virtual void Shutdown() = 0;
+
+    /// Return and clear text lines the module sent with its last replies
+    /// (optional `log` array; e.g. captured Python print output).
+    /// Default: none.
+    virtual std::vector<std::string> TakeLogLines() { return {}; }
 };
 
 }  // namespace external

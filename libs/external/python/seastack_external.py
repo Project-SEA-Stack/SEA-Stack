@@ -2,7 +2,10 @@
 SEA-Stack external force module client (Python).
 
 Speaks the v1 length-prefixed JSON protocol over TCP to 127.0.0.1.
-See docs/extending/EXTERNAL_FORCE_MODULES.md.
+See docs/extending/EXTERNAL_FORCE_MODULES.md and docs/extending/CONTROLLERS.md.
+
+Author a controller (preview) by subclassing ControllerModule and returning
+named set-points from step(state); test it offline with ControllerHarness.
 
 Author a 1-DOF PTO (TSDA or RSDA) by subclassing PtoModule and implementing
 force(state). Optional setup(cfg) reads config; optional reset / commit /
@@ -24,12 +27,19 @@ rollback handle stateful controllers:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import difflib
+import io
 import json
+import math
+import os
 import socket
 import struct
 import sys
+import traceback
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from types import SimpleNamespace
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 
 PROTOCOL_VERSION = 1
@@ -196,12 +206,28 @@ class PtoState:
         )
 
 
+def _attach_log(reply: Dict[str, Any], module: "ExternalForceModule") -> None:
+    """Add pending module log lines as the reply's last key (`log`)."""
+    lines = module._take_log()
+    if lines:
+        reply["log"] = [str(x) for x in lines]
+
+
 class ExternalForceModule:
     """Subclass and implement initialize / evaluate / shutdown."""
 
     # Populated by ExternalForceModule.run() from the initialize handshake.
     _host_in_names: Optional[List[str]] = None
+    _host_out_names: Optional[List[str]] = None
     _host_kind: str = ""
+
+    def _take_log(self) -> List[str]:
+        """Text lines to send with the next reply (`log` field). Default: none."""
+        return []
+
+    def _format_error(self, exc: BaseException) -> str:
+        """Message sent to the host when a call raises."""
+        return str(exc)
 
     def initialize(self, cfg: Dict[str, Any]) -> Dict[str, Any]:
         return {"name": self.__class__.__name__, "version": "1.0", "n_states": 0}
@@ -254,32 +280,39 @@ class ExternalForceModule:
                         module._host_in_names = [str(x) for x in names]
                     else:
                         module._host_in_names = None
+                    out_names = msg.get("out_names")
+                    if isinstance(out_names, list):
+                        module._host_out_names = [str(x) for x in out_names]
+                    else:
+                        module._host_out_names = None
                     module._host_kind = str(msg.get("kind") or "")
-                    meta = module.initialize(cfg) or {}
-                    send_message(
-                        sock,
-                        {
-                            "status": "ok",
-                            "protocol": PROTOCOL_VERSION,
-                            "name": meta.get("name", module.__class__.__name__),
-                            "version": meta.get("version", "1.0"),
-                            "n_states": int(meta.get("n_states", 0)),
-                        },
-                    )
+                    try:
+                        meta = module.initialize(cfg) or {}
+                    except Exception as exc:  # noqa: BLE001 — report to host
+                        reply = {"status": "error", "message": module._format_error(exc)}
+                        _attach_log(reply, module)
+                        send_message(sock, reply)
+                        break
+                    reply = {
+                        "status": "ok",
+                        "protocol": PROTOCOL_VERSION,
+                        "name": meta.get("name", module.__class__.__name__),
+                        "version": meta.get("version", "1.0"),
+                        "n_states": int(meta.get("n_states", 0)),
+                    }
+                    _attach_log(reply, module)
+                    send_message(sock, reply)
                 elif op == "evaluate":
                     t = float(msg.get("t", 0.0))
                     dt = float(msg.get("dt", 0.0))
                     inputs = [float(x) for x in msg.get("in", [])]
                     try:
                         outputs = module.evaluate(t, dt, inputs)
-                        send_message(
-                            sock,
-                            {"status": "ok", "out": [float(x) for x in outputs]},
-                        )
+                        reply = {"status": "ok", "out": [float(x) for x in outputs]}
                     except Exception as exc:  # noqa: BLE001 — report to host
-                        send_message(
-                            sock, {"status": "error", "message": str(exc)}
-                        )
+                        reply = {"status": "error", "message": module._format_error(exc)}
+                    _attach_log(reply, module)
+                    send_message(sock, reply)
                 elif op == "reset":
                     module.reset()
                     send_message(sock, {"status": "ok"})
@@ -350,6 +383,351 @@ class PtoModule(ExternalForceModule):
             t, dt, inputs, names=self._channel_names, link_kind=self._link_kind
         )
         return [float(self.force(state))]
+
+
+# ---------------------------------------------------------------------------
+# Controllers (preview) — see docs/extending/CONTROLLERS.md
+# ---------------------------------------------------------------------------
+
+# Channel fields per element type, in the host's publication order. The host
+# registry (apps/seastack/external_controller.cpp) is the source of truth; a
+# unit test checks both against the table in docs/extending/CONTROLLERS.md.
+CONTROLLER_FIELDS: Dict[str, Tuple[str, ...]] = {
+    "body": (
+        "pos_x", "pos_y", "pos_z",
+        "rot_x", "rot_y", "rot_z",
+        "quat_w", "quat_x", "quat_y", "quat_z",
+        "vel_x", "vel_y", "vel_z",
+        "ang_vel_x", "ang_vel_y", "ang_vel_z",
+        "acc_x", "acc_y", "acc_z",
+        "ang_acc_x", "ang_acc_y", "ang_acc_z",
+    ),
+    "rotation motor": ("angle", "angle_dt", "torque"),
+    "linear motor": ("position", "position_dt", "force"),
+    "tsda": ("length", "length_dt", "rest_length", "force"),
+    "rsda": ("angle", "angle_dt", "rest_angle", "torque"),
+}
+
+# Fields that may be listed as actuators (written by the controller).
+CONTROLLER_WRITABLE: Dict[str, Tuple[str, ...]] = {
+    "rotation motor": ("angle", "angle_dt"),
+    "linear motor": ("position", "position_dt"),
+    "tsda": ("rest_length",),
+    "rsda": ("rest_angle",),
+}
+
+
+def _suggest(word: str, choices: Sequence[str]) -> str:
+    close = difflib.get_close_matches(word, list(choices), n=1, cutoff=0.6)
+    return f" Did you mean '{close[0]}'?" if close else ""
+
+
+def _list_names(names: Sequence[str], limit: int = 12) -> str:
+    names = list(names)
+    if not names:
+        return "(none)"
+    shown = ", ".join(names[:limit])
+    return shown + (f", ... ({len(names)} in total)" if len(names) > limit else "")
+
+
+class ControllerState:
+    """Sensor values for one control tick, looked up by channel name.
+
+    state["body.float.pos_z"]      -> float (KeyError lists close matches)
+    state.body("float").pos        -> (x, y, z) tuple, world frame [m]
+    state.tsda("winch_rope").length
+    state.motor("slew").angle      (rotation) / .position (linear)
+    state.rsda("hinge").angle
+    state.time, state.dt           control tick time and control_dt [s]
+    """
+
+    def __init__(self, time: float, dt: float, names: Sequence[str], values: Sequence[float]):
+        self.time = float(time)
+        self.dt = float(dt)
+        self.names: Tuple[str, ...] = tuple(names)
+        self._values: Dict[str, float] = {n: float(v) for n, v in zip(names, values)}
+
+    def __getitem__(self, name: str) -> float:
+        try:
+            return self._values[name]
+        except KeyError:
+            raise KeyError(
+                f"no sensor channel '{name}'.{_suggest(name, self.names)} "
+                f"Sensor channels: {_list_names(self.names)}. Add the element under "
+                f"'sensors:' in the controller YAML to read it."
+            ) from None
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._values
+
+    def get(self, name: str, default: float = 0.0) -> float:
+        return self._values.get(name, default)
+
+    def as_dict(self) -> Dict[str, float]:
+        return dict(self._values)
+
+    def _element(self, kind: str, name: str) -> SimpleNamespace:
+        prefix = f"{kind}.{name}."
+        fields = {n[len(prefix):]: v for n, v in self._values.items() if n.startswith(prefix)}
+        if not fields:
+            known = sorted({n.split(".")[1] for n in self.names if n.startswith(kind + ".")})
+            raise KeyError(
+                f"no {kind} '{name}' among the sensors.{_suggest(name, known)} "
+                f"Sensor {kind}s: {_list_names(known)}."
+            )
+        return SimpleNamespace(**fields)
+
+    def body(self, name: str) -> SimpleNamespace:
+        """Body channels plus tuples: pos, rot, quat_wxyz, vel, ang_vel, acc, ang_acc."""
+        b = self._element("body", name)
+        b.pos = (b.pos_x, b.pos_y, b.pos_z)
+        b.rot = (b.rot_x, b.rot_y, b.rot_z)
+        b.quat_wxyz = (b.quat_w, b.quat_x, b.quat_y, b.quat_z)
+        b.vel = (b.vel_x, b.vel_y, b.vel_z)
+        b.ang_vel = (b.ang_vel_x, b.ang_vel_y, b.ang_vel_z)
+        b.acc = (b.acc_x, b.acc_y, b.acc_z)
+        b.ang_acc = (b.ang_acc_x, b.ang_acc_y, b.ang_acc_z)
+        return b
+
+    def motor(self, name: str) -> SimpleNamespace:
+        return self._element("motor", name)
+
+    def tsda(self, name: str) -> SimpleNamespace:
+        return self._element("tsda", name)
+
+    def rsda(self, name: str) -> SimpleNamespace:
+        return self._element("rsda", name)
+
+
+def _user_traceback(exc: BaseException) -> str:
+    """Traceback text without frames from this helper module."""
+    here = os.path.normcase(os.path.abspath(__file__))
+    frames = [
+        f for f in traceback.extract_tb(exc.__traceback__)
+        if os.path.normcase(os.path.abspath(f.filename)) != here
+    ]
+    lines = ["Traceback (most recent call last):\n"]
+    lines += traceback.format_list(frames)
+    lines += traceback.format_exception_only(type(exc), exc)
+    return "".join(lines).rstrip()
+
+
+class ControllerModule(ExternalForceModule):
+    """Controller authoring base (preview): implement step(state) -> dict.
+
+    step() returns {actuator_channel: value}, e.g.
+        {"tsda.winch_rope.rest_length": 19.5, "motor.slew.angle": 0.1}
+    Any actuator channel you leave out keeps its previous value (zero-order
+    hold); so does an explicit NaN, which also logs a warning once.
+
+    Optional hooks: setup(cfg) (reads `config:` from the controller YAML and
+    may return {"name", "version"}), reset().
+
+    print() output from setup() and step() is shown in the SEA-Stack console,
+    prefixed with the script name. self.log(msg) does the same.
+
+    Units are SI. Sign conventions and frames are listed per channel in
+    docs/extending/CONTROLLERS.md.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sensors: Tuple[str, ...] = ()
+        self.actuators: Tuple[str, ...] = ()
+        self._log_lines: List[str] = []
+        self._warned_nan: set = set()
+
+    # -- user hooks -------------------------------------------------------
+    def setup(self, cfg: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Optional: read `config:` (dict). Return meta overrides if desired."""
+        return None
+
+    def step(self, state: ControllerState) -> Optional[Mapping[str, float]]:
+        raise NotImplementedError("implement step(state) and return a dict of set-points")
+
+    def log(self, message: Any) -> None:
+        """Show a line in the SEA-Stack console."""
+        self._log_lines.extend(str(message).splitlines() or [""])
+
+    # -- protocol plumbing ------------------------------------------------
+    def _take_log(self) -> List[str]:
+        lines, self._log_lines = self._log_lines, []
+        return lines
+
+    def _format_error(self, exc: BaseException) -> str:
+        return _user_traceback(exc)
+
+    def _call_captured(self, fn, *args):
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                return fn(*args)
+        finally:
+            text = buf.getvalue()
+            if text:
+                self._log_lines.extend(text.rstrip("\n").splitlines())
+
+    def initialize(self, cfg: Dict[str, Any]) -> Dict[str, Any]:
+        self.sensors = tuple(self._host_in_names or ())
+        self.actuators = tuple(self._host_out_names or ())
+        meta = self._call_captured(self.setup, cfg) or {}
+        return {
+            "name": str(meta.get("name", self.__class__.__name__)),
+            "version": str(meta.get("version", "1.0")),
+            "n_states": int(meta.get("n_states", 0)),
+        }
+
+    def reset(self) -> None:
+        pass
+
+    def evaluate(self, t: float, dt: float, inputs: List[float]) -> List[float]:
+        state = ControllerState(t, dt, self.sensors, inputs)
+        commands = self._call_captured(self.step, state)
+        return self._pack_commands(commands)
+
+    def _pack_commands(self, commands: Any) -> List[float]:
+        if commands is None:
+            commands = {}
+        if not isinstance(commands, Mapping):
+            raise TypeError(
+                "step() must return a dict of {actuator_channel: value}, "
+                f"got {type(commands).__name__}"
+            )
+        valid = set(self.actuators)
+        for key in commands:
+            if key in valid:
+                continue
+            if key in self.sensors:
+                raise KeyError(
+                    f"step() returned '{key}', which is a sensor channel. Only actuator "
+                    f"channels can be written: {_list_names(self.actuators)}. List the "
+                    f"element under 'actuators:' in the controller YAML to drive it."
+                )
+            raise KeyError(
+                f"step() returned unknown actuator channel '{key}'."
+                f"{_suggest(str(key), self.actuators)} "
+                f"Actuator channels: {_list_names(self.actuators)}."
+            )
+        out: List[float] = []
+        for name in self.actuators:
+            if name not in commands:
+                out.append(float("nan"))  # hold
+                continue
+            raw = commands[name]
+            try:
+                if isinstance(raw, (str, bytes)):
+                    raise TypeError
+                value = float(raw)
+            except (TypeError, ValueError):
+                raise TypeError(
+                    f"step() value for '{name}' must be a number, got {raw!r}"
+                ) from None
+            if not math.isfinite(value):
+                if name not in self._warned_nan:
+                    self._warned_nan.add(name)
+                    self.log(
+                        f"warning: step() returned {value} for '{name}'; holding the "
+                        f"previous value (reported once per channel)"
+                    )
+                value = float("nan")
+            out.append(value)
+        return out
+
+
+class ControllerHarness:
+    """Drive a ControllerModule offline (no SEA-Stack, no sockets).
+
+    harness = ControllerHarness(
+        MyController(),
+        sensors={"bodies": ["float"], "tsdas": ["winch_rope"]},
+        actuators={"tsdas": ["winch_rope"]},
+        motor_types={},            # {"slew": "rotation"} or "linear"
+        config={"gain": 2.0},
+        control_dt=0.05,
+    )
+    cmds = harness.step(0.0, {"body.float.pos_z": -0.1})   # -> held commands
+    harness.log                                             # captured output
+
+    Unlisted sensor values default to 0.0; unknown names raise KeyError.
+    Commands start at `initial` (default 0.0) and are held between steps,
+    exactly as the host does.
+    """
+
+    def __init__(
+        self,
+        module: ControllerModule,
+        sensors: Optional[Mapping[str, Sequence[str]]] = None,
+        actuators: Optional[Mapping[str, Sequence[str]]] = None,
+        motor_types: Optional[Mapping[str, str]] = None,
+        config: Optional[Dict[str, Any]] = None,
+        control_dt: float = 0.01,
+        initial: Optional[Mapping[str, float]] = None,
+    ) -> None:
+        self.module = module
+        self.control_dt = float(control_dt)
+        motor_types = dict(motor_types or {})
+        self.sensor_names = self._channels(sensors or {}, motor_types, writable=False)
+        self.actuator_names = self._channels(actuators or {}, motor_types, writable=True)
+        self.held: Dict[str, float] = {n: 0.0 for n in self.actuator_names}
+        for name, value in (initial or {}).items():
+            if name not in self.held:
+                raise KeyError(f"initial value for unknown actuator '{name}'")
+            self.held[name] = float(value)
+        self.log: List[str] = []
+        module._host_in_names = list(self.sensor_names)
+        module._host_out_names = list(self.actuator_names)
+        module._host_kind = "controller"
+        try:
+            module.initialize(dict(config or {}))
+        finally:
+            self.log.extend(module._take_log())
+
+    @staticmethod
+    def _channels(
+        lists: Mapping[str, Sequence[str]], motor_types: Mapping[str, str], writable: bool
+    ) -> List[str]:
+        allowed = ("motors", "tsdas", "rsdas") if writable else ("bodies", "motors", "tsdas", "rsdas")
+        names: List[str] = []
+        for key in lists:
+            if key not in allowed:
+                raise KeyError(f"unknown element list '{key}'.{_suggest(key, allowed)} Use: {allowed}")
+        table = CONTROLLER_WRITABLE if writable else CONTROLLER_FIELDS
+        for key, element, kind in (
+            ("bodies", "body", "body"),
+            ("motors", "motor", None),
+            ("tsdas", "tsda", "tsda"),
+            ("rsdas", "rsda", "rsda"),
+        ):
+            for name in lists.get(key, ()):
+                if kind is None:
+                    mtype = motor_types.get(name)
+                    if mtype not in ("rotation", "linear"):
+                        raise ValueError(
+                            f"motor_types['{name}'] must be 'rotation' or 'linear'"
+                        )
+                    fields = table[f"{mtype} motor"]
+                else:
+                    fields = table[kind]
+                names += [f"{element}.{name}.{f}" for f in fields]
+        return names
+
+    def step(self, t: float, values: Optional[Mapping[str, float]] = None) -> Dict[str, float]:
+        """Run one control tick; returns the held command for every actuator."""
+        values = dict(values or {})
+        for name in values:
+            if name not in self.sensor_names:
+                raise KeyError(
+                    f"'{name}' is not a sensor channel.{_suggest(name, self.sensor_names)}"
+                )
+        inputs = [float(values.get(n, 0.0)) for n in self.sensor_names]
+        try:
+            out = self.module.evaluate(t, self.control_dt, inputs)
+        finally:
+            self.log.extend(self.module._take_log())
+        for name, value in zip(self.actuator_names, out):
+            if math.isfinite(value):
+                self.held[name] = value
+        return dict(self.held)
 
 
 def run(module: ExternalForceModule) -> None:

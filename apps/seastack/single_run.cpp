@@ -25,6 +25,7 @@
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 
 #ifdef SEASTACK_HAVE_EXTERNAL
+#include "external_controller.h"
 #include "external_pto_yaml.h"
 #endif
 
@@ -500,6 +501,18 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
 #ifdef SEASTACK_HAVE_EXTERNAL
+        // Rope laws first: the controller reads the rope's initial rest length,
+        // and an external PTO on the same TSDA would replace the rope law.
+        if (!config.ropes_file.empty()) {
+            try {
+                seastack::app::ApplyRopes(*system, seastack::app::LoadRopesFile(config.ropes_file));
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+
         // Keep every attachment alive for the whole run (RAII owns the child
         // process + Chrono force functor). One attachment per external PTO link.
         std::vector<seastack::app::ExternalPtoAttachment> external_pto_attachments;
@@ -523,6 +536,26 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 result.error_message = e.what();
                 return result;
             }
+        }
+
+        // One controller per case; it may run alongside external PTOs.
+        std::unique_ptr<seastack::app::ExternalController> controller;
+        if (!config.controller_file.empty()) {
+            try {
+                controller = std::make_unique<seastack::app::ExternalController>(
+                    *system, seastack::app::LoadControllerFile(config.controller_file), loop_dt);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+#else
+        if (!config.controller_file.empty() || !config.ropes_file.empty()) {
+            result.error_message =
+                "controller_file and ropes_file need a build with -DSEASTACK_ENABLE_EXTERNAL=ON";
+            seastack::infra::cli::LogError(result.error_message);
+            return result;
         }
 #endif
 
@@ -930,6 +963,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         double initial_time = system->GetChTime();
         double previous_time = initial_time;
         bool diverged = false;
+        // Set when a step throws (solver error, external module failure);
+        // the run then stops early and must not report success.
+        std::string step_error;
 
         std::shared_ptr<::chrono::ChBody> first_body = nullptr;
         if (!system->GetBodies().empty()) {
@@ -984,6 +1020,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 double current_time = system->GetChTime();
                 try {
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
+#ifdef SEASTACK_HAVE_EXTERNAL
+                    if (controller) {
+                        controller->BeforeStep(system->GetChTime());
+                    }
+#endif
                     system->DoStepDynamics(loop_dt);
                     if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     step_count++;
@@ -1015,11 +1056,13 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     seastack::infra::cli::LogError(std::string("🔥 Exception during DoStepDynamics at step ") + std::to_string(step_count) + ": " + e.what());
                     seastack::infra::cli::LogError(std::string("Simulation time: ") + seastack::infra::FormatNumber(current_time, 6) + " s");
                     seastack::infra::cli::LogError(std::string("Step size: ") + seastack::infra::FormatNumber(loop_dt, 6) + " s");
+                    step_error = e.what();
                     break;
                 } catch (...) {
                     seastack::infra::cli::StopProgress();
                     seastack::infra::cli::LogError(std::string("🔥 Unknown exception during DoStepDynamics at step ") + std::to_string(step_count));
                     seastack::infra::cli::LogError(std::string("Simulation time: ") + seastack::infra::FormatNumber(current_time, 6) + " s");
+                    step_error = "unknown exception during DoStepDynamics";
                     break;
                 }
             }
@@ -1097,6 +1140,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                                     .count() >= kGuiFrameWallBudget) {
                             break;
                         }
+#ifdef SEASTACK_HAVE_EXTERNAL
+                        if (controller) {
+                            controller->BeforeStep(system->GetChTime());
+                        }
+#endif
                         system->DoStepDynamics(loop_dt);
                         step_count++;
                         if (exporter) {
@@ -1178,11 +1226,13 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     }
 
                     seastack::infra::cli::LogWarning("This may indicate numerical instability, constraint conflicts, or configuration issues");
+                    step_error = e.what();
                     break;
                 } catch (...) {
                     seastack::infra::cli::LogError(std::string("🔥 Unknown exception during DoStepDynamics at step ") + std::to_string(step_count));
                     seastack::infra::cli::LogError(std::string("Simulation time: ") + seastack::infra::FormatNumber(current_time, 6) + " s");
                     seastack::infra::cli::LogError("This indicates a serious system error");
+                    step_error = "unknown exception during DoStepDynamics";
                     break;
                 }
             }
@@ -1244,7 +1294,10 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
         // Populate result
-        result.exit_code = diverged ? 2 : 0;
+        result.exit_code = diverged ? 2 : (step_error.empty() ? 0 : 1);
+        if (!step_error.empty()) {
+            result.error_message = step_error;
+        }
         result.wall_time_s = wall_s;
         result.sim_time_final = system->GetChTime();
         result.diverged = diverged;

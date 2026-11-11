@@ -1,0 +1,42 @@
+# External controller (preview): a winch hauls the sphere's rope in by 1 m.
+# Docs: docs/extending/CONTROLLERS.md
+#
+# Each tick SEA-Stack sends the sensor channels below to winch_controller.py
+# and applies the actuator values it returns. Channel names are
+# <element>.<name>.<field>; you write an actuator with the same name you read.
+
+command: [python, winch_controller.py]   # relative to this file
+control_dt: 0.05      # [s] whole multiple of time_step (0.01 s); commands are held in between
+timeout_ms: 10000     # per-tick reply timeout
+
+sensors:
+  bodies: [body1]
+  # body.body1.pos_x / pos_y / pos_z            [m]       centre of mass, world frame
+  # body.body1.rot_x / rot_y / rot_z            [rad]     Cardan XYZ angles
+  # body.body1.quat_w / quat_x / quat_y / quat_z [-]      body-to-world quaternion
+  # body.body1.vel_x / vel_y / vel_z            [m/s]     world frame
+  # body.body1.ang_vel_x / ang_vel_y / ang_vel_z [rad/s]  world frame
+  # body.body1.acc_x / acc_y / acc_z            [m/s^2]   world frame, last completed step
+  # body.body1.ang_acc_x / ang_acc_y / ang_acc_z [rad/s^2] world frame, last completed step
+  tsdas: [winch_rope]
+  # tsda.winch_rope.length       [m]    distance between attachment points
+  # tsda.winch_rope.length_dt    [m/s]  positive when extending
+  # tsda.winch_rope.rest_length  [m]    current rest length
+  # tsda.winch_rope.force        [N]    Chrono sign: negative in tension
+  # (motors: angle, angle_dt, torque for rotation motors; position,
+  #  position_dt, force for linear motors. rsdas: angle, angle_dt,
+  #  rest_angle, torque.)
+
+actuators:
+  tsdas: [winch_rope]
+  # tsda.winch_rope.rest_length  [m]    new rest length (held until changed)
+  # (motors must be POSITION motors with actuation_function {type: CONTROLLER}:
+  #  rotation -> angle [rad] (+ optional angle_dt [rad/s]);
+  #  linear   -> position [m] (+ optional position_dt [m/s]).
+  #  rsdas -> rest_angle [rad].)
+
+# Passed to setup(cfg) in winch_controller.py.
+config:
+  haul_start_s: 20.0       # [s] let the sphere settle first
+  haul_length_m: 1.0       # [m] rope hauled in
+  haul_speed_m_per_s: 0.2  # [m/s] winch line speed

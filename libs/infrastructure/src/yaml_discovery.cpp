@@ -121,6 +121,12 @@ SetupConfig ParseSetupFile(const std::filesystem::path& setup_path) {
         } else if (key == "output_directory") {
             config.output_directory = value;
             config.has_output_directory = true;
+        } else if (key == "controller_file" && indent == 0) {
+            config.controller_file = value;
+            config.has_controller_file = true;
+        } else if (key == "ropes_file" && indent == 0) {
+            config.ropes_file = value;
+            config.has_ropes_file = true;
         }
     }
     

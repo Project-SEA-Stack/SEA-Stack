@@ -14,6 +14,7 @@
 #include <seastack/infra/logging.h>
 
 #ifdef SEASTACK_HAVE_EXTERNAL
+#include "external_controller.h"
 #include "external_pto_yaml.h"
 #endif
 
@@ -123,6 +124,47 @@ static bool ResolveInputFiles(const std::filesystem::path& input_dir,
             return false;
         }
 #endif
+        if (setup_config.has_controller_file) {
+#ifdef SEASTACK_HAVE_EXTERNAL
+            std::filesystem::path controller_path(setup_config.controller_file);
+            if (controller_path.is_relative()) {
+                controller_path = input_dir / controller_path;
+            }
+            setup_config.controller_file = controller_path.lexically_normal().generic_string();
+            try {
+                // Validate early so YAML mistakes show before the solver starts.
+                (void)LoadControllerFile(controller_path);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                return false;
+            }
+#else
+            seastack::infra::cli::LogError(
+                "controller_file is set in the setup YAML, but this run_seastack was built "
+                "without external module support (-DSEASTACK_ENABLE_EXTERNAL=ON).");
+            return false;
+#endif
+        }
+        if (setup_config.has_ropes_file) {
+#ifdef SEASTACK_HAVE_EXTERNAL
+            std::filesystem::path ropes_path(setup_config.ropes_file);
+            if (ropes_path.is_relative()) {
+                ropes_path = input_dir / ropes_path;
+            }
+            setup_config.ropes_file = ropes_path.lexically_normal().generic_string();
+            try {
+                (void)LoadRopesFile(ropes_path);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                return false;
+            }
+#else
+            seastack::infra::cli::LogError(
+                "ropes_file is set in the setup YAML, but this run_seastack was built "
+                "without external module support (-DSEASTACK_ENABLE_EXTERNAL=ON).");
+            return false;
+#endif
+        }
         
         if (!model_file_arg.empty()) {
             model_file = model_file_arg;
@@ -245,6 +287,18 @@ static void DisplaySimulationSummary(const std::string& input_directory,
             summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
                 "🔌", "External PTO", "inline (setup YAML)"));
         }
+    }
+    if (setup_config.has_controller_file) {
+        summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+            "🎛️", "Controller",
+            std::filesystem::path(setup_config.controller_file).filename().string() +
+                " (preview)"));
+    }
+    if (setup_config.has_ropes_file) {
+        summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+            "🪢", "Ropes",
+            std::filesystem::path(setup_config.ropes_file).filename().string() +
+                " (preview)"));
     }
     
     summary_content.push_back("");
@@ -448,6 +502,8 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.has_external_pto = setup_config.has_external_pto;
         run_config.external_pto = setup_config.external_pto;
         run_config.external_ptos = setup_config.external_ptos;
+        run_config.controller_file = setup_config.controller_file;
+        run_config.ropes_file = setup_config.ropes_file;
 
         SingleRunResult result = RunSingleCase(run_config);
 

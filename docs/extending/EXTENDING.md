@@ -14,6 +14,7 @@ For the full architecture and module inventory, see
 - **PTO models** — implement `IPTOModel`
 - **Controllers** — implement `IController`
 - **External force modules** — out-of-process Python/MATLAB (or FMI) via `IExternalForceModel`; see [EXTERNAL_FORCE_MODULES.md](EXTERNAL_FORCE_MODULES.md)
+- **External controllers (preview)** — a Python script that reads body/link states and drives motor set-points and spring rest lengths/angles; see [CONTROLLERS.md](CONTROLLERS.md)
 - **Solver adapters** — add an adapter analogous to `adapters/chrono/`
 
 ---

@@ -1,0 +1,32 @@
+# Single floating vessel; pile diffraction baked into Capytaine H5.
+# Irregular JONSWAP, identical seed for baseline and compensated cases.
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/crane_vessel.h5
+      linear_damping: [0.0, 0.0, 1.0e5, 1.0e6, 1.0e6, 0.0]
+      quadratic_damping: [1.2e4, 1.8e4, 1.0e4, 2.0e5, 2.0e5, 6.0e4]
+
+  waves:
+    type: irregular
+    depth: 40.0
+    height: 2.0
+    period: 8.0
+    direction: 45.0
+    spectrum: jonswap
+    gamma: 3.3
+    seed: 42
+    ramp_duration: 6.0
+    ramp_type: cosine
+    discretization:
+      n_omega: 128
+
+  excitation:
+    method: frequency_domain
+
+  radiation:
+    method: state_space
+    state_space:
+      max_order: 8
+      r2_threshold: 0.90
+      max_hankel_size: 100

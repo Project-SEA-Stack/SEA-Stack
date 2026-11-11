@@ -1,0 +1,10 @@
+model_file: iea_sphere_controller_winch.model.yaml
+simulation_file: iea_sphere_controller_winch.simulation.yaml
+hydro_file: iea_sphere_controller_winch.hydro.yaml
+
+# External controller (preview). Needs run_seastack built with
+# -DSEASTACK_ENABLE_EXTERNAL=ON (release packages are) and Python 3.
+controller_file: winch.controller.yaml
+
+# Output directory is authoritative for the runner. Relative to this setup file.
+output_directory: outputs

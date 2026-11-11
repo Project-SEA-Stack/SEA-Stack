@@ -31,7 +31,7 @@ add_library(seastack_app_lib STATIC
 )
 
 if(SEASTACK_ENABLE_EXTERNAL)
-    target_sources(seastack_app_lib PRIVATE external_pto_yaml.cpp)
+    target_sources(seastack_app_lib PRIVATE external_pto_yaml.cpp external_controller.cpp)
 endif()
 
 target_include_directories(seastack_app_lib
