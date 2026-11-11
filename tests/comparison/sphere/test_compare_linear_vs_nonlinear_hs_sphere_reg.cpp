@@ -16,6 +16,12 @@
  * still contains the linear Froude-Krylov force on the mean hull, so B is only
  * valid while the relative motion stays well below the draft and freeboard.
  *
+ * A second series adds the optimum heave PTO (633,980 N s/m, as in the
+ * iea_sphere/regular_waves_nlfk demo) and runs A and C at H = 0.5, 1, 2, 5 and
+ * 6 m. Without a PTO the sphere follows the wave and the relative motion stays
+ * small; with the PTO it does not, and C falls below A in steep waves (IEA OES
+ * Task 10, H = 6.28 m: weakly nonlinear RAO 0.665 vs linear 0.69).
+ *
  * Conventions: eta = a cos(w t) at x = 0; heave z positive up [m], measured
  * from the equilibrium CG height read from the H5 file.
  */
@@ -28,6 +34,7 @@
 
 #include <chrono/physics/ChBody.h>
 #include <chrono/physics/ChLinkLock.h>
+#include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChSystemNSC.h>
 #include <chrono/timestepper/ChTimestepperHHT.h>
 #include <chrono/utils/ChConstants.h>
@@ -56,6 +63,10 @@ struct AmplitudeCase {
 };
 const AmplitudeCase kCases[] = {{0.1, "a0p1"}, {0.5, "a0p5"}, {1.0, "a1p0"}, {2.5, "a2p5"}};
 
+constexpr double kPtoDamping = 633980.0;  // optimum heave PTO damping at T = 8 s [N s/m]
+const AmplitudeCase kPtoCases[] = {
+    {0.25, "pto_a0p25"}, {0.5, "pto_a0p5"}, {1.0, "pto_a1p0"}, {2.5, "pto_a2p5"}, {3.0, "pto_a3p0"}};
+
 /// Hydrostatics / Froude-Krylov model; the name is the output file tag.
 enum class Model { kLinear, kCalmWater, kNlfk };
 const Model kModels[] = {Model::kLinear, Model::kCalmWater, Model::kNlfk};
@@ -82,7 +93,7 @@ void ConfigureSystem(ChSystemNSC& system) {
 }
 
 bool RunCase(const std::string& h5, const std::string& mesh, Model model, double amplitude,
-             double z_eq, const std::string& path) {
+             double pto_damping, double z_eq, const std::string& path) {
     ChSystemNSC system;
     ConfigureSystem(system);
 
@@ -101,6 +112,15 @@ bool RunCase(const std::string& h5, const std::string& mesh, Model model, double
     prismatic->Initialize(body, ground, false, ChFramed(ChVector3d(0, 0, z_eq)),
                           ChFramed(ChVector3d(0, 0, -10)));
     system.AddLink(prismatic);
+
+    if (pto_damping > 0.0) {
+        // Vertical damper (spring stiffness 0): F = -c * heave velocity.
+        auto pto = chrono_types::make_shared<ChLinkTSDA>();
+        pto->Initialize(body, ground, false, ChVector3d(0, 0, z_eq), ChVector3d(0, 0, -10));
+        pto->SetSpringCoefficient(0.0);
+        pto->SetDampingCoefficient(pto_damping);
+        system.AddLink(pto);
+    }
 
     seastack::hydro::SeaStateDefinition sea_state;
     sea_state.type = "regular";
@@ -132,6 +152,7 @@ bool RunCase(const std::string& h5, const std::string& mesh, Model model, double
     }
     out << "# wave_amplitude_m " << amplitude << "\n";
     out << "# omega_rad_s " << std::setprecision(12) << sea_state.omega << "\n";
+    out << "# pto_damping_Ns_m " << pto_damping << "\n";
     out << "# Time(s)  Heave(m)\n";
     const double duration = kRampDuration + kSteadyPeriods * kWavePeriod;
     while (system.GetChTime() < duration - kTimeStep / 2.0) {
@@ -159,17 +180,25 @@ int main(int /*argc*/, char* /*argv*/[]) {
     const auto data = seastack::hydro_io::H5FileInfo(h5, 1).ReadH5Data();
     const double z_eq = data.GetCGVector(0)[2];
 
+    auto run = [&](const AmplitudeCase& c, Model model, double pto_damping) {
+        const char* method = Name(model);
+        std::cout << "a = " << c.amplitude << " m, PTO " << pto_damping << " N s/m, " << method << "...\n";
+        const auto t0 = std::chrono::high_resolution_clock::now();
+        const std::string path = out_dir + "/" + c.tag + "_" + method + "_heave.txt";
+        if (!RunCase(h5, mesh, model, c.amplitude, pto_damping, z_eq, path)) return false;
+        const auto t1 = std::chrono::high_resolution_clock::now();
+        std::cout << "  done in "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count() << " ms\n";
+        return true;
+    };
     for (const auto& c : kCases) {
         for (Model model : kModels) {
-            const char* method = Name(model);
-            std::cout << "a = " << c.amplitude << " m, " << method << "...\n";
-            const auto t0 = std::chrono::high_resolution_clock::now();
-            const std::string path = out_dir + "/" + c.tag + "_" + method + "_heave.txt";
-            if (!RunCase(h5, mesh, model, c.amplitude, z_eq, path)) return 1;
-            const auto t1 = std::chrono::high_resolution_clock::now();
-            std::cout << "  done in "
-                      << std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count()
-                      << " ms\n";
+            if (!run(c, model, 0.0)) return 1;
+        }
+    }
+    for (const auto& c : kPtoCases) {
+        for (Model model : {Model::kLinear, Model::kNlfk}) {
+            if (!run(c, model, kPtoDamping)) return 1;
         }
     }
     std::cout << "Results written to " << out_dir << "\n";

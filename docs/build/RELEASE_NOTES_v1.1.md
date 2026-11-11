@@ -13,9 +13,9 @@ published:
   the mean hull. When the relative motion approaches the draft or freeboard,
   the two no longer match and a body can be thrown clear of the water. The
   run now warns at start-up when nonlinear hydrostatics is combined with
-  waves, and once per body if it fully emerges or fully submerges. New demos
-  `iea_sphere/regular_waves_nl` and `regular_waves_lin` and the comparison
-  test `test_compare_linear_vs_nonlinear_hs_sphere_reg` show the range of
+  waves, and once per body if it fully emerges or fully submerges. New demo
+  `iea_sphere/regular_waves_nl` and the comparison test
+  `test_compare_linear_vs_nonlinear_hs_sphere_reg` show the range of
   validity. Results for existing cases are unchanged.
 - **Nonlinear Froude-Krylov forces (per body).** Nonlinear Froude-Krylov
   integrates the static and incident-wave pressure over the hull below the
@@ -28,7 +28,10 @@ published:
   steepness H/(gT²) = 0.01, the heave RAO lies within 1% of the range of the
   MARIN and NREL weakly nonlinear codes at all 20 points (free and optimum
   PTO); at T = 11 s with PTO it gives 0.577 against 0.575 / 0.574, where
-  linear gives 0.70. New demo `iea_sphere/regular_waves_nlfk`; theory, tests
+  linear gives 0.70. New demos `iea_sphere/regular_waves_nlfk` and its
+  linear twin `regular_waves_lin` (H = 6 m, T = 8 s, optimum PTO; heave RAO
+  0.664 against 0.693). The sphere comparison test sweeps H = 0.5 to 6 m:
+  the two agree within 0.1% below 1 m and differ by 4.2% at 6 m. Theory, tests
   and limits in
   [NONLINEAR_FROUDE_KRYLOV.md](../theory/NONLINEAR_FROUDE_KRYLOV.md) and
   [EXAMPLE_WORKFLOWS.md](../usage/EXAMPLE_WORKFLOWS.md#large-waves-nonlinear-froude-krylov).

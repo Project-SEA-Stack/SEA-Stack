@@ -25,7 +25,7 @@ decay, irregular waves, and linear vs nonlinear hydrostatic comparisons.
 | decay_nl_5m | Nonlinear hydrostatics, 5 m drop | `decay_nl_5m/iea_sphere_decay_nl_5m.setup.yaml` |
 | decay_lin_5m | Linear hydrostatics, 5 m drop | `decay_lin_5m/iea_sphere_decay_lin_5m.setup.yaml` |
 | regular_waves_nl | Calm-water nonlinear hydrostatics (`wetted_surface: calm_water`), regular waves H = 2 m, T = 8 s. Not in the v1.0.0 package | `regular_waves_nl/iea_sphere_regular_waves_nl.setup.yaml` |
-| regular_waves_lin | Linear hydrostatics, same waves (twin of `regular_waves_nl`). Not in the v1.0.0 package | `regular_waves_lin/iea_sphere_regular_waves_lin.setup.yaml` |
+| regular_waves_lin | Linear hydrostatics, regular waves H = 6 m, T = 8 s, optimum PTO (twin of `regular_waves_nlfk`; only `wetted_surface` differs). Not in the v1.0.0 package | `regular_waves_lin/iea_sphere_regular_waves_lin.setup.yaml` |
 | regular_waves_nlfk | Nonlinear Froude-Krylov (`wetted_surface: instantaneous`), regular waves H = 6 m, T = 8 s, optimum PTO (633,980 N s/m). Not in the v1.0.0 package | `regular_waves_nlfk/iea_sphere_regular_waves_nlfk.setup.yaml` |
 
 Nonlinear cases use instantaneous submerged volume from the OBJ mesh; 1 m and
@@ -43,7 +43,7 @@ force on the mean hull. The two are consistent only while heave and relative
 motion stay well below the draft and freeboard (5 m for this sphere).
 
 `regular_waves_nl` sits inside that range: its steady heave amplitude is about
-2% above `regular_waves_lin`. The comparison test
+2% above linear hydrostatics. The comparison test
 `test_compare_linear_vs_nonlinear_hs_sphere_reg` shows the trend at T = 8 s
 (free sphere, no PTO), with nonlinear Froude-Krylov for reference:
 
@@ -74,8 +74,24 @@ excitation is removed. See
 `regular_waves_nlfk` is close to the IEA OES Task 10 steep case (H = 6 m;
 Task 10 uses 6.28 m at T = 8 s) with the optimum PTO damping. Its steady
 heave RAO is 0.664. The Task 10 weakly nonlinear codes give 0.665 (MARIN) and
-0.666 (NREL); linear models give 0.69. In the H = 10 m case above, nonlinear Froude-Krylov
-keeps the heave within about 5.4 m.
+0.666 (NREL); linear models give 0.69. Its twin `regular_waves_lin` runs the
+same body, PTO and waves with linear hydrostatics and gives 0.693. In the
+H = 10 m case above, nonlinear Froude-Krylov keeps the heave within about 5.4 m.
+
+The gap opens with wave height. With the optimum PTO
+(`test_compare_linear_vs_nonlinear_hs_sphere_reg`, T = 8 s):
+
+| Wave height H | Linear heave RAO | Nonlinear Froude-Krylov / linear |
+|---------------|------------------|----------------------------------|
+| 0.5 m | 0.693 | −0.01% |
+| 1 m | 0.693 | −0.1% |
+| 2 m | 0.693 | −0.4% |
+| 5 m | 0.693 | −2.8% |
+| 6 m | 0.693 | −4.2% |
+
+Below about 1 m the two models agree; the PTO holds the sphere back from the
+wave, so in steep waves the wetted surface changes and nonlinear
+Froude-Krylov gives less heave than linear.
 
 ## Optional analysis
 

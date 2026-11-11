@@ -2,20 +2,27 @@
 """
 Comparison script: linear hydrostatics, calm-water nonlinear hydrostatics and
 nonlinear Froude-Krylov (NL FK) on the IEA sphere in regular waves (heave
-only, no PTO, T = 8 s, wave amplitudes 0.1, 0.5, 1.0, 2.5 m, i.e.
-H = 0.2, 1, 2, 5 m).
+only, T = 8 s).
+
+Two series:
+  - free sphere (no PTO): linear, calm-water nonlinear and NL FK at
+    H = 0.2, 1, 2, 5 m;
+  - optimum heave PTO (633,980 N s/m): linear and NL FK at H = 0.5, 1, 2, 5, 6 m.
 
 Steady-state heave amplitude and phase are fitted by least squares on
 [cos wt, sin wt, 1] over the last N_FIT_PERIODS wave periods.
 
 Pass criteria (each model against linear):
-  - calm-water nonlinear at a = 0.1 m: within CALM_AMP_TOL_PCT amplitude and
-    PHASE_TOL_DEG phase;
-  - NL FK at a = 0.5 m (H = 1 m, H / (g T^2) = 0.0016): within
-    NLFK_AMP_TOL_PCT amplitude and PHASE_TOL_DEG phase.
+  - free, calm-water nonlinear at H = 0.2 m: within CALM_AMP_TOL_PCT
+    amplitude and PHASE_TOL_DEG phase;
+  - free and PTO, NL FK at H = 1 m (H / (g T^2) = 0.0016), and PTO at
+    H = 0.5 m: within NLFK_AMP_TOL_PCT amplitude and PHASE_TOL_DEG phase;
+  - PTO, NL FK at H = 6 m: below linear by GAP_MIN_PCT to GAP_MAX_PCT
+    (IEA OES Task 10, H = 6.28 m: weakly nonlinear 0.665 vs linear 0.69, -3.6%).
 Other cases are reported for information. The calm-water model uses
 calm-water buoyancy with linear excitation, so it drifts from linear as the
 motion grows; NL FK integrates the incident-wave pressure on the wetted hull.
+Without a PTO the sphere follows the wave, so NL FK stays close to linear.
 """
 
 import json
@@ -38,12 +45,39 @@ N_FIT_PERIODS = 10
 CALM_AMP_TOL_PCT = 1.0
 NLFK_AMP_TOL_PCT = 2.0
 PHASE_TOL_DEG = 1.0
+GAP_MIN_PCT = -8.0
+GAP_MAX_PCT = -1.0
 
-TAGS = ["a0p1", "a0p5", "a1p0", "a2p5"]
-# (file tag, label, {amplitude tag: amplitude tolerance [%]} for checked cases)
-MODELS = [
-    ("nonlinear", "Calm-water nonlinear hydrostatics", {"a0p1": CALM_AMP_TOL_PCT}),
-    ("nlfk", "Nonlinear Froude-Krylov", {"a0p5": NLFK_AMP_TOL_PCT}),
+LABELS = {
+    "linear": "Linear hydrostatics",
+    "nonlinear": "Calm-water nonlinear hydrostatics",
+    "nlfk": "Nonlinear Froude-Krylov",
+}
+COLORS = {"linear": "C0", "nonlinear": "C1", "nlfk": "C2"}
+# Each check: (amplitude tag, model) -> (min %, max %) on model / linear - 1,
+# plus |phase| <= PHASE_TOL_DEG unless the entry says otherwise.
+SERIES = [
+    {
+        "name": "free",
+        "title": "no PTO",
+        "tags": ["a0p1", "a0p5", "a1p0", "a2p5"],
+        "models": ["nonlinear", "nlfk"],
+        "checks": {
+            ("a0p1", "nonlinear"): (-CALM_AMP_TOL_PCT, CALM_AMP_TOL_PCT, True),
+            ("a0p5", "nlfk"): (-NLFK_AMP_TOL_PCT, NLFK_AMP_TOL_PCT, True),
+        },
+    },
+    {
+        "name": "pto",
+        "title": "optimum PTO 633,980 N s/m",
+        "tags": ["pto_a0p25", "pto_a0p5", "pto_a1p0", "pto_a2p5", "pto_a3p0"],
+        "models": ["nlfk"],
+        "checks": {
+            ("pto_a0p25", "nlfk"): (-NLFK_AMP_TOL_PCT, NLFK_AMP_TOL_PCT, True),
+            ("pto_a0p5", "nlfk"): (-NLFK_AMP_TOL_PCT, NLFK_AMP_TOL_PCT, True),
+            ("pto_a3p0", "nlfk"): (GAP_MIN_PCT, GAP_MAX_PCT, False),
+        },
+    },
 ]
 
 
@@ -72,82 +106,91 @@ def main():
     metrics = {}
     passed = True
     lines = [
-        "| Wave height H (m) | Linear heave amp (m) | Model | Model heave amp (m) | "
+        "| Series | Wave height H (m) | Linear heave amp (m) | Model | Model heave amp (m) | "
         "Model / linear - 1 (%) | Phase model - linear (deg) | Model mean offset (m) | Checked |",
-        "|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
-    sweep = {"H": [], "linear": [], "nonlinear": [], "nlfk": []}
-    for tag in TAGS:
-        file_lin = base_dir / f"{tag}_linear_heave.txt"
-        if not file_lin.exists():
-            print(f"Missing result file {file_lin}")
-            passed = False
-            continue
-        amp = read_header_value(file_lin, "wave_amplitude_m")
-        w = read_header_value(file_lin, "omega_rad_s")
-        lin = np.loadtxt(file_lin, comments="#")
-        t = lin[:, 0]
-        sel = t >= t[-1] - N_FIT_PERIODS * 2.0 * np.pi / w
-        zl, _ = fit_harmonic(t[sel], lin[sel, 1], w)
-        metrics[f"{tag}_linear_amp_m"] = float(abs(zl))
-        sweep["H"].append(2.0 * amp)
-        sweep["linear"].append(abs(zl) / amp)
-        series = {"linear": (t, lin[:, 1])}
-
-        for model, label, checked in MODELS:
-            path = base_dir / f"{tag}_{model}_heave.txt"
-            if not path.exists():
-                print(f"Missing result file {path}")
+    sweeps = {}
+    for s in SERIES:
+        sweep = {"H": [], "linear": [], **{m: [] for m in s["models"]}}
+        sweeps[s["name"]] = sweep
+        for tag in s["tags"]:
+            file_lin = base_dir / f"{tag}_linear_heave.txt"
+            if not file_lin.exists():
+                print(f"Missing result file {file_lin}")
                 passed = False
-                sweep[model].append(np.nan)
                 continue
-            data = np.loadtxt(path, comments="#")
-            n = min(len(data), len(lin))
-            tm, zm_t = data[:n, 0], data[:n, 1]
-            selm = tm >= tm[-1] - N_FIT_PERIODS * 2.0 * np.pi / w
-            zm, mean_m = fit_harmonic(tm[selm], zm_t[selm], w)
-            amp_err = 100.0 * (abs(zm) / abs(zl) - 1.0)
-            phase_err = float(np.degrees(np.angle(zm / zl)))
-            metrics[f"{tag}_{model}_amp_m"] = float(abs(zm))
-            metrics[f"{tag}_{model}_amp_diff_pct"] = float(amp_err)
-            metrics[f"{tag}_{model}_phase_diff_deg"] = phase_err
-            metrics[f"{tag}_{model}_mean_m"] = float(mean_m)
-            sweep[model].append(abs(zm) / amp)
-            series[model] = (tm, zm_t)
-            is_checked = tag in checked
-            lines.append(
-                f"| {2.0 * amp:.1f} | {abs(zl):.4f} | {label} | {abs(zm):.4f} | {amp_err:+.3f} | "
-                f"{phase_err:+.3f} | {mean_m:+.4f} | {'yes' if is_checked else 'info'} |"
-            )
-            if is_checked and (abs(amp_err) > checked[tag] or abs(phase_err) > PHASE_TOL_DEG):
-                passed = False
+            amp = read_header_value(file_lin, "wave_amplitude_m")
+            w = read_header_value(file_lin, "omega_rad_s")
+            lin = np.loadtxt(file_lin, comments="#")
+            t = lin[:, 0]
+            sel = t >= t[-1] - N_FIT_PERIODS * 2.0 * np.pi / w
+            zl, _ = fit_harmonic(t[sel], lin[sel, 1], w)
+            metrics[f"{tag}_linear_amp_m"] = float(abs(zl))
+            sweep["H"].append(2.0 * amp)
+            sweep["linear"].append(abs(zl) / amp)
+            curves = {"linear": (t, lin[:, 1])}
 
-        if HAS_MATPLOTLIB:
-            fig, ax = plt.subplots(figsize=(10, 4))
-            for model, label in [("linear", "Linear hydrostatics")] + [(m, l) for m, l, _ in MODELS]:
-                if model in series:
-                    ax.plot(series[model][0], series[model][1], label=label, lw=1.0)
-            ax.set_xlim(t[-1] - 4 * 2.0 * np.pi / w, t[-1])
-            ax.set_xlabel("Time (s)")
-            ax.set_ylabel("Heave from equilibrium (m)")
-            ax.set_title(f"IEA sphere, regular waves H = {2.0 * amp:g} m, T = {2.0 * np.pi / w:g} s")
+            for model in s["models"]:
+                path = base_dir / f"{tag}_{model}_heave.txt"
+                if not path.exists():
+                    print(f"Missing result file {path}")
+                    passed = False
+                    sweep[model].append(np.nan)
+                    continue
+                data = np.loadtxt(path, comments="#")
+                tm, zm_t = data[:, 0], data[:, 1]
+                selm = tm >= tm[-1] - N_FIT_PERIODS * 2.0 * np.pi / w
+                zm, mean_m = fit_harmonic(tm[selm], zm_t[selm], w)
+                amp_err = 100.0 * (abs(zm) / abs(zl) - 1.0)
+                phase_err = float(np.degrees(np.angle(zm / zl)))
+                metrics[f"{tag}_{model}_amp_m"] = float(abs(zm))
+                metrics[f"{tag}_{model}_amp_diff_pct"] = float(amp_err)
+                metrics[f"{tag}_{model}_phase_diff_deg"] = phase_err
+                metrics[f"{tag}_{model}_mean_m"] = float(mean_m)
+                sweep[model].append(abs(zm) / amp)
+                curves[model] = (tm, zm_t)
+                check = s["checks"].get((tag, model))
+                lines.append(
+                    f"| {s['name']} | {2.0 * amp:.1f} | {abs(zl):.4f} | {LABELS[model]} | {abs(zm):.4f} | "
+                    f"{amp_err:+.3f} | {phase_err:+.3f} | {mean_m:+.4f} | {'yes' if check else 'info'} |"
+                )
+                if check:
+                    lo, hi, check_phase = check
+                    if not (lo <= amp_err <= hi) or (check_phase and abs(phase_err) > PHASE_TOL_DEG):
+                        passed = False
+
+            if HAS_MATPLOTLIB:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                for model, (tc, zc) in curves.items():
+                    ax.plot(tc, zc, label=LABELS[model], lw=1.0, color=COLORS[model])
+                ax.set_xlim(t[-1] - 4 * 2.0 * np.pi / w, t[-1])
+                ax.set_xlabel("Time (s)")
+                ax.set_ylabel("Heave from equilibrium (m)")
+                ax.set_title(f"IEA sphere, regular waves H = {2.0 * amp:g} m, "
+                             f"T = {2.0 * np.pi / w:g} s, {s['title']}")
+                ax.grid(True, alpha=0.3)
+                ax.legend(loc="upper right")
+                (base_dir / "plots").mkdir(parents=True, exist_ok=True)
+                fig.tight_layout()
+                fig.savefig(base_dir / "plots" / f"{tag}_heave_comparison.png", dpi=120)
+                plt.close(fig)
+
+    if HAS_MATPLOTLIB:
+        fig, axes = plt.subplots(1, len(SERIES), figsize=(11, 4))
+        markers = {"linear": "o-", "nonlinear": "s--", "nlfk": "^-"}
+        for ax, s in zip(axes, SERIES):
+            sweep = sweeps[s["name"]]
+            for model in ["linear"] + s["models"]:
+                if len(sweep[model]) == len(sweep["H"]):
+                    ax.plot(sweep["H"], sweep[model], markers[model], color=COLORS[model],
+                            label=LABELS[model])
+            ax.set_xlabel("Wave height H (m)")
+            ax.set_ylabel("Heave amplitude / wave amplitude (-)")
+            ax.set_title(f"IEA sphere heave, T = 8 s, {s['title']}")
             ax.grid(True, alpha=0.3)
-            ax.legend(loc="upper right")
-            (base_dir / "plots").mkdir(parents=True, exist_ok=True)
-            fig.tight_layout()
-            fig.savefig(base_dir / "plots" / f"{tag}_heave_comparison.png", dpi=120)
-            plt.close(fig)
-
-    if HAS_MATPLOTLIB and sweep["H"]:
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot(sweep["H"], sweep["linear"], "o-", label="Linear hydrostatics")
-        for model, label, _ in MODELS:
-            ax.plot(sweep["H"], sweep[model], "s--" if model == "nonlinear" else "^-", label=label)
-        ax.set_xlabel("Wave height H (m)")
-        ax.set_ylabel("Heave amplitude / wave amplitude (-)")
-        ax.set_title("IEA sphere heave, T = 8 s, no PTO")
-        ax.grid(True, alpha=0.3)
-        ax.legend()
+            ax.legend()
+        (base_dir / "plots").mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
         fig.savefig(base_dir / "plots" / "amplitude_sweep.png", dpi=120)
         plt.close(fig)
@@ -159,9 +202,10 @@ def main():
     payload = write_comparison_status(str(base_dir), TEST_NAME, metrics, passed=passed)
     if not passed:
         payload["note"] = (
-            f"Against linear: calm-water nonlinear at a = 0.1 m within {CALM_AMP_TOL_PCT:g} % amplitude, "
-            f"NL FK at H = 1 m within {NLFK_AMP_TOL_PCT:g} % amplitude, both within "
-            f"{PHASE_TOL_DEG:g} deg phase."
+            f"Against linear: calm-water nonlinear at H = 0.2 m within {CALM_AMP_TOL_PCT:g} % amplitude; "
+            f"NL FK at H = 1 m (free and PTO) and H = 0.5 m (PTO) within {NLFK_AMP_TOL_PCT:g} %; "
+            f"all within {PHASE_TOL_DEG:g} deg phase. With PTO at H = 6 m, NL FK must be "
+            f"{-GAP_MAX_PCT:g} to {-GAP_MIN_PCT:g} % below linear."
         )
         (base_dir / "status.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

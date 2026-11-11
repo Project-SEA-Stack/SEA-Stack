@@ -316,7 +316,7 @@ def main() -> int:
 	parser.add_argument("--sphere-decay-lin-5m", action="store_true", help="Run IEA sphere decay, linear hydrostatics, 5 m drop")
 	parser.add_argument("--rm3-decay-nl", action="store_true", help="Run RM3 decay, nonlinear hydrostatics (float only)")
 	parser.add_argument("--sphere-regular-nl", action="store_true", help="Run IEA sphere regular waves, nonlinear hydrostatics")
-	parser.add_argument("--sphere-regular-lin", action="store_true", help="Run IEA sphere regular waves, linear hydrostatics (twin of --sphere-regular-nl)")
+	parser.add_argument("--sphere-regular-lin", action="store_true", help="Run IEA sphere regular waves H = 6 m with optimum PTO, linear hydrostatics (twin of --sphere-regular-nlfk)")
 	parser.add_argument("--sphere-regular-nlfk", action="store_true", help="Run IEA sphere regular waves H = 6 m with optimum PTO, nonlinear Froude-Krylov")
 	args = parser.parse_args()
 
