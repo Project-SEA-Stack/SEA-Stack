@@ -235,6 +235,17 @@ seastack::hydro::HydroData H5FileInfo::ReadH5Data() {
         Init3D(userH5File, bodyName + "/hydro_coeffs/excitation/impulse_response_fun/f", temp);
         data_to_init.irreg_wave_data_[i].excitation_irf_matrix = SqueezeMid(temp);
         data_to_init.irreg_wave_data_[i].excitation_irf_matrix *= rho * g;
+        // f is stored as (dof, heading, time); keep every heading.
+        auto& irf_by_heading = data_to_init.irreg_wave_data_[i].excitation_irf_by_heading;
+        irf_by_heading.assign(static_cast<std::size_t>(temp.dimension(1)),
+                              Eigen::MatrixXd(temp.dimension(0), temp.dimension(2)));
+        for (Eigen::Index h = 0; h < temp.dimension(1); ++h) {
+            for (Eigen::Index dof = 0; dof < temp.dimension(0); ++dof) {
+                for (Eigen::Index s = 0; s < temp.dimension(2); ++s) {
+                    irf_by_heading[h](dof, s) = temp(dof, h, s) * (rho * g);
+                }
+            }
+        }
     }
 
         userH5File.close();

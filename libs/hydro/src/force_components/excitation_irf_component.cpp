@@ -12,10 +12,48 @@
 #include <seastack/hydro/hydro_data.h>
 #include <seastack/core/math_constants.h>
 
+#include <seastack/hydro/excitation_transfer.h>
+#include <seastack/infra/logging.h>
+
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace seastack::hydro {
+
+Eigen::MatrixXd SelectKernelForHeading(const std::vector<Eigen::MatrixXd>& kernels_by_heading,
+                                       const Eigen::VectorXd& bem_headings,
+                                       double direction_rad,
+                                       const Eigen::MatrixXd& fallback) {
+    const Eigen::Index n_dir = bem_headings.size();
+    if (n_dir <= 1 || static_cast<Eigen::Index>(kernels_by_heading.size()) != n_dir) {
+        if (n_dir > 1) {
+            LOG_WARNING("Excitation IRF: H5 file has " << kernels_by_heading.size()
+                        << " IRF headings but " << n_dir
+                        << " wave_dir entries; using the first heading's IRF.");
+        }
+        return fallback;
+    }
+
+    // A direction on a BEM heading uses that kernel as stored (no blending).
+    constexpr double kOnGridTolRad = 1e-9;
+    for (Eigen::Index h = 0; h < n_dir; ++h) {
+        double diff = std::fmod(direction_rad - bem_headings[h], kTwoPi);
+        if (diff < 0.0) diff += kTwoPi;
+        if (std::min(diff, kTwoPi - diff) <= kOnGridTolRad) {
+            return kernels_by_heading[h];
+        }
+    }
+
+    // Same bracket and linear weight as the frequency-domain path (Cartesian).
+    const HeadingBracket bracket = FindHeadingBracket(bem_headings, direction_rad);
+    const Eigen::MatrixXd& k_lo  = kernels_by_heading[bracket.lo];
+    const Eigen::MatrixXd& k_hi  = kernels_by_heading[bracket.hi];
+    if (k_lo.rows() != k_hi.rows() || k_lo.cols() != k_hi.cols()) {
+        throw std::runtime_error("Excitation IRF: kernels for different headings have different sizes");
+    }
+    return k_lo + bracket.frac * (k_hi - k_lo);
+}
 
 namespace {
 
@@ -65,11 +103,33 @@ ExcitationIrfComponent::ExcitationIrfComponent(
             " (possible malformed H5 file)");
     }
 
+    // The convolution uses the elevation at the origin, which carries no
+    // direction, so the kernel must be the one for the sea's heading.
+    std::optional<double> wave_direction;
+    if (const auto* comps = waves_->GetWaveComponents(); comps && !comps->empty()) {
+        wave_direction = (*comps)[0].direction;
+        for (const auto& c : *comps) {
+            if (c.direction != *wave_direction) {
+                throw std::invalid_argument(
+                    "ExcitationIrfComponent: excitation method 'irf_convolution' needs a "
+                    "long-crested sea (one wave direction), but the wave components have "
+                    "several directions. Use 'frequency_domain' or 'auto' for directional seas.");
+            }
+        }
+    }
+    const Eigen::VectorXd& bem_headings = data_.GetSimulationInfo().wave_directions;
+    if (wave_direction) {
+        WarnIfSingleHeadingMismatch(bem_headings, *wave_direction, "irf_convolution");
+    }
+
     body_irfs_.resize(num_bodies_);
     for (int b = 0; b < num_bodies_; ++b) {
         const auto& irreg = data_.GetIrregularWaveInfos()[b];
         Eigen::VectorXd tvec = irreg.excitation_irf_time;
-        Eigen::MatrixXd kmat = irreg.excitation_irf_matrix;  // 6 x Nt
+        Eigen::MatrixXd kmat = irreg.excitation_irf_matrix;  // 6 x Nt, first BEM heading
+        if (wave_direction) {
+            kmat = SelectKernelForHeading(irreg.excitation_irf_by_heading, bem_headings, *wave_direction, kmat);
+        }
 
         if (truncation_time > 0.0 && tvec.size() > 0) {
             Eigen::Index keep = tvec.size();

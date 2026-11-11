@@ -43,6 +43,27 @@ ExcitationTFData InterpolateExcitationTransfer(
     const Eigen::VectorXd& h5_wave_directions,
     ExcitationInterpolation interp_method);
 
+/// BEM headings that bracket a wave direction, with a linear weight:
+/// X(direction) = X[lo] + frac * (X[hi] - X[lo]).
+struct HeadingBracket {
+    int lo = 0;
+    int hi = 0;
+    double frac = 0.0;
+};
+
+/// Find the BEM headings that bracket `direction_rad`. Directions are in
+/// radians, counter-clockwise from +X; h5_wave_directions must be ascending.
+/// Directions outside the heading range interpolate between the last heading
+/// and the first heading + 2*pi. With zero or one heading, returns {0, 0, 0}.
+/// Used by both the frequency-domain and the IRF excitation paths.
+HeadingBracket FindHeadingBracket(const Eigen::VectorXd& h5_wave_directions, double direction_rad);
+
+/// Log a warning when the H5 file has at most one BEM heading and
+/// `direction_rad` differs from it (no wave_dir dataset counts as 0 rad).
+/// Excitation is then computed for the BEM heading, not the requested one.
+void WarnIfSingleHeadingMismatch(const Eigen::VectorXd& h5_wave_directions, double direction_rad,
+                                 const char* excitation_method);
+
 }  // namespace seastack::hydro
 
 #endif  // SEASTACK_HYDRO_EXCITATION_TRANSFER_H
