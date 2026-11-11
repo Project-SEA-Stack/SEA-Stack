@@ -52,6 +52,12 @@ bool DecodeDoubleArray(const std::string& json, size_t start,
 /// Minimal escape of a string for JSON (quotes and backslashes).
 std::string JsonEscape(const std::string& s);
 
+/// Decode a JSON string literal starting at the opening quote `json[start]`.
+/// Handles all JSON escapes (\n, \t, \", \\, \uXXXX incl. surrogate pairs →
+/// UTF-8). On success `end_pos` is one past the closing quote.
+bool DecodeJsonString(const std::string& json, size_t start,
+                      std::string& value, size_t& end_pos);
+
 /// Extract a string value for key "key" from a flat JSON object.
 bool ExtractStringField(const std::string& json, const char* key,
                         std::string& value);

@@ -37,7 +37,93 @@ bool FindKey(const std::string& json, const char* key, size_t& value_pos) {
     }
 }
 
+/// Append a Unicode code point to `out` as UTF-8.
+void AppendUtf8(unsigned long cp, std::string& out) {
+    if (cp < 0x80) {
+        out += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+        out += static_cast<char>(0xC0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+}
+
+/// Read 4 hex digits at json[pos]; returns false if malformed.
+bool ReadHex4(const std::string& json, size_t pos, unsigned long& cp) {
+    if (pos + 4 > json.size()) {
+        return false;
+    }
+    char* end_ptr = nullptr;
+    const std::string hex = json.substr(pos, 4);
+    cp = std::strtoul(hex.c_str(), &end_ptr, 16);
+    return end_ptr == hex.c_str() + 4;
+}
+
 }  // namespace
+
+bool DecodeJsonString(const std::string& json, size_t start,
+                      std::string& value, size_t& end_pos) {
+    size_t pos = start;
+    if (pos >= json.size() || json[pos] != '"') {
+        return false;
+    }
+    ++pos;
+    value.clear();
+    while (pos < json.size()) {
+        const char c = json[pos];
+        if (c == '"') {
+            end_pos = pos + 1;
+            return true;
+        }
+        if (c != '\\') {
+            value += c;
+            ++pos;
+            continue;
+        }
+        if (pos + 1 >= json.size()) {
+            return false;
+        }
+        const char e = json[pos + 1];
+        pos += 2;
+        switch (e) {
+            case 'n': value += '\n'; break;
+            case 't': value += '\t'; break;
+            case 'r': value += '\r'; break;
+            case 'b': value += '\b'; break;
+            case 'f': value += '\f'; break;
+            case 'u': {
+                unsigned long cp = 0;
+                if (!ReadHex4(json, pos, cp)) {
+                    return false;
+                }
+                pos += 4;
+                // UTF-16 surrogate pair (e.g. emoji from Python json.dumps).
+                if (cp >= 0xD800 && cp <= 0xDBFF && pos + 6 <= json.size() &&
+                    json[pos] == '\\' && json[pos + 1] == 'u') {
+                    unsigned long lo = 0;
+                    if (ReadHex4(json, pos + 2, lo) && lo >= 0xDC00 && lo <= 0xDFFF) {
+                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                        pos += 6;
+                    }
+                }
+                AppendUtf8(cp, value);
+                break;
+            }
+            default:  // '"', '\\', '/'
+                value += e;
+                break;
+        }
+    }
+    return false;
+}
 
 std::string JsonEscape(const std::string& s) {
     std::string out;
@@ -140,20 +226,8 @@ bool ExtractStringField(const std::string& json, const char* key,
     if (pos >= json.size() || json[pos] != '"') {
         return false;
     }
-    ++pos;
-    value.clear();
-    while (pos < json.size()) {
-        if (json[pos] == '\\' && pos + 1 < json.size()) {
-            value += json[pos + 1];
-            pos += 2;
-            continue;
-        }
-        if (json[pos] == '"') {
-            return true;
-        }
-        value += json[pos++];
-    }
-    return false;
+    size_t end_pos = 0;
+    return DecodeJsonString(json, pos, value, end_pos);
 }
 
 bool ExtractIntField(const std::string& json, const char* key, int& value) {

@@ -85,6 +85,20 @@ int main(int argc, char** argv) {
         TEST_NEAR(out[0], -100.0, 1e-12, "out[0]");
     }
 
+    // Error messages keep their escapes (multi-line Python tracebacks).
+    {
+        std::string status;
+        std::string message;
+        TEST_ASSERT(seastack::external::protocol::ParseStatusReply(
+                        "{\"status\":\"error\",\"message\":"
+                        "\"line 1\\n\\tline \\\"2\\\" C:\\\\x \\u00b0 \\ud83d\\ude00\"}",
+                        status, message),
+                    "parse error status with escapes");
+        TEST_ASSERT(status == "error", "status is error");
+        TEST_ASSERT(message == "line 1\n\tline \"2\" C:\\x \xC2\xB0 \xF0\x9F\x98\x80",
+                    "escapes decoded (\\n, \\t, \\\", \\\\, \\u00b0, surrogate pair)");
+    }
+
     // --- Full IPC round-trip with spawned mock module ---
     {
         seastack::external::IpcExternalForceOptions opts;
