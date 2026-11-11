@@ -567,6 +567,8 @@ if [[ "${DO_PACKAGE}" -eq 1 ]]; then
     echo "[FAIL] release install prefix verification failed (see scripts/verify_release_install_prefix.py)" >&2
     exit 1
   fi
+  # Remove stale ZIPs so the contents check below inspects this build's package.
+  rm -f "${BUILD_DIR}"/SEAStack-*.zip
   if ! run_captured "CPack" bash -c "cd \"${BUILD_DIR}\" && cpack -C \"${BUILD_TYPE}\""; then
     echo "[FAIL] cpack failed" >&2
     exit 1
@@ -574,11 +576,24 @@ if [[ "${DO_PACKAGE}" -eq 1 ]]; then
   shopt -s nullglob
   pkgs=("${BUILD_DIR}"/SEAStack-*.zip)
   shopt -u nullglob
-  pkg=""
-  [[ "${#pkgs[@]}" -gt 0 ]] && pkg="${pkgs[0]}"
-  if [[ -n "${pkg}" ]]; then
-    echo "   [OK] $(basename "${pkg}")"
+  if [[ "${#pkgs[@]}" -eq 0 ]]; then
+    echo "[FAIL] cpack did not produce ${BUILD_DIR}/SEAStack-*.zip" >&2
+    exit 1
   fi
+  pkg="${pkgs[0]}"
+  echo "   [OK] $(basename "${pkg}")"
+  # Fail the build if the ZIP does not match the expected release contents
+  # (demo allowlist, executables, forbidden files such as run outputs).
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    pkg_platform="darwin"
+  else
+    pkg_platform="linux-x64"
+  fi
+  if ! python3 "${REPO_ROOT}/scripts/check_package_contents.py" "${pkg}" --platform "${pkg_platform}" 2>&1 | tee -a "${DIAG_LOG}"; then
+    echo "[FAIL] package contents check failed (see scripts/check_package_contents.py output above)" >&2
+    exit 1
+  fi
+  echo "   [OK] package contents match the release allowlist"
 fi
 
 echo ""

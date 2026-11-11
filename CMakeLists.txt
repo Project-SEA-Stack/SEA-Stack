@@ -910,27 +910,92 @@ install(DIRECTORY ${SEASTACK_BUILD_DATA}/chrono/ DESTINATION data/chrono COMPONE
 # above; the packaged app only needs demos/.
 # Wigley cases stay in the source tree for developers but are omitted from the
 # distribution package (trimaran covers a richer multi-hull Wigley-style example).
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/data/demos/run_seastack/
-        DESTINATION demos COMPONENT runtime
-        REGEX "/wigley(/|$)"         EXCLUDE
-        # Omit redundant cases from the release ZIP (full tree remains in the source repo).
-        REGEX "rm3/regular_waves"    EXCLUDE
-        REGEX "f3of/decay_dt1"     EXCLUDE
-        REGEX "f3of/decay_dt2"     EXCLUDE
-        PATTERN "compare_rirfs.py"   EXCLUDE
-        PATTERN "*.pyc"              EXCLUDE
-        PATTERN "__pycache__"        EXCLUDE
-        PATTERN "*.nc"               EXCLUDE
-        PATTERN "*.nemoh"            EXCLUDE
-        PATTERN "meshes"             EXCLUDE
-        PATTERN "outputs"            EXCLUDE
-        # Local run artifacts (e.g. MoorDyn .log/.out written next to line files).
-        PATTERN "*.log"              EXCLUDE
-        PATTERN "*.out"              EXCLUDE
-        PATTERN "_visual_native_linpto" EXCLUDE
-        PATTERN "_visual_native_rsda" EXCLUDE
-        PATTERN "_regression_native_linpto" EXCLUDE
-        PATTERN ".gitignore"         EXCLUDE)
+#
+# Only git-tracked files are installed, so untracked or ignored local directories
+# (work-in-progress demos, run outputs) can never reach a release package. The
+# file list is taken at configure time: reconfigure after adding a new demo.
+# Outside a git checkout (e.g. a source archive) the whole directory is installed
+# with the same excludes, and a warning is printed.
+set(_seastack_demo_root "${CMAKE_SOURCE_DIR}/data/demos/run_seastack")
+set(_seastack_demo_files "")
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -c core.quotepath=off ls-files -- data/demos/run_seastack
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RESULT_VARIABLE _seastack_git_result
+        OUTPUT_VARIABLE _seastack_git_output
+        ERROR_QUIET
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(_seastack_git_result EQUAL 0 AND NOT _seastack_git_output STREQUAL "")
+        string(REPLACE "\n" ";" _seastack_demo_files "${_seastack_git_output}")
+    endif()
+endif()
+
+if(_seastack_demo_files)
+    # Same exclusions as the directory install below, applied to paths relative
+    # to data/demos/run_seastack/.
+    list(TRANSFORM _seastack_demo_files REPLACE "^data/demos/run_seastack/" "")
+    foreach(_seastack_demo_exclude
+            "(^|/)wigley(/|$)"
+            # Omit redundant cases from the release ZIP (full tree remains in the source repo).
+            "rm3/regular_waves"
+            "f3of/decay_dt1"
+            "f3of/decay_dt2"
+            "(^|/)compare_rirfs\\.py$"
+            "\\.pyc$"
+            "(^|/)__pycache__/"
+            "\\.nc$"
+            "\\.nemoh$"
+            "(^|/)meshes/"
+            "(^|/)outputs/"
+            # Local run artifacts (e.g. MoorDyn .log/.out written next to line files).
+            "\\.log$"
+            "\\.out$"
+            "(^|/)_visual_native_linpto/"
+            "(^|/)_visual_native_rsda/"
+            "(^|/)_regression_native_linpto/"
+            "(^|/)\\.gitignore$")
+        list(FILTER _seastack_demo_files EXCLUDE REGEX "${_seastack_demo_exclude}")
+    endforeach()
+    foreach(_seastack_demo_file IN LISTS _seastack_demo_files)
+        if(NOT EXISTS "${_seastack_demo_root}/${_seastack_demo_file}")
+            message(FATAL_ERROR
+                "Tracked demo file is missing from the working tree: "
+                "data/demos/run_seastack/${_seastack_demo_file}. Restore it (git checkout) "
+                "or commit its removal before packaging.")
+        endif()
+        get_filename_component(_seastack_demo_dir "${_seastack_demo_file}" DIRECTORY)
+        install(FILES "${_seastack_demo_root}/${_seastack_demo_file}"
+                DESTINATION "demos/${_seastack_demo_dir}" COMPONENT runtime)
+    endforeach()
+    list(LENGTH _seastack_demo_files _seastack_demo_count)
+    message(STATUS "Release demos: ${_seastack_demo_count} git-tracked files from data/demos/run_seastack/")
+else()
+    message(WARNING
+        "git ls-files is unavailable (not a git checkout?). Installing every file under "
+        "data/demos/run_seastack/, including untracked ones. Release packages must be "
+        "built from a git checkout.")
+    install(DIRECTORY ${_seastack_demo_root}/
+            DESTINATION demos COMPONENT runtime
+            REGEX "/wigley(/|$)"         EXCLUDE
+            REGEX "rm3/regular_waves"    EXCLUDE
+            REGEX "f3of/decay_dt1"     EXCLUDE
+            REGEX "f3of/decay_dt2"     EXCLUDE
+            PATTERN "compare_rirfs.py"   EXCLUDE
+            PATTERN "*.pyc"              EXCLUDE
+            PATTERN "__pycache__"        EXCLUDE
+            PATTERN "*.nc"               EXCLUDE
+            PATTERN "*.nemoh"            EXCLUDE
+            PATTERN "meshes"             EXCLUDE
+            PATTERN "outputs"            EXCLUDE
+            PATTERN "*.log"              EXCLUDE
+            PATTERN "*.out"              EXCLUDE
+            PATTERN "_visual_native_linpto" EXCLUDE
+            PATTERN "_visual_native_rsda" EXCLUDE
+            PATTERN "_regression_native_linpto" EXCLUDE
+            PATTERN ".gitignore"         EXCLUDE)
+endif()
 
 # External-PTO Python tooling. The demo cases (demos/**/external_pto*) are plain
 # data and ship unconditionally via the install(DIRECTORY) above, but they only

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check a SEA-Stack runtime ZIP against the expected v1.0 package contents.
+"""Check a SEA-Stack runtime ZIP against the expected release package contents.
 
 Usage:
   python scripts/check_package_contents.py <SEAStack-*.zip> --platform {win64,linux-x64,darwin}
