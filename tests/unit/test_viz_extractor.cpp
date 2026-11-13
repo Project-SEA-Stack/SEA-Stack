@@ -3,11 +3,13 @@
 #include <seastack/adapters/chrono/viz_extractor.h>
 
 #include <chrono/assets/ChVisualShapeBox.h>
+#include <chrono/assets/ChVisualShapePointPoint.h>
 #include <chrono/assets/ChVisualShapeSphere.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/geometry/ChTriangleMeshConnected.h>
 #include <chrono/physics/ChBody.h>
 #include <chrono/physics/ChBodyAuxRef.h>
+#include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChSystemNSC.h>
 
 #include "test_macros.h"
@@ -114,6 +116,49 @@ int main() {
     TEST_NEAR(frame.bodies[0].pose.position[0], 11.0, 1e-12, "capture tracks body motion");
     TEST_NEAR(frame.mooring_lines[0].node_positions[1][2], -12.0, 1e-12, "capture tracks mooring");
     TEST_NEAR(system.GetChTime(), t_before, 0.0, "capture does not advance time");
+
+    // TSDA with a SEGMENT visual is exported as a 2-node overlay line after
+    // MoorDyn lines; a TSDA without a visual is ignored (station-keeping).
+    {
+        ::chrono::ChSystemNSC cable_sys;
+        auto a = chrono_types::make_shared<::chrono::ChBody>();
+        a->SetName("a");
+        a->SetPos({0.0, 0.0, 10.0});
+        a->SetFixed(true);
+        cable_sys.AddBody(a);
+        auto b = chrono_types::make_shared<::chrono::ChBody>();
+        b->SetName("b");
+        b->SetPos({0.0, 0.0, 0.0});
+        b->SetFixed(true);
+        cable_sys.AddBody(b);
+
+        auto hoist = chrono_types::make_shared<::chrono::ChLinkTSDA>();
+        hoist->SetName("hoist");
+        hoist->Initialize(a, b, false, {0.0, 0.0, 10.0}, {0.0, 0.0, 0.0});
+        hoist->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeSegment>());
+        cable_sys.AddLink(hoist);
+
+        auto hidden = chrono_types::make_shared<::chrono::ChLinkTSDA>();
+        hidden->SetName("station_keeping");
+        hidden->Initialize(a, b, false, {1.0, 0.0, 0.0}, {1.0, 0.0, 0.0});
+        cable_sys.AddLink(hidden);
+
+        VizExtractor cable_ex(&cable_sys);
+        TEST_ASSERT(cable_ex.Scene().cable_lines.size() == 1, "only visualised TSDA becomes a cable line");
+        TEST_ASSERT(cable_ex.Scene().cable_lines[0].kind == CableKind::kSegment, "SEGMENT glyph");
+        TEST_ASSERT(cable_ex.Scene().mooring_lines.empty(), "TSDA cables are not MoorDyn lines");
+        VizFrame cable_frame = cable_ex.Capture(0);
+        TEST_ASSERT(IsConsistent(cable_ex.Scene(), cable_frame), "cable frame matches scene");
+        TEST_NEAR(cable_frame.cable_lines[0].point1[2], 10.0, 1e-12, "cable endpoint 1");
+        TEST_NEAR(cable_frame.cable_lines[0].point2[2], 0.0, 1e-12, "cable endpoint 2");
+
+        b->SetPos({0.0, 0.0, -2.0});
+        // Re-initialise absolute points after moving a fixed body, as Chrono
+        // would during a step for a free payload.
+        hoist->Initialize(a, b, false, {0.0, 0.0, 10.0}, {0.0, 0.0, -2.0});
+        cable_frame = cable_ex.Capture(1);
+        TEST_NEAR(cable_frame.cable_lines[0].point2[2], -2.0, 1e-12, "cable tracks endpoint motion");
+    }
 
     test_results.Summary();
     return test_results.failed > 0 ? 1 : 0;

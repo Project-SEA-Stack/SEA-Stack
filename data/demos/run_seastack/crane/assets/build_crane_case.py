@@ -587,6 +587,8 @@ model:
       spring_coefficient: 0.0
       damping_coefficient: 0.0
       free_length: {L['rest0']:.4f}
+      visualization:
+        type: SEGMENT  # hoist rope line (Chrono + SEA-Stack viewers)
 
   # DP heading-hold proxy (torsional spring about world +z at CoG).
   rsdas:

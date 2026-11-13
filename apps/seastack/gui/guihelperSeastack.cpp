@@ -128,6 +128,19 @@ void GUIImplSeastack::UpdateMooring(const VizFrame& frame) {
     mooring_options.tension_max = options_.mooring_tension_max;
     DrawMooringLines(mooring_viz_.get(), viewer_.get(), mooring_group_, extractor_->Scene(), frame, model_bounds_,
                      mooring_options, viewer_settings_->show_mooring_colors);
+    if (!tsda_segment_viz_) {
+        tsda_segment_viz_ = std::make_unique<MooringLinesViz>();
+        tsda_barrel_viz_ = std::make_unique<MooringLinesViz>();
+        tsda_rod_viz_ = std::make_unique<MooringLinesViz>();
+        tsda_spring_viz_ = std::make_unique<MooringLinesViz>();
+    }
+    // SEGMENT = thin cable; SPRING = hydraulic ram (barrel + rod + spring).
+    TsdaGlyphRenderers glyphs;
+    glyphs.segments = tsda_segment_viz_.get();
+    glyphs.barrels = tsda_barrel_viz_.get();
+    glyphs.rods = tsda_rod_viz_.get();
+    glyphs.springs = tsda_spring_viz_.get();
+    DrawTsdaCables(glyphs, viewer_.get(), mooring_group_, extractor_->Scene(), frame);
 }
 
 void GUIImplSeastack::SetMooringLineProvider(MooringVizProvider provider) {

@@ -135,7 +135,7 @@ def build_yaml():
                 "free_length": FREE_LENGTH,
                 "visualization": {
                 "type": "SPRING",
-                "radius": 0.15,
+                "radius": 0.25,  # hydraulic-ram barrel radius [m]
                 "resolution": 65,
                 "turns": 10,
             },

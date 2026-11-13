@@ -104,9 +104,22 @@ struct MooringLineDescription {
     MooringEndType end_type = MooringEndType::kFree;
 };
 
+/// Chrono TSDA point-point visual (YAML `visualization: { type: SEGMENT | SPRING }`).
+enum class CableKind { kSegment, kSpring };
+
+struct CableLineDescription {
+    CableKind kind = CableKind::kSegment;
+    /// SPRING coil radius [m]; unused for SEGMENT.
+    double spring_radius = 0.05;
+    int spring_resolution = 65;   ///< Helix sample count for SPRING
+    double spring_turns = 5.0;    ///< Helix turns for SPRING
+};
+
 struct SceneDescription {
     std::vector<BodyDescription> bodies;
     std::vector<MooringLineDescription> mooring_lines;
+    /// Hoist ropes / PTO springs (Chrono TSDA visuals); separate from MoorDyn.
+    std::vector<CableLineDescription> cable_lines;
     Bounds3 model_bounds;     ///< World bounds of all bodies at build time [m]
     double gravity = 9.81;    ///< [m/s^2]
     double water_depth = 0.0; ///< [m]; <= 0 = deep / unknown
@@ -124,19 +137,27 @@ struct MooringLineState {
     std::vector<double> node_tensions;   ///< Tension magnitude per node [N]
 };
 
-/// State at one simulated instant. Index i in bodies / mooring_lines matches
-/// the same index in the SceneDescription.
+struct CableLineState {
+    Vec3 point1{0.0, 0.0, 0.0};  ///< World endpoint 1 [m]
+    Vec3 point2{0.0, 0.0, 0.0};  ///< World endpoint 2 [m]
+    double tension = 0.0;        ///< |force| [N]; optional colouring
+};
+
+/// State at one simulated instant. Index i in bodies / mooring_lines /
+/// cable_lines matches the same index in the SceneDescription.
 struct VizFrame {
     double time = 0.0;      ///< Simulated time [s]
     int64_t step = 0;       ///< Physics step count at this frame
     std::vector<BodyState> bodies;
     std::vector<MooringLineState> mooring_lines;
+    std::vector<CableLineState> cable_lines;
 };
 
 /// True if the frame's arrays match the description's sizes.
 inline bool IsConsistent(const SceneDescription& scene, const VizFrame& frame) {
     if (frame.bodies.size() != scene.bodies.size() ||
-        frame.mooring_lines.size() != scene.mooring_lines.size()) {
+        frame.mooring_lines.size() != scene.mooring_lines.size() ||
+        frame.cable_lines.size() != scene.cable_lines.size()) {
         return false;
     }
     for (size_t i = 0; i < frame.mooring_lines.size(); ++i) {

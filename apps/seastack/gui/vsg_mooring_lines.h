@@ -147,4 +147,19 @@ void DrawMooringLines(MooringLinesViz* viz, OverlayBuilder* builder, vsg::ref_pt
                       const SceneDescription& scene, const VizFrame& frame, const Bounds3& model_bounds,
                       const MooringVizOptions& options, bool color_enabled);
 
+/// Renderers for Blender-style TSDA glyphs (separate radii: barrel ≠ rod ≠ coil).
+struct TsdaGlyphRenderers {
+    MooringLinesViz* segments = nullptr;  ///< Thin hoist / winch cables (SEGMENT)
+    MooringLinesViz* barrels = nullptr;   ///< Hydraulic ram barrels (SPRING)
+    MooringLinesViz* rods = nullptr;      ///< Piston rods (SPRING)
+    MooringLinesViz* springs = nullptr;   ///< Return-spring coils on the exposed rod
+};
+
+/// SEA-Stack viewer TSDA glyphs: SEGMENT = thin cable; SPRING = hydraulic ram
+/// (barrel + rod + spring coil). Solid colour, no tension mapping. Chrono
+/// viewer should skip this and use its native point-point draw instead.
+void DrawTsdaCables(const TsdaGlyphRenderers& glyphs, OverlayBuilder* builder,
+                    vsg::ref_ptr<vsg::Group> parent_group, const SceneDescription& scene,
+                    const VizFrame& frame);
+
 }  // namespace seastack::viz

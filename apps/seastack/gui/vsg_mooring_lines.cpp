@@ -527,4 +527,145 @@ void DrawMooringLines(MooringLinesViz* viz, OverlayBuilder* builder, vsg::ref_pt
     viz->Update(line_data, color_enabled);
 }
 
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+
+Vec3 Lerp(const Vec3& a, const Vec3& b, double t) {
+    return {a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), a[2] + t * (b[2] - a[2])};
+}
+
+double LengthBetween(const Vec3& a, const Vec3& b) {
+    const double dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+    return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+/// Helix samples between p1 and p2 (coil about the segment axis).
+std::vector<std::array<double, 3>> SampleSpringHelix(const Vec3& p1, const Vec3& p2, double coil_radius,
+                                                     int resolution, double turns) {
+    const int n = std::max(resolution, 3);
+    const double length = LengthBetween(p1, p2);
+    if (length < 1e-9) {
+        return {{p1[0], p1[1], p1[2]}, {p2[0], p2[1], p2[2]}};
+    }
+    Vec3 axis{(p2[0] - p1[0]) / length, (p2[1] - p1[1]) / length, (p2[2] - p1[2]) / length};
+    const Vec3 ref = (std::abs(axis[2]) < 0.9) ? Vec3{0.0, 0.0, 1.0} : Vec3{1.0, 0.0, 0.0};
+    Vec3 u{ref[1] * axis[2] - ref[2] * axis[1], ref[2] * axis[0] - ref[0] * axis[2],
+           ref[0] * axis[1] - ref[1] * axis[0]};
+    const double ulen = std::sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+    if (ulen < 1e-12) {
+        u = {1.0, 0.0, 0.0};
+    } else {
+        u[0] /= ulen;
+        u[1] /= ulen;
+        u[2] /= ulen;
+    }
+    const Vec3 v{axis[1] * u[2] - axis[2] * u[1], axis[2] * u[0] - axis[0] * u[2],
+                 axis[0] * u[1] - axis[1] * u[0]};
+
+    std::vector<std::array<double, 3>> pts;
+    pts.reserve(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(n - 1);
+        const double phase = turns * 2.0 * kPi * t;
+        const double cs = std::cos(phase);
+        const double sn = std::sin(phase);
+        pts.push_back({p1[0] + t * length * axis[0] + coil_radius * (cs * u[0] + sn * v[0]),
+                       p1[1] + t * length * axis[1] + coil_radius * (cs * u[1] + sn * v[1]),
+                       p1[2] + t * length * axis[2] + coil_radius * (cs * u[2] + sn * v[2])});
+    }
+    return pts;
+}
+
+MooringLineVizData MakeSegment(const Vec3& a, const Vec3& b) {
+    MooringLineVizData line;
+    line.node_positions = {{a[0], a[1], a[2]}, {b[0], b[1], b[2]}};
+    line.start_point_type = MooringPointType::kCoupled;
+    line.end_point_type = MooringPointType::kCoupled;
+    return line;
+}
+
+void DrawTubeSet(MooringLinesViz* viz, OverlayBuilder* builder, vsg::ref_ptr<vsg::Group> parent_group,
+                 const std::vector<MooringLineVizData>& lines, double tube_radius) {
+    if (!viz || lines.empty()) {
+        return;
+    }
+    if (!viz->IsInitializedFor(builder)) {
+        viz->SetVisualizationRadii(tube_radius, 0.0, 0.0);
+        viz->Initialize(builder, lines, parent_group);
+    }
+    viz->Update(lines, /*color_enabled=*/false);
+}
+
+/// Barrel outer radius [m] for a hydraulic-ram glyph.
+double RamBarrelRadius(const CableLineDescription& desc, double length) {
+    // Prefer the YAML spring radius; a light floor so short rams still read.
+    return std::clamp(std::max(desc.spring_radius, 0.05 * length), 0.04, 0.35);
+}
+
+}  // namespace
+
+void DrawTsdaCables(const TsdaGlyphRenderers& glyphs, OverlayBuilder* builder,
+                    vsg::ref_ptr<vsg::Group> parent_group, const SceneDescription& scene,
+                    const VizFrame& frame) {
+    if (!builder || frame.cable_lines.empty() || frame.cable_lines.size() != scene.cable_lines.size()) {
+        return;
+    }
+
+    std::vector<MooringLineVizData> segments;
+    std::vector<MooringLineVizData> barrels;
+    std::vector<MooringLineVizData> rods;
+    std::vector<MooringLineVizData> springs;
+    double segment_r = 0.06;
+    double barrel_r = 0.12;
+    double rod_r = 0.05;
+    double spring_wire_r = 0.03;
+
+    for (size_t i = 0; i < frame.cable_lines.size(); ++i) {
+        const CableLineDescription& desc = scene.cable_lines[i];
+        const CableLineState& state = frame.cable_lines[i];
+        const double length = LengthBetween(state.point1, state.point2);
+        if (length < 1e-6) {
+            continue;
+        }
+
+        if (desc.kind == CableKind::kSegment) {
+            segment_r = std::max(segment_r, std::clamp(0.01 * length, 0.06, 0.18));
+            segments.push_back(MakeSegment(state.point1, state.point2));
+            continue;
+        }
+
+        // Hydraulic ram: barrel on the first ~55%, rod to the far end, spring
+        // coil around the exposed rod (Blender-style actuator look).
+        // Endpoints follow the TSDA exactly — no per-frame visual offset (that
+        // swam as the articulated body moved).
+        const double R = RamBarrelRadius(desc, length);
+        barrel_r = std::max(barrel_r, R);
+        rod_r = std::max(rod_r, 0.32 * R);
+        spring_wire_r = std::max(spring_wire_r, std::clamp(0.10 * R, 0.012, 0.045));
+
+        const Vec3& p1 = state.point1;
+        const Vec3& p2 = state.point2;
+        constexpr double kBarrelFrac = 0.55;
+        const Vec3 barrel_end = Lerp(p1, p2, kBarrelFrac);
+        // Rod starts slightly inside the barrel so the joint reads as continuous.
+        const Vec3 rod_start = Lerp(p1, p2, kBarrelFrac - 0.06);
+
+        barrels.push_back(MakeSegment(p1, barrel_end));
+        rods.push_back(MakeSegment(rod_start, p2));
+        // Denser helix than the YAML resolution so the coil reads smooth.
+        const int helix_samples = std::max(desc.spring_resolution * 2, 48);
+        springs.push_back({});
+        springs.back().node_positions =
+            SampleSpringHelix(barrel_end, p2, 0.72 * R, helix_samples, desc.spring_turns);
+        springs.back().start_point_type = MooringPointType::kCoupled;
+        springs.back().end_point_type = MooringPointType::kCoupled;
+    }
+
+    DrawTubeSet(glyphs.segments, builder, parent_group, segments, segment_r);
+    DrawTubeSet(glyphs.barrels, builder, parent_group, barrels, barrel_r);
+    DrawTubeSet(glyphs.rods, builder, parent_group, rods, rod_r);
+    DrawTubeSet(glyphs.springs, builder, parent_group, springs, spring_wire_r);
+}
+
 }  // namespace seastack::viz

@@ -157,6 +157,11 @@ class GUIImplSeastack : public GUIImpl {
     std::unique_ptr<SeastackGuiComponent> gui_;
     MooringVizProvider mooring_provider_;
     std::unique_ptr<MooringLinesViz> mooring_viz_;
+    /// Blender-style TSDA glyphs: thin SEGMENT cables + SPRING hydraulic rams.
+    std::unique_ptr<MooringLinesViz> tsda_segment_viz_;
+    std::unique_ptr<MooringLinesViz> tsda_barrel_viz_;
+    std::unique_ptr<MooringLinesViz> tsda_rod_viz_;
+    std::unique_ptr<MooringLinesViz> tsda_spring_viz_;
     /// Drawn before the water so opaque lines show through the translucent surface.
     vsg::ref_ptr<vsg::Group> mooring_group_;
     double mooring_line_radius_m_ = -1.0;         ///< YAML override [m]; < 0 = model-scaled default

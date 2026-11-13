@@ -2,12 +2,15 @@
 
 #include <chrono/assets/ChVisualShapeBox.h>
 #include <chrono/assets/ChVisualShapeCylinder.h>
+#include <chrono/assets/ChVisualShapePointPoint.h>
 #include <chrono/assets/ChVisualShapeSphere.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/physics/ChBody.h>
+#include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChSystem.h>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace seastack::chrono {
@@ -147,6 +150,32 @@ viz::BodyDescription DescribeBody(const ::chrono::ChBody& body) {
     return desc;
 }
 
+/// First Chrono SEGMENT/SPRING on the TSDA, if any; fills out->kind and spring params.
+bool DescribeCableVisual(const ::chrono::ChLinkTSDA& tsda, viz::CableLineDescription* out) {
+    auto model = tsda.GetVisualModel();
+    if (!model || !out) {
+        return false;
+    }
+    for (const auto& instance : model->GetShapeInstances()) {
+        if (!instance.shape) {
+            continue;
+        }
+        if (auto spring = std::dynamic_pointer_cast<::chrono::ChVisualShapeSpring>(instance.shape)) {
+            out->kind = viz::CableKind::kSpring;
+            out->spring_radius = spring->GetRadius();
+            out->spring_resolution = spring->GetResolution();
+            out->spring_turns = spring->GetTurns();
+            return true;
+        }
+        if (std::dynamic_pointer_cast<::chrono::ChVisualShapeSegment>(instance.shape) ||
+            std::dynamic_pointer_cast<::chrono::ChVisualShapePointPoint>(instance.shape)) {
+            out->kind = viz::CableKind::kSegment;
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 bool IsWaterSurfaceBody(const ::chrono::ChBody& body) {
@@ -163,6 +192,25 @@ VizExtractor::VizExtractor(::chrono::ChSystem* system, viz::MooringVizProvider m
             }
             bodies_.push_back(body);
             scene_.bodies.push_back(DescribeBody(*body));
+        }
+        // Hoist ropes / winch cables / PTO springs. Prefer YAML SEGMENT/SPRING
+        // visuals; otherwise draw a straight cable when the endpoints are a
+        // real distance apart (skips zero-length station-keeping TSDAs).
+        for (const auto& link : system_->GetLinks()) {
+            auto tsda = std::dynamic_pointer_cast<::chrono::ChLinkTSDA>(link);
+            if (!tsda) {
+                continue;
+            }
+            viz::CableLineDescription desc;
+            if (!DescribeCableVisual(*tsda, &desc)) {
+                const ::chrono::ChVector3d d = tsda->GetPoint2Abs() - tsda->GetPoint1Abs();
+                if (d.Length() < 0.05) {
+                    continue;  // station-keeping / coincident anchors
+                }
+                desc.kind = viz::CableKind::kSegment;
+            }
+            tsda_cables_.push_back(std::move(tsda));
+            scene_.cable_lines.push_back(desc);
         }
     }
     // Model bounds from the first frame, so they match what is drawn.
@@ -188,11 +236,11 @@ void VizExtractor::SetMooringProvider(viz::MooringVizProvider mooring) {
 }
 
 viz::VizFrame VizExtractor::Capture(int64_t step) {
-    std::vector<viz::MooringLineVizData> lines;
+    std::vector<viz::MooringLineVizData> provider_lines;
     if (mooring_) {
-        lines = mooring_();
-        if (scene_.mooring_lines.empty()) {
-            for (const auto& line : lines) {
+        provider_lines = mooring_();
+        if (scene_.mooring_lines.empty() && !provider_lines.empty()) {
+            for (const auto& line : provider_lines) {
                 viz::MooringLineDescription desc;
                 desc.num_nodes = static_cast<int>(line.node_positions.size());
                 desc.start_type = static_cast<viz::MooringEndType>(static_cast<int>(line.start_point_type));
@@ -215,16 +263,24 @@ viz::VizFrame VizExtractor::Capture(int64_t step) {
         frame.bodies.push_back(state);
     }
     if (!scene_.mooring_lines.empty()) {
-        const size_t n = std::min(lines.size(), scene_.mooring_lines.size());
+        const size_t n = std::min(provider_lines.size(), scene_.mooring_lines.size());
         frame.mooring_lines.resize(scene_.mooring_lines.size());
         for (size_t i = 0; i < n; ++i) {
             auto& out = frame.mooring_lines[i];
-            out.node_positions.reserve(lines[i].node_positions.size());
-            for (const auto& p : lines[i].node_positions) {
+            out.node_positions.reserve(provider_lines[i].node_positions.size());
+            for (const auto& p : provider_lines[i].node_positions) {
                 out.node_positions.push_back({p[0], p[1], p[2]});
             }
-            out.node_tensions = lines[i].node_tensions;
+            out.node_tensions = provider_lines[i].node_tensions;
         }
+    }
+    frame.cable_lines.resize(tsda_cables_.size());
+    for (size_t i = 0; i < tsda_cables_.size(); ++i) {
+        const auto& tsda = tsda_cables_[i];
+        auto& out = frame.cable_lines[i];
+        out.point1 = ToVec3(tsda->GetPoint1Abs());
+        out.point2 = ToVec3(tsda->GetPoint2Abs());
+        out.tension = std::abs(tsda->GetForce());
     }
     return frame;
 }
