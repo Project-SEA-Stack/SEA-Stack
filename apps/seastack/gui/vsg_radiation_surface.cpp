@@ -180,9 +180,19 @@ void RadiationSurfaceViz::SetSourceState(const std::string& body_id,
     sample.ang_vel_x = ang_vel.x();  // Roll rate (rotation about X)
     sample.ang_vel_y = ang_vel.y();  // Pitch rate (rotation about Y)
 
-    // Ensure monotonic time (reset history if time went backwards).
-    if (!source.history.empty() && t <= source.history.back().time) {
-        source.history.clear();
+    // The GUI often paints several times at the same simulation time (paused,
+    // or waiting on real-time). Clearing the history then left a single sample,
+    // so every retarded-time lookup fell before it and the radiated patch
+    // dropped to zero for a frame — visible as flicker. Refresh the latest
+    // sample in place when time has not advanced; only clear on a true rewind.
+    if (!source.history.empty()) {
+        const double t_last = source.history.back().time;
+        if (t < t_last - 1e-12) {
+            source.history.clear();
+        } else if (t <= t_last) {
+            source.history.back() = sample;
+            return;
+        }
     }
 
     source.history.push_back(sample);
