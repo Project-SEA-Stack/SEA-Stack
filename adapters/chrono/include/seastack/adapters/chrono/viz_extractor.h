@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace chrono {
@@ -54,5 +55,12 @@ class VizExtractor {
 
 /// True for helper bodies that carry the visual water surface, not a model body.
 bool IsWaterSurfaceBody(const ::chrono::ChBody& body);
+
+/// Visual content of `system` that VizExtractor cannot export, so the
+/// SEA-Stack viewer would not show it: body shapes other than box, sphere,
+/// cylinder and triangle mesh; FEA meshes; visual shapes on links other than
+/// TSDA SEGMENT/SPRING glyphs; other physics items with visual shapes. Each
+/// entry is a short description for the user; empty = everything is drawable.
+std::vector<std::string> FindUndrawableItems(const ::chrono::ChSystem& system);
 
 }  // namespace seastack::chrono

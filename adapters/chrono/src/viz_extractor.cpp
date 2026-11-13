@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <typeinfo>
 #include <utility>
 
 namespace seastack::chrono {
@@ -180,6 +182,61 @@ bool DescribeCableVisual(const ::chrono::ChLinkTSDA& tsda, viz::CableLineDescrip
 
 bool IsWaterSurfaceBody(const ::chrono::ChBody& body) {
     return body.GetName() == "water_surface" || body.GetName() == "animated_water_surface";
+}
+
+namespace {
+
+bool IsDrawableBodyShape(const std::shared_ptr<::chrono::ChVisualShape>& shape) {
+    return std::dynamic_pointer_cast<::chrono::ChVisualShapeBox>(shape) ||
+           std::dynamic_pointer_cast<::chrono::ChVisualShapeSphere>(shape) ||
+           std::dynamic_pointer_cast<::chrono::ChVisualShapeCylinder>(shape) ||
+           std::dynamic_pointer_cast<::chrono::ChVisualShapeTriangleMesh>(shape);
+}
+
+bool HasVisualShapes(const ::chrono::ChPhysicsItem& item) {
+    const auto model = item.GetVisualModel();
+    return model && model->GetNumShapes() > 0;
+}
+
+std::string ItemName(const ::chrono::ChObj& item, const char* kind) {
+    return item.GetName().empty() ? std::string("unnamed ") + kind
+                                  : std::string(kind) + " '" + item.GetName() + "'";
+}
+
+}  // namespace
+
+std::vector<std::string> FindUndrawableItems(const ::chrono::ChSystem& system) {
+    std::vector<std::string> items;
+    for (const auto& body : system.GetBodies()) {
+        if (!body || IsWaterSurfaceBody(*body) || !body->GetVisualModel()) {
+            continue;
+        }
+        for (const auto& instance : body->GetVisualModel()->GetShapeInstances()) {
+            if (instance.shape && !IsDrawableBodyShape(instance.shape)) {
+                const ::chrono::ChVisualShape& shape = *instance.shape;
+                items.push_back(ItemName(*body, "body") + ": " + typeid(shape).name());
+            }
+        }
+    }
+    for (const auto& link : system.GetLinks()) {
+        if (!link || !HasVisualShapes(*link)) {
+            continue;
+        }
+        auto tsda = std::dynamic_pointer_cast<::chrono::ChLinkTSDA>(link);
+        viz::CableLineDescription unused;
+        if (!tsda || !DescribeCableVisual(*tsda, &unused)) {
+            items.push_back(ItemName(*link, "link") + " visual");
+        }
+    }
+    if (!system.GetMeshes().empty()) {
+        items.push_back(std::to_string(system.GetMeshes().size()) + " FEA mesh(es)");
+    }
+    for (const auto& item : system.GetOtherPhysicsItems()) {
+        if (item && HasVisualShapes(*item)) {
+            items.push_back(ItemName(*item, "physics item") + " visual");
+        }
+    }
+    return items;
 }
 
 VizExtractor::VizExtractor(::chrono::ChSystem* system, viz::MooringVizProvider mooring)

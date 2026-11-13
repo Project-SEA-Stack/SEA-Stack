@@ -3,6 +3,7 @@
 #include <seastack/adapters/chrono/viz_extractor.h>
 
 #include <chrono/assets/ChVisualShapeBox.h>
+#include <chrono/assets/ChVisualShapeCapsule.h>
 #include <chrono/assets/ChVisualShapePointPoint.h>
 #include <chrono/assets/ChVisualShapeSphere.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
@@ -15,6 +16,8 @@
 #include "test_macros.h"
 
 #include <cmath>
+#include <string>
+#include <vector>
 
 using seastack::chrono::VizExtractor;
 using namespace seastack::viz;
@@ -158,6 +161,35 @@ int main() {
         hoist->Initialize(a, b, false, {0.0, 0.0, 10.0}, {0.0, 0.0, -2.0});
         cable_frame = cable_ex.Capture(1);
         TEST_NEAR(cable_frame.cable_lines[0].point2[2], -2.0, 1e-12, "cable tracks endpoint motion");
+
+        TEST_ASSERT(seastack::chrono::FindUndrawableItems(cable_sys).empty(), "SEGMENT TSDA is drawable");
+    }
+
+    // Undrawable content is reported so the GUI can fall back to the Chrono viewer.
+    TEST_ASSERT(seastack::chrono::FindUndrawableItems(system).empty(), "box, sphere and mesh are drawable");
+    {
+        ::chrono::ChSystemNSC odd_sys;
+        auto body = chrono_types::make_shared<::chrono::ChBody>();
+        body->SetName("buoy");
+        body->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeSphere>(1.0));
+        body->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeCapsule>(0.5, 2.0));
+        odd_sys.AddBody(body);
+        auto ground = chrono_types::make_shared<::chrono::ChBody>();
+        ground->SetFixed(true);
+        odd_sys.AddBody(ground);
+        auto marker = chrono_types::make_shared<::chrono::ChLinkTSDA>();
+        marker->SetName("marker");
+        marker->Initialize(body, ground, false, {0.0, 0.0, 0.0}, {0.0, 0.0, -5.0});
+        marker->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeSphere>(0.1));
+        odd_sys.AddLink(marker);
+
+        const std::vector<std::string> items = seastack::chrono::FindUndrawableItems(odd_sys);
+        TEST_ASSERT(items.size() == 2, "capsule and non-glyph link visual reported");
+        TEST_ASSERT(items.size() == 2 && items[0].find("body 'buoy'") != std::string::npos &&
+                        items[0].find("Capsule") != std::string::npos,
+                    "body item names the body and shape type");
+        TEST_ASSERT(items.size() == 2 && items[1].find("link 'marker'") != std::string::npos,
+                    "link item names the link");
     }
 
     test_results.Summary();

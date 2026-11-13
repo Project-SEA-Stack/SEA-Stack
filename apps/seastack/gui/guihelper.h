@@ -151,6 +151,8 @@ class GUI : public UI {
 
   private:
     std::shared_ptr<seastack::viz::GUIImpl> pImpl;
+    ViewerBackend backend_;
+    ViewerOptions viewer_options_;  ///< Re-applied if Init() falls back to the Chrono viewer
 };
 
 /**@brief Factory to create UI or GUI

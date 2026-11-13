@@ -5,6 +5,10 @@
 
 #include "guihelper_impl.h"
 
+#include <algorithm>
+#include <string>
+#include <vector>
+
 using namespace seastack::viz;
 
 std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn, ViewerBackend backend) {
@@ -66,7 +70,7 @@ void UI::SetMooringVisualizationRadii(double /*line_radius_m*/,
 
 // -----------------------------------------------------------------------------
 
-GUI::GUI(ViewerBackend backend) {
+GUI::GUI(ViewerBackend backend) : backend_(backend) {
 #if defined(SEASTACK_HAVE_VSG)
     if (backend == ViewerBackend::kSeastack) {
         pImpl = std::make_shared<seastack::viz::GUIImplSeastack>();
@@ -81,11 +85,33 @@ GUI::GUI(ViewerBackend backend) {
 }
 
 void GUI::SetViewerOptions(const ViewerOptions& options) {
+    viewer_options_ = options;
     pImpl->SetViewerOptions(options);
 }
 
 void GUI::Init(::chrono::ChSystem* system, const char* title) {
     UI::Init(system, title);
+#if defined(SEASTACK_HAVE_VSG)
+    // The SEA-Stack viewer draws only what VizExtractor exports; anything else
+    // would silently vanish, so use the Chrono viewer for such models.
+    if (backend_ == ViewerBackend::kSeastack && system) {
+        const std::vector<std::string> missing = seastack::chrono::FindUndrawableItems(*system);
+        if (!missing.empty()) {
+            std::string message = "SEA-Stack viewer cannot draw this model; using the Chrono viewer. Not supported:";
+            constexpr size_t kMaxListed = 5;
+            for (size_t i = 0; i < std::min(missing.size(), kMaxListed); ++i) {
+                message += "\n  - " + missing[i];
+            }
+            if (missing.size() > kMaxListed) {
+                message += "\n  - ... and " + std::to_string(missing.size() - kMaxListed) + " more";
+            }
+            seastack::infra::cli::LogWarning(message);
+            backend_ = ViewerBackend::kChrono;
+            pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+            pImpl->SetViewerOptions(viewer_options_);
+        }
+    }
+#endif
     pImpl->Init(*this, system, title);
 }
 
