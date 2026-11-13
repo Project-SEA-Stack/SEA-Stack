@@ -89,12 +89,24 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// Called each frame by the VSG rendering loop.
     void render(vsg::CommandBuffer& cb) override;
 
+    /// Draw the toolbar and panels; call inside an ImGui frame. Used directly
+    /// by viewers that are not a Chrono visual system (vsys == nullptr).
+    void Draw();
+
   private:
     void RenderToolbar();
     void RenderMooringPanel();
     void RenderColorBar();
 
     ::chrono::vsg3d::ChVisualSystemVSG* vsys_;
+    // Toolbar readouts averaged over short intervals (see RenderToolbar).
+    double readout_start_ = 0.0;  ///< ImGui time of the current interval start [s]
+    long long readout_steps_sum_ = 0;
+    int readout_frames_ = 0;
+    double shown_steps_per_frame_ = 0.0;
+    double shown_fps_ = 0.0;  ///< Frames drawn per second of the last interval [Hz]
+    bool behind_shown_ = false;  ///< "Cannot keep up" warning currently shown
+    float toolbar_width_ = 0.0f;  ///< Widest toolbar so far [px]; it never shrinks
     bool& pressed_;
     double& playback_speed_;
     double last_finite_speed_ = 1.0;  ///< Speed restored when "Max" is switched off [-]

@@ -47,6 +47,7 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::LogInfo("      --doctor         Run environment/package diagnostics and exit");
     seastack::infra::cli::LogInfo("      --campaign FILE  Generate a power matrix from a campaign YAML");
     seastack::infra::cli::LogInfo("      --nogui          Disable GUI visualization");
+    seastack::infra::cli::LogInfo("      --viewer=NAME    GUI renderer: chrono (default) or seastack (experimental)");
     seastack::infra::cli::LogInfo("      --log            Enable detailed logging to file");
     seastack::infra::cli::LogInfo("      --model_file     Override model YAML file (default: auto-detected)");
     seastack::infra::cli::LogInfo("      --sim_file       Override simulation YAML file (default: auto-detected)");
@@ -100,6 +101,7 @@ struct CLIArgs {
     bool trace = false;
     std::string output_level;
     bool profile = false;
+    std::string viewer;  // --viewer=chrono|seastack; empty = default (chrono)
 };
 
 static CLIArgs ParseArguments(int argc, char* argv[]) {
@@ -160,6 +162,12 @@ static CLIArgs ParseArguments(int argc, char* argv[]) {
             // Already handled in early flag scan; ignore here.
         } else if (arg == "--profile") {
             args.profile = true;
+        } else if (arg.rfind("--viewer=", 0) == 0) {
+            args.viewer = arg.substr(9);
+            if (args.viewer != "chrono" && args.viewer != "seastack") {
+                seastack::infra::cli::LogError("ERROR: --viewer must be chrono or seastack, got: " + args.viewer);
+                std::exit(1);
+            }
         } else if (arg.substr(0, 1) != "-") {
             // This is a positional argument (input directory)
             if (args.input_directory.empty()) {
@@ -369,6 +377,7 @@ int main(int argc, char* argv[]) {
     runner_args.push_back(args.input_directory);
     
     if (args.nogui) runner_args.push_back("--nogui");
+    if (!args.viewer.empty()) runner_args.push_back("--viewer=" + args.viewer);
     if (args.log) runner_args.push_back("--log");
     if (args.nobanner) runner_args.push_back("--nobanner");
     if (args.quiet) runner_args.push_back("--quiet");

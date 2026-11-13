@@ -9,6 +9,8 @@ set(GUI_SOURCES
 if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
     list(APPEND GUI_SOURCES
         gui/guihelperVSG.cpp
+        gui/guihelperSeastack.cpp
+        gui/seastack_viewer.cpp
         gui/vsg_water_surface.cpp
         gui/vsg_mooring_lines.cpp
         gui/vsg_materials.cpp

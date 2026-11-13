@@ -5,6 +5,7 @@
 #include <seastack/viz_core/visual_theme.h>
 
 #include <memory>
+#include <string>
 
 namespace chrono {
 class ChSystem;
@@ -13,6 +14,15 @@ class ChSystem;
 namespace seastack::hydro { class WaveBase; }
 
 namespace seastack::viz {
+
+/// Which renderer draws the GUI (command line: --viewer=chrono|seastack).
+enum class ViewerBackend {
+    kChrono,    ///< Chrono::VSG visual system (default)
+    kSeastack,  ///< SEA-Stack's own VSG viewer (experimental)
+};
+
+/// Parse "chrono" or "seastack"; returns false for anything else.
+bool ParseViewerBackend(const std::string& name, ViewerBackend* backend);
 
 /// Viewer options fixed at start-up (from simulation.visualization YAML).
 /// Visual only; never affect the simulation.
@@ -121,7 +131,7 @@ class GUIImpl;
 /// SEA-Stack Graphical User Interface.
 class GUI : public UI {
   public:
-    GUI();
+    explicit GUI(ViewerBackend backend = ViewerBackend::kChrono);
     GUI(const GUI&)            = delete;
     GUI& operator=(const GUI&) = delete;
 
@@ -144,6 +154,7 @@ class GUI : public UI {
 /**@brief Factory to create UI or GUI
  *
  */
-std::shared_ptr<seastack::viz::UI> CreateUI(bool visualizationOn = true);
+std::shared_ptr<seastack::viz::UI> CreateUI(bool visualizationOn = true,
+                                            ViewerBackend backend = ViewerBackend::kChrono);
 
 }  // namespace seastack::viz

@@ -7,12 +7,24 @@
 
 using namespace seastack::viz;
 
-std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn) {
+std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn, ViewerBackend backend) {
     if (visualizationOn) {
-        return std::make_shared<seastack::viz::GUI>();
+        return std::make_shared<seastack::viz::GUI>(backend);
     } else {
         return std::make_shared<seastack::viz::UI>();
     }
+}
+
+bool seastack::viz::ParseViewerBackend(const std::string& name, ViewerBackend* backend) {
+    if (name == "chrono") {
+        *backend = ViewerBackend::kChrono;
+        return true;
+    }
+    if (name == "seastack") {
+        *backend = ViewerBackend::kSeastack;
+        return true;
+    }
+    return false;
 }
 
 // -----------------------------------------------------------------------------
@@ -54,11 +66,16 @@ void UI::SetMooringVisualizationRadii(double /*line_radius_m*/,
 
 // -----------------------------------------------------------------------------
 
-GUI::GUI() {
+GUI::GUI(ViewerBackend backend) {
 #if defined(SEASTACK_HAVE_VSG)
-    pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+    if (backend == ViewerBackend::kSeastack) {
+        pImpl = std::make_shared<seastack::viz::GUIImplSeastack>();
+    } else {
+        pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+    }
     simulationStarted = false;  // VSG viewer provides Start button
 #else
+    (void)backend;
     pImpl = std::make_shared<seastack::viz::GUIImpl>();
 #endif
 }

@@ -77,6 +77,9 @@ void SeastackGuiComponent::RenderToolbar() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(ImVec2(viewport->GetCenter().x, viewport->WorkPos.y + 10.0f),
                             ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    // Grow-only width: the status text changes length every frame (e.g. the
+    // "cannot keep up" warning), and a centred auto-sized window would jitter.
+    ImGui::SetNextWindowSizeConstraints(ImVec2(toolbar_width_, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
     ImGui::SetNextWindowBgAlpha(0.55f);
     ImGui::Begin("SEA-Stack", nullptr, window_flags);
 
@@ -136,13 +139,23 @@ void SeastackGuiComponent::RenderToolbar() {
 
     // Line 2: state, achieved vs requested speed, wall time, solver load.
     const ImVec4 kWarn(1.0f, 0.65f, 0.2f, 1.0f);
+    // The per-frame falling_behind flag toggles almost every frame, so the
+    // warning follows the windowed achieved speed with hysteresis instead:
+    // on below 95 % of the requested speed, off again above 98 %.
+    if (!pressed_ || !s.has_achieved_speed || playback_speed_ <= 0.0) {
+        behind_shown_ = false;
+    } else if (s.achieved_speed < 0.95 * playback_speed_) {
+        behind_shown_ = true;
+    } else if (s.achieved_speed > 0.98 * playback_speed_) {
+        behind_shown_ = false;
+    }
     if (s.finished) {
         ImGui::TextColored(kWarn, "Finished");
     } else if (!pressed_) {
         ImGui::TextDisabled("Paused");
     } else if (!s.has_achieved_speed) {
         ImGui::TextDisabled("Running...");
-    } else if (s.falling_behind && playback_speed_ > 0.0) {
+    } else if (behind_shown_) {
         ImGui::TextColored(kWarn, "%.2fx (cannot keep up with %gx)", s.achieved_speed, playback_speed_);
     } else {
         ImGui::Text("%.2fx", s.achieved_speed);
@@ -152,16 +165,34 @@ void SeastackGuiComponent::RenderToolbar() {
                           "measured over the last %.1f s of stepping.", RunClock::kSpeedWindow);
     }
     ImGui::SameLine();
-    ImGui::TextDisabled("| wall %.1f s | %d steps/frame | %.0f fps", s.active_wall_time,
-                        s.steps_last_frame, vsys_ ? vsys_->GetRenderingFPS() : 0.0);
+    // Steps per frame and frame rate change every frame; show averages
+    // refreshed every kReadoutInterval so they can be read.
+    constexpr double kReadoutInterval = 0.5;  // [s]
+    readout_steps_sum_ += s.steps_last_frame;
+    ++readout_frames_;
+    const double now = ImGui::GetTime();
+    if (now - readout_start_ >= kReadoutInterval) {
+        shown_steps_per_frame_ = static_cast<double>(readout_steps_sum_) / readout_frames_;
+        shown_fps_ = readout_frames_ / (now - readout_start_);
+        readout_steps_sum_ = 0;
+        readout_frames_ = 0;
+        readout_start_ = now;
+    }
+    ImGui::TextDisabled("| wall %.1f s | %.1f steps/frame | %.0f fps", s.active_wall_time,
+                        shown_steps_per_frame_, shown_fps_);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Wall time counts only time spent stepping (pauses excluded).");
     }
 
+    toolbar_width_ = std::max(toolbar_width_, ImGui::GetWindowWidth());
     ImGui::End();
 }
 
 void SeastackGuiComponent::render(vsg::CommandBuffer& /*cb*/) {
+    Draw();
+}
+
+void SeastackGuiComponent::Draw() {
     if (settings_ && (!imgui_theme_applied_ || imgui_theme_ != settings_->theme)) {
         ApplyImGuiTheme(settings_->theme);
         imgui_theme_ = settings_->theme;
@@ -282,13 +313,15 @@ void SeastackGuiComponent::render(vsg::CommandBuffer& /*cb*/) {
         if (ImGui::CollapsingHeader("Display")) {
             ImGui::SliderInt("Update Hz", &settings_->update_hz, 10, 60, "%d Hz");
 
-            bool chrono_panel = vsys_->IsBaseGuiVisible();
-            if (ImGui::Checkbox("Chrono debug panel", &chrono_panel)) {
-                vsys_->SetBaseGuiVisibility(chrono_panel);
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Chrono's own panel: body/COM/link frames, labels,\n"
-                                  "collision shapes. Its wall clock includes pauses.");
+            if (vsys_) {
+                bool chrono_panel = vsys_->IsBaseGuiVisible();
+                if (ImGui::Checkbox("Chrono debug panel", &chrono_panel)) {
+                    vsys_->SetBaseGuiVisibility(chrono_panel);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Chrono's own panel: body/COM/link frames, labels,\n"
+                                      "collision shapes. Its wall clock includes pauses.");
+                }
             }
 
             ImGui::Checkbox("Show Status", &settings_->show_water_status);

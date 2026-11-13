@@ -139,6 +139,10 @@ build_unit_test(test_scene_model)
 target_link_libraries(test_scene_model PRIVATE SEAStack::VizCore)
 set_tests_properties(test_scene_model PROPERTIES LABELS "unit;chrono-free")
 
+build_unit_test(test_primitive_meshes)
+target_link_libraries(test_primitive_meshes PRIVATE SEAStack::VizCore)
+set_tests_properties(test_primitive_meshes PROPERTIES LABELS "unit;chrono-free")
+
 # PTO tests (Chrono-free, HDF5-free)
 build_unit_test(test_linear_pto)
 target_link_libraries(test_linear_pto PRIVATE SEAStack::PTO)

@@ -345,6 +345,7 @@ int RunFromYAML(int argc, char* argv[]) {
         std::string input_directory;
         std::string cli_output_level;
         bool nogui = false;
+        std::string viewer = "chrono";
         bool quiet_mode = false;
         bool enable_logging = false;
         bool debug_mode = false;
@@ -362,6 +363,8 @@ int RunFromYAML(int argc, char* argv[]) {
                 cli_output_level = argv[++i];
             } else if (arg == "--nogui") {
                 nogui = true;
+            } else if (arg.rfind("--viewer=", 0) == 0) {
+                viewer = arg.substr(9);
             } else if (arg == "--log") {
                 enable_logging = true;
             } else if (arg == "--no-log") {
@@ -496,6 +499,7 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.cli_output_level = cli_output_level;
         run_config.cli_log_file_path = log_file_path;
         run_config.nogui        = nogui;
+        run_config.viewer       = viewer;
         run_config.debug_mode   = debug_mode;
         run_config.trace_mode   = trace_mode;
         run_config.profile_mode = profile_mode;

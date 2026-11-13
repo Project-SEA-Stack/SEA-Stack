@@ -113,6 +113,38 @@ class GUIImplVSG : public GUIImpl {
     double mooring_viz_endpoint_radius_request_ = -1.0;
     double mooring_viz_node_marker_radius_request_ = -1.0;
 };
+
+class SeastackViewer;
+class SeastackGuiComponent;
+
+/// GUI backed by SEA-Stack's own viewer (--viewer=seastack). Reads Chrono
+/// only through the VizExtractor. Water and mooring rendering are not ported
+/// yet; their setters are accepted and ignored.
+class GUIImplSeastack : public GUIImpl {
+  public:
+    GUIImplSeastack();
+    ~GUIImplSeastack();
+    GUIImplSeastack(const GUIImplSeastack&)            = delete;
+    GUIImplSeastack& operator=(const GUIImplSeastack&) = delete;
+
+    void SetViewerOptions(const ViewerOptions& options) override { options_ = options; }
+    void Init(UI& ui, ::chrono::ChSystem* system, const char* title) override;
+    void SetCamera(double x, double y, double z, double dirx, double diry, double dirz) override;
+    bool IsRunning(double timestep) override;
+    void SetMooringLineProvider(MooringVizProvider provider) override;
+
+  private:
+    void HandleCameraRequests();
+    void UpdateClipPlanes();
+
+    ViewerOptions options_;
+    Bounds3 model_bounds_;  ///< World bounds of all body visual shapes at Init() [m]
+    std::unique_ptr<seastack::chrono::VizExtractor> extractor_;
+    std::unique_ptr<SeastackViewer> viewer_;
+    std::unique_ptr<ViewerSettings> viewer_settings_;
+    std::unique_ptr<SeastackGuiComponent> gui_;
+    MooringVizProvider mooring_provider_;
+};
 #endif
 
 }  // namespace seastack::viz
