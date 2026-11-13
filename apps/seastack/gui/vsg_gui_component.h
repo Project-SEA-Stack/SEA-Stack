@@ -64,6 +64,10 @@ struct ViewerSettings {
     // --- Mooring Colour Mapping ---
     bool show_mooring_colors = true;       ///< Colour lines by tension magnitude
 
+    // --- Body Annotations (SEA-Stack viewer) ---
+    bool show_body_frames = false;  ///< Axis triad at each body reference frame
+    bool show_body_labels = false;  ///< Body name at each centre of mass
+
     // --- Theme ---
     VisualTheme theme = VisualTheme::kDark;
     bool theme_changed = true;  ///< Scene theme needs (re)applying by GUIImplVSG

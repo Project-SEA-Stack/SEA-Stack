@@ -143,8 +143,11 @@ class GUIImplSeastack : public GUIImpl {
     void UpdateWater(const VizFrame& frame);
     /// Create the mooring lines on the first frame with line data, then update them.
     void UpdateMooring(const VizFrame& frame);
+    /// Body names at their centres of mass (ImGui, inside the GUI frame).
+    void DrawBodyLabels();
 
     ViewerOptions options_;
+    VizFrame last_frame_;  ///< Frame shown this render; labels are placed from it
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     std::unique_ptr<AnimatedWaterSurface> water_;
     bool water_tried_ = false;  ///< Water creation attempted (it is not retried)

@@ -353,6 +353,16 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
                 ImGui::SetTooltip("Chrono's own panel: body/COM/link frames, labels,\n"
                                   "collision shapes. Its wall clock includes pauses.");
             }
+        } else {
+            ImGui::Checkbox("Body frames", &settings_->show_body_frames);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Axes of each body reference frame:\n"
+                                  "x red, y green, z blue.");
+            }
+            ImGui::Checkbox("Body labels", &settings_->show_body_labels);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Body names, placed at each centre of mass.");
+            }
         }
 
         ImGui::Checkbox("Show Status", &settings_->show_water_status);

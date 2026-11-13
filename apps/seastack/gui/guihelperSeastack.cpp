@@ -1,6 +1,12 @@
 // =============================================================================
 // SEA-Stack GUI with SEA-Stack's own viewer (--viewer=seastack)
 // =============================================================================
+// Suppress MSVC warning about IMGUI_API macro redefinition in vsgImGui headers.
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4005)  // macro redefinition
+#endif
+
 #include "guihelper_impl.h"
 
 #include "seastack_viewer.h"
@@ -10,6 +16,12 @@
 #include "vsg_mooring_lines.h"
 #include "vsg_theme.h"
 #include "vsg_water_surface.h"
+
+#include <vsgImGui/imgui.h>
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #include <chrono/core/ChDataPath.h>
 
@@ -56,8 +68,11 @@ void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title
     options.fov_deg = kCameraFovDeg;
     options.font_path = ::chrono::GetChronoDataFile("vsg/fonts/open-sans/OpenSans-Regular.ttf");
     options.skybox_path = ::chrono::GetChronoDataFile("vsg/textures/vsg_skybox.ktx");  // as the Chrono viewer
-    SeastackGuiComponent* gui = gui_.get();
-    if (!viewer_->Initialize(extractor_->Scene(), options, [gui]() { gui->Draw(); })) {
+    auto draw_gui = [this]() {
+        gui_->Draw();
+        DrawBodyLabels();
+    };
+    if (!viewer_->Initialize(extractor_->Scene(), options, draw_gui)) {
         throw std::runtime_error("SEA-Stack viewer initialization failed. Try --viewer=chrono or --nogui.");
     }
     gui_->SetUiScale(viewer_->UiScale());
@@ -188,12 +203,45 @@ void GUIImplSeastack::UpdateSceneViewport() {
     }
 }
 
+void GUIImplSeastack::DrawBodyLabels() {
+    if (!viewer_settings_->show_body_labels || !extractor_) {
+        return;
+    }
+    const SceneDescription& scene = extractor_->Scene();
+    if (last_frame_.bodies.size() != scene.bodies.size()) {
+        return;
+    }
+    // Background list: labels sit over the 3D view but under the panels.
+    const ScreenRect rect = gui_->SceneRect();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h), true);
+    const ImU32 text_color = IM_COL32(255, 255, 255, 255);
+    const ImU32 shadow_color = IM_COL32(0, 0, 0, 200);
+    const float marker_r = 3.0f * viewer_->UiScale();
+    for (size_t i = 0; i < scene.bodies.size(); ++i) {
+        const std::string& name = scene.bodies[i].name;
+        float x = 0.0f;
+        float y = 0.0f;
+        if (name.empty() || !viewer_->ProjectToWindow(last_frame_.bodies[i].com_position, &x, &y)) {
+            continue;
+        }
+        const ImVec2 size = ImGui::CalcTextSize(name.c_str());
+        const ImVec2 pos(x - 0.5f * size.x, y - size.y - 2.0f * marker_r);
+        dl->AddCircleFilled(ImVec2(x, y), marker_r, text_color);
+        dl->AddText(ImVec2(pos.x + 1.0f, pos.y + 1.0f), shadow_color, name.c_str());
+        dl->AddText(pos, text_color, name.c_str());
+    }
+    dl->PopClipRect();
+}
+
 bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     if (!extractor_) {
         return false;
     }
-    const VizFrame frame = extractor_->Capture(0);
+    last_frame_ = extractor_->Capture(0);
+    const VizFrame& frame = last_frame_;
     viewer_->SetFrame(frame);
+    viewer_->SetShowBodyFrames(viewer_settings_->show_body_frames);
     UpdateMooring(frame);
     UpdateWater(frame);
     UpdateSceneViewport();

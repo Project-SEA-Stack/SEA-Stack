@@ -114,8 +114,13 @@ class SeastackImGuiEvents : public vsg::Inherit<vsgImGui::SendEventsToImGui, Sea
 /// may be open or wound inwards), optional alpha blending.
 struct SetPipelineStates : public vsg::Visitor {
     bool blend = false;
+    bool depth_test = true;  ///< false: draw over everything drawn before
     void apply(vsg::Object& object) override { object.traverse(*this); }
     void apply(vsg::RasterizationState& state) override { state.cullMode = VK_CULL_MODE_NONE; }
+    void apply(vsg::DepthStencilState& state) override {
+        state.depthTestEnable = depth_test ? VK_TRUE : VK_FALSE;
+        state.depthWriteEnable = depth_test ? VK_TRUE : VK_FALSE;
+    }
     void apply(vsg::ColorBlendState& state) override {
         if (!blend) {
             return;
@@ -163,6 +168,14 @@ float EnableDpiAwareness() {
 #else
     return 1.0f;
 #endif
+}
+
+/// Axis length [m] for a body's frame triad: scaled to the body, but kept
+/// between 3 % and 15 % of the model radius so tiny and huge bodies both read.
+double TriadLength(const Bounds3& body_bounds, const Bounds3& model_bounds) {
+    const double model_r = model_bounds.IsValid() ? std::max(model_bounds.Radius(), 0.1) : 10.0;
+    const double body_r = body_bounds.IsValid() ? body_bounds.Radius() : 0.0;
+    return std::clamp(0.6 * body_r, 0.03 * model_r, 0.15 * model_r);
 }
 
 float SrgbToLinear(float c) {
@@ -254,6 +267,16 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     }
     overlay_root_ = vsg::Group::create();
     scene_root_->addChild(overlay_root_);
+    // Frame triads last: drawn without a depth test, so they show through hulls and water.
+    frame_switch_ = vsg::Switch::create();
+    frame_transforms_.clear();
+    for (const BodyDescription& body : scene.bodies) {
+        auto transform = vsg::MatrixTransform::create();
+        transform->addChild(CreateAxisTriad(TriadLength(body.local_bounds, scene.model_bounds)));
+        frame_switch_->addChild(false, transform);
+        frame_transforms_.push_back(transform);
+    }
+    scene_root_->addChild(frame_switch_);
 
     // ---- Camera ----
     look_at_ = vsg::LookAt::create(vsg::dvec3(10.0, -10.0, 10.0), vsg::dvec3(0.0, 0.0, 0.0), vsg::dvec3(0.0, 0.0, 1.0));
@@ -400,7 +423,7 @@ SeastackViewer::MeshArrays SeastackViewer::SharedArrays(const TriangleMesh& mesh
 }
 
 vsg::ref_ptr<vsg::Node> SeastackViewer::CreatePbrNode(const MeshArrays& arrays, const OverlayMaterial& shape,
-                                                      bool dynamic) {
+                                                      bool dynamic, bool on_top) {
     if (!arrays.indices || arrays.indices->size() == 0) {
         return {};
     }
@@ -423,6 +446,7 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreatePbrNode(const MeshArrays& arrays, 
     config->shaderHints->defines.insert("VSG_TWO_SIDED_LIGHTING");
     SetPipelineStates states;
     states.blend = shape.color[3] < 1.0f;
+    states.depth_test = !on_top;
     config->accept(states);
     if (!config->assignDescriptor("material", material) && !config->assignDescriptor("PbrMaterial", material)) {
         std::cerr << "[SeastackViewer] PBR shader set has no material descriptor." << std::endl;
@@ -447,12 +471,75 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreatePbrNode(const MeshArrays& arrays, 
     return state_group;
 }
 
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateAxisTriad(double length) {
+    struct Axis {
+        Quat rotation;  ///< Turns the z-aligned cylinder onto this axis
+        Rgba color;     ///< Linear
+    };
+    constexpr double kHalfSqrt2 = 0.70710678118654752;
+    const Axis axes[3] = {
+        {{kHalfSqrt2, 0.0, kHalfSqrt2, 0.0}, {0.85f, 0.10f, 0.08f, 1.0f}},   // +90 deg about y: z -> x
+        {{kHalfSqrt2, -kHalfSqrt2, 0.0, 0.0}, {0.12f, 0.70f, 0.12f, 1.0f}},  // -90 deg about x: z -> y
+        {kIdentityQuat, {0.10f, 0.30f, 0.95f, 1.0f}},
+    };
+    const double shaft_r = 0.02 * length;
+    const double tip_r = 0.05 * length;
+    auto group = vsg::Group::create();
+    for (const Axis& axis : axes) {
+        OverlayMaterial material;
+        material.color = axis.color;
+        material.roughness = 0.4f;
+        Pose shaft_pose;
+        shaft_pose.rotation = axis.rotation;
+        shaft_pose.position = Rotate(axis.rotation, {0.0, 0.0, 0.5 * length});
+        auto shaft = vsg::MatrixTransform::create(ToMatrix(shaft_pose));
+        shaft->addChild(CreatePbrNode(UnsharedArrays(MakeCylinderMesh(shaft_r, length, 16)), material, false, true));
+        group->addChild(shaft);
+        Pose tip_pose;
+        tip_pose.position = Rotate(axis.rotation, {0.0, 0.0, length});
+        auto tip = vsg::MatrixTransform::create(ToMatrix(tip_pose));
+        tip->addChild(CreatePbrNode(UnsharedArrays(MakeSphereMesh(tip_r, 16, 8)), material, false, true));
+        group->addChild(tip);
+    }
+    OverlayMaterial origin_material;
+    origin_material.color = {0.9f, 0.9f, 0.9f, 1.0f};
+    group->addChild(CreatePbrNode(UnsharedArrays(MakeSphereMesh(1.5 * shaft_r, 16, 8)), origin_material, false, true));
+    return group;
+}
+
+void SeastackViewer::SetShowBodyFrames(bool show) {
+    if (show == show_body_frames_) {
+        return;
+    }
+    show_body_frames_ = show;
+    if (frame_switch_) {
+        frame_switch_->setAllChildren(show);
+    }
+}
+
+bool SeastackViewer::ProjectToWindow(const Vec3& world, float* x_px, float* y_px) const {
+    if (!camera_ || !x_px || !y_px) {
+        return false;
+    }
+    // Matrix-vector products only (see ToMatrix on the dmat4 link issue).
+    const vsg::dvec4 eye_space = camera_->viewMatrix->transform() * vsg::dvec4(world[0], world[1], world[2], 1.0);
+    const vsg::dvec4 clip = camera_->projectionMatrix->transform() * eye_space;
+    if (clip.w <= 1e-9) {
+        return false;
+    }
+    const VkViewport vp = camera_->getViewport();
+    *x_px = vp.x + static_cast<float>(0.5 * (clip.x / clip.w + 1.0)) * vp.width;
+    *y_px = vp.y + static_cast<float>(0.5 * (clip.y / clip.w + 1.0)) * vp.height;
+    return true;
+}
+
 void SeastackViewer::SetFrame(const VizFrame& frame) {
     if (frame.bodies.size() != num_bodies_) {
         return;
     }
     for (size_t i = 0; i < num_bodies_; ++i) {
         body_transforms_[i]->matrix = ToMatrix(frame.bodies[i].pose);
+        frame_transforms_[i]->matrix = body_transforms_[i]->matrix;
     }
 }
 

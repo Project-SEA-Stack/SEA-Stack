@@ -68,6 +68,14 @@ class SeastackViewer : public OverlayBuilder {
 
     void SetClipPlanes(const ClipPlanes& clip);
 
+    /// Show an RGB axis triad (x red, y green, z blue) at each body's
+    /// reference frame, long enough to reach outside the body's shapes.
+    void SetShowBodyFrames(bool show);
+
+    /// Map a world point [m] to window pixels (origin top-left) through the
+    /// current camera. Returns false if the point is behind the camera.
+    bool ProjectToWindow(const Vec3& world, float* x_px, float* y_px) const;
+
     /// Clear colour, skybox visibility and light levels for `theme`.
     void ApplySceneTheme(const SceneTheme& theme);
 
@@ -97,8 +105,13 @@ class SeastackViewer : public OverlayBuilder {
     static MeshArrays SharedArrays(const TriangleMesh& mesh, const Rgba& color);
 
     /// PBR node drawing `arrays`. Alpha < 1 enables blending; `dynamic`
-    /// marks the vertex, normal and colour arrays for per-frame updates.
-    vsg::ref_ptr<vsg::Node> CreatePbrNode(const MeshArrays& arrays, const OverlayMaterial& material, bool dynamic);
+    /// marks the vertex, normal and colour arrays for per-frame updates;
+    /// `on_top` disables the depth test (draw it after the rest of the scene).
+    vsg::ref_ptr<vsg::Node> CreatePbrNode(const MeshArrays& arrays, const OverlayMaterial& material, bool dynamic,
+                                          bool on_top = false);
+
+    /// x / y / z arrows (red / green / blue) of `length` [m] from the origin.
+    vsg::ref_ptr<vsg::Node> CreateAxisTriad(double length);
 
     /// Compile a node made after Viewer::compile(); returns null on failure.
     vsg::ref_ptr<vsg::Node> CompileNode(vsg::ref_ptr<vsg::Node> node);
@@ -121,6 +134,11 @@ class SeastackViewer : public OverlayBuilder {
 
     /// One transform per scene body, in scene order (world <- body ref frame).
     std::vector<vsg::ref_ptr<vsg::MatrixTransform>> body_transforms_;
+    /// Axis triads (hidden by default), drawn after everything else; one
+    /// transform per body, posed like body_transforms_.
+    vsg::ref_ptr<vsg::Switch> frame_switch_;
+    std::vector<vsg::ref_ptr<vsg::MatrixTransform>> frame_transforms_;
+    bool show_body_frames_ = false;
     size_t num_bodies_ = 0;
     float ui_scale_ = 1.0f;
 };
