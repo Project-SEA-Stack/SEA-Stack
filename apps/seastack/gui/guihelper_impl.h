@@ -137,6 +137,8 @@ class GUIImplSeastack : public GUIImpl {
   private:
     void HandleCameraRequests();
     void UpdateClipPlanes();
+    /// Render the scene only where the GUI panels leave the window free.
+    void UpdateSceneViewport();
     /// Create the water surface on the first frame, then animate it from `frame`.
     void UpdateWater(const VizFrame& frame);
     /// Create the mooring lines on the first frame with line data, then update them.
@@ -146,6 +148,8 @@ class GUIImplSeastack : public GUIImpl {
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     std::unique_ptr<AnimatedWaterSurface> water_;
     bool water_tried_ = false;  ///< Water creation attempted (it is not retried)
+    /// The start-up framing used the full window; redo it once the panel layout is known.
+    bool reframe_pending_ = false;
     Bounds3 model_bounds_;  ///< World bounds of all body visual shapes at Init() [m]
     std::unique_ptr<seastack::chrono::VizExtractor> extractor_;
     std::unique_ptr<SeastackViewer> viewer_;

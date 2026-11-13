@@ -17,6 +17,14 @@ namespace seastack::viz {
 
 class MooringLinesViz;  // forward declaration
 
+/// Axis-aligned screen rectangle [px], origin at the window's top-left.
+struct ScreenRect {
+    float x = 0.0f;
+    float y = 0.0f;
+    float w = 0.0f;
+    float h = 0.0f;
+};
+
 /// Runtime-adjustable water visualization settings.
 ///
 /// Allows tuning water appearance without recompiling. Owned by GUIImplVSG
@@ -68,8 +76,10 @@ struct ViewerSettings {
 };
 
 /// ImGui component for SEA-Stack visualization overlay.
-/// Displays the simulation toolbar (play/pause, playback speed, run status)
-/// and the viewer settings panel.
+/// Docked layout: a transport bar along the bottom (play/pause, playback
+/// speed, progress, run status), an inspector panel on the right (viewer
+/// settings), and the 3D scene in the remaining rectangle, with camera
+/// presets and the tension legend in its corners.
 class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
   public:
     /// Construct the GUI component.
@@ -96,8 +106,15 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// Display scale for panel sizes (e.g. 1.5 at 150 %); 1 by default.
     void SetUiScale(float scale);
 
+    /// Window area not covered by the docked panels [px], as laid out by the
+    /// last Draw(); zero size before the first frame. A viewer can render the
+    /// 3D scene into this rectangle so no panel covers the model.
+    ScreenRect SceneRect() const { return scene_rect_; }
+
   private:
-    void RenderToolbar();
+    void RenderTransportBar(const ImVec2& pos, const ImVec2& size);
+    void RenderInspector(const ImVec2& pos, const ImVec2& size);
+    void RenderViewToolbar();
     void RenderMooringPanel();
     void RenderColorBar();
 
@@ -109,7 +126,9 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     double shown_steps_per_frame_ = 0.0;
     double shown_fps_ = 0.0;  ///< Frames drawn per second of the last interval [Hz]
     bool behind_shown_ = false;  ///< "Cannot keep up" warning currently shown
-    float toolbar_width_ = 0.0f;  ///< Widest toolbar so far [px]; it never shrinks
+    float status_width_ = 0.0f;  ///< Widest run-status readout so far [px]; it never shrinks
+    bool show_inspector_ = true;
+    ScreenRect scene_rect_;
     bool& pressed_;
     double& playback_speed_;
     double last_finite_speed_ = 1.0;  ///< Speed restored when "Max" is switched off [-]

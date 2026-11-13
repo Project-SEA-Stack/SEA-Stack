@@ -59,6 +59,7 @@ void ApplyAccent(ImVec4* c, const ImVec4& accent) {
     c[ImGuiCol_TextSelectedBg] = with_alpha(accent, 0.35f);
     c[ImGuiCol_ResizeGripHovered] = with_alpha(accent, 0.60f);
     c[ImGuiCol_ResizeGripActive] = accent;
+    c[ImGuiCol_PlotHistogram] = accent;  // also the progress-bar fill
 }
 
 float SrgbToLinear(float v) {

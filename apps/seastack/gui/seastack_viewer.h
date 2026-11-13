@@ -59,6 +59,10 @@ class SeastackViewer : public OverlayBuilder {
     /// Viewport width / height [-].
     double GetViewportAspect() const;
 
+    /// Render the 3D scene into this window rectangle [px, origin top-left],
+    /// e.g. the area the GUI panels leave free. Clamped to the window.
+    void SetSceneViewport(int x, int y, int width, int height);
+
     /// Display scale [-] (e.g. 1.5 at 150 %); window and font are scaled by it.
     float UiScale() const { return ui_scale_; }
 

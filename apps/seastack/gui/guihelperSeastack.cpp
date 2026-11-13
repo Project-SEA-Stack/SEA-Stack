@@ -13,6 +13,7 @@
 
 #include <chrono/core/ChDataPath.h>
 
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 
@@ -65,6 +66,7 @@ void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title
 
     viewer_->SetCameraPose(
         FrameBounds(model_bounds_, CameraView::kIsometric, kCameraFovDeg, viewer_->GetViewportAspect()));
+    reframe_pending_ = true;
     UpdateClipPlanes();
 }
 
@@ -78,6 +80,7 @@ void GUIImplSeastack::SetCamera(double x, double y, double z, double dirx, doubl
         pose.up = {0.0, 1.0, 0.0};  // looking straight down or up
     }
     viewer_->SetCameraPose(pose);
+    reframe_pending_ = false;  // keep the camera the model asked for
     UpdateClipPlanes();
 }
 
@@ -157,6 +160,21 @@ void GUIImplSeastack::HandleCameraRequests() {
     }
 }
 
+void GUIImplSeastack::UpdateSceneViewport() {
+    // The layout comes from the previous frame's Draw(), so it lags by one frame.
+    const ScreenRect rect = gui_->SceneRect();
+    if (rect.w < 1.0f || rect.h < 1.0f) {
+        return;  // no frame drawn yet
+    }
+    viewer_->SetSceneViewport(static_cast<int>(std::lround(rect.x)), static_cast<int>(std::lround(rect.y)),
+                              static_cast<int>(std::lround(rect.w)), static_cast<int>(std::lround(rect.h)));
+    if (reframe_pending_) {
+        reframe_pending_ = false;
+        viewer_->SetCameraPose(FrameBounds(model_bounds_, viewer_->GetViewDirection(), kCameraFovDeg,
+                                           viewer_->GetViewportAspect()));
+    }
+}
+
 bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     if (!extractor_) {
         return false;
@@ -165,6 +183,7 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     viewer_->SetFrame(frame);
     UpdateMooring(frame);
     UpdateWater(frame);
+    UpdateSceneViewport();
     HandleCameraRequests();
     UpdateClipPlanes();  // the trackball zoom changes the view distance
     if (viewer_settings_->theme_changed) {

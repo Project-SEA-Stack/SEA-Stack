@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 
 namespace seastack::viz {
 
@@ -31,6 +32,15 @@ namespace {
 // is a separate toggle, stored as a speed of 0.
 constexpr float kMinSpeed = 0.05f;
 constexpr float kMaxSpeed = 20.0f;
+
+// Docked layout sizes [px at 100 % display scale; multiplied by the UI scale].
+constexpr float kInspectorWidth = 300.0f;
+constexpr float kOverlayMargin = 10.0f;  // gap between scene overlays and the scene edge
+
+// Docked panels fill a fixed slot of the window; the user cannot move them.
+constexpr ImGuiWindowFlags kDockedFlags = ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                                          ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings |
+                                          ImGuiWindowFlags_NoBringToFrontOnFocus;
 
 double ClampSpeed(double speed) {
     return std::clamp(speed, static_cast<double>(kMinSpeed), static_cast<double>(kMaxSpeed));
@@ -45,7 +55,7 @@ SeastackGuiComponent::SeastackGuiComponent(::chrono::vsg3d::ChVisualSystemVSG* v
     : vsys_(vsys), pressed_(button_pressed), playback_speed_(playback_speed),
       run_status_(run_status), settings_(settings), mooring_viz_(mooring_viz) {}
 
-void SeastackGuiComponent::RenderToolbar() {
+void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& size) {
     bool unlimited = playback_speed_ <= 0.0;
     if (!unlimited) {
         last_finite_speed_ = playback_speed_;
@@ -69,19 +79,15 @@ void SeastackGuiComponent::RenderToolbar() {
         }
     }
 
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
-                                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-                                    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoNav |
-                                    ImGuiWindowFlags_AlwaysAutoResize;
-
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(viewport->GetCenter().x, viewport->WorkPos.y + 10.0f * ui_scale_),
-                            ImGuiCond_Always, ImVec2(0.5f, 0.0f));
-    // Grow-only width: the status text changes length every frame (e.g. the
-    // "cannot keep up" warning), and a centred auto-sized window would jitter.
-    ImGui::SetNextWindowSizeConstraints(ImVec2(toolbar_width_, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
-    ImGui::SetNextWindowBgAlpha(0.85f);
-    ImGui::Begin("SEA-Stack", nullptr, window_flags);
+    ImGui::SetNextWindowPos(pos);
+    ImGui::SetNextWindowSize(size);
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    ImGui::Begin("##transport", nullptr,
+                 kDockedFlags | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
+                     ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNav);
+    ImGui::AlignTextToFramePadding();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float group_gap = 3.0f * style.ItemSpacing.x;
 
     // Play / Pause: the button names the action it performs.
     ImGui::BeginDisabled(run_status_.finished);
@@ -96,8 +102,8 @@ void SeastackGuiComponent::RenderToolbar() {
     // Speed slider (logarithmic, so 0.1x-1x gets as much travel as 1x-10x).
     unlimited = playback_speed_ <= 0.0;
     float slider_speed = static_cast<float>(unlimited ? last_finite_speed_ : playback_speed_);
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(180.0f * ui_scale_);
+    ImGui::SameLine(0.0f, group_gap);
+    ImGui::SetNextItemWidth(150.0f * ui_scale_);
     ImGui::BeginDisabled(unlimited);
     if (ImGui::SliderFloat("##speed", &slider_speed, kMinSpeed, kMaxSpeed, "%.2fx",
                            ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
@@ -127,17 +133,40 @@ void SeastackGuiComponent::RenderToolbar() {
         ImGui::SetTooltip("Step as fast as the hardware allows.");
     }
 
-    // Line 1: simulated time and step size.
+    // Simulated time, in a slot sized for the end time so the progress bar
+    // does not shift as the digits change.
     const RunStatus& s = run_status_;
+    char time_text[64];
+    char time_slot[64];
     if (s.end_time > 0.0) {
-        ImGui::Text("t = %.2f / %.2f s", s.sim_time, s.end_time);
+        std::snprintf(time_text, sizeof(time_text), "t = %.2f / %.2f s", s.sim_time, s.end_time);
+        std::snprintf(time_slot, sizeof(time_slot), "t = %.2f / %.2f s", s.end_time, s.end_time);
     } else {
-        ImGui::Text("t = %.2f s", s.sim_time);
+        std::snprintf(time_text, sizeof(time_text), "t = %.2f s", s.sim_time);
+        std::snprintf(time_slot, sizeof(time_slot), "t = 00000.00 s");
     }
-    ImGui::SameLine();
-    ImGui::TextDisabled("dt = %.4g s", s.time_step);
+    ImGui::SameLine(0.0f, group_gap);
+    const float time_x = ImGui::GetCursorPosX();
+    ImGui::TextUnformatted(time_text);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Simulated time / end time.  dt = %.4g s", s.time_step);
+    }
 
-    // Line 2: state, achieved vs requested speed, wall time, solver load.
+    // Progress through the run; takes the space the readouts leave free.
+    const float toggle_w = settings_ ? ImGui::GetFrameHeight() + style.ItemInnerSpacing.x +
+                                           ImGui::CalcTextSize("Inspector").x + group_gap
+                                     : 0.0f;
+    ImGui::SameLine(time_x + ImGui::CalcTextSize(time_slot).x + style.ItemSpacing.x);
+    const float progress_w =
+        std::max(60.0f * ui_scale_, ImGui::GetContentRegionAvail().x - status_width_ - toggle_w - group_gap);
+    const float progress_h = 6.0f * ui_scale_;
+    const float progress = s.end_time > 0.0 ? static_cast<float>(std::clamp(s.sim_time / s.end_time, 0.0, 1.0)) : 0.0f;
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 0.5f * (ImGui::GetFrameHeight() - progress_h));
+    ImGui::ProgressBar(progress, ImVec2(progress_w, progress_h), "");
+
+    // State, achieved vs requested speed, wall time, solver load.
+    ImGui::SameLine(0.0f, group_gap);
+    const float status_x = ImGui::GetCursorScreenPos().x;
     const ImVec4 kWarn(1.0f, 0.65f, 0.2f, 1.0f);
     // The per-frame falling_behind flag toggles almost every frame, so the
     // warning follows the windowed achieved speed with hysteresis instead:
@@ -164,7 +193,7 @@ void SeastackGuiComponent::RenderToolbar() {
         ImGui::SetTooltip("Achieved speed: simulated time / active wall time,\n"
                           "measured over the last %.1f s of stepping.", RunClock::kSpeedWindow);
     }
-    ImGui::SameLine();
+    ImGui::SameLine(0.0f, group_gap);
     // Steps per frame and frame rate change every frame; show averages
     // refreshed every kReadoutInterval so they can be read.
     constexpr double kReadoutInterval = 0.5;  // [s]
@@ -178,13 +207,22 @@ void SeastackGuiComponent::RenderToolbar() {
         readout_frames_ = 0;
         readout_start_ = now;
     }
-    ImGui::TextDisabled("| wall %.1f s | %.1f steps/frame | %.0f fps", s.active_wall_time,
+    ImGui::TextDisabled("wall %.1f s    %.1f steps/frame    %.0f fps", s.active_wall_time,
                         shown_steps_per_frame_, shown_fps_);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Wall time counts only time spent stepping (pauses excluded).");
     }
+    // Grow-only, so the progress bar does not jitter as the readouts change length.
+    status_width_ = std::max(status_width_, ImGui::GetItemRectMax().x - status_x);
 
-    toolbar_width_ = std::max(toolbar_width_, ImGui::GetWindowWidth());
+    if (settings_) {
+        ImGui::SameLine(ImGui::GetWindowWidth() - style.WindowPadding.x - (toggle_w - group_gap));
+        ImGui::Checkbox("Inspector", &show_inspector_);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Show or hide the settings panel.");
+        }
+    }
+
     ImGui::End();
 }
 
@@ -203,145 +241,175 @@ void SeastackGuiComponent::Draw() {
         imgui_theme_ = settings_->theme;
         imgui_theme_applied_ = true;
     }
-
-    RenderToolbar();
-
-    // Viewer Settings panel (bottom left corner).
-    if (settings_) {
-        ImGuiWindowFlags settings_flags = 0;
-        settings_flags |= ImGuiWindowFlags_AlwaysAutoResize;
-
-        const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 10.0f * ui_scale_,
-                                       viewport->WorkPos.y + viewport->WorkSize.y - 10.0f * ui_scale_),
-                                ImGuiCond_FirstUseEver, ImVec2(0.0f, 1.0f));  // Anchor bottom-left
-
-        ImGui::Begin("Viewer Settings", nullptr, settings_flags);
-
-        // ---- View: theme and camera ----
-        if (!ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_F, false)) {
-            settings_->camera_fit_requested = true;
-        }
-        if (ImGui::CollapsingHeader("View", ImGuiTreeNodeFlags_DefaultOpen)) {
-            bool dark = settings_->theme == VisualTheme::kDark;
-            if (ImGui::Checkbox("Dark mode", &dark)) {
-                settings_->theme = dark ? VisualTheme::kDark : VisualTheme::kLight;
-                settings_->theme_changed = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Dark studio background, or light theme with sky.\n"
-                                  "Visual only; set the start-up theme with\n"
-                                  "simulation.visualization.theme: dark | light");
-            }
-
-            if (ImGui::Button("Fit")) {
-                settings_->camera_fit_requested = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Frame the whole model, keeping the view direction (F).");
-            }
-            struct ViewButton {
-                const char* label;
-                CameraView view;
-                const char* tooltip;
-            };
-            constexpr ViewButton kViews[] = {
-                {"Iso", CameraView::kIsometric, "Isometric view from the -Y/+X side."},
-                {"Front", CameraView::kFront, "Looking along +Y."},
-                {"Side", CameraView::kSide, "Looking along -X."},
-                {"Top", CameraView::kTop, "Looking down, +X right, +Y up."},
-            };
-            for (const auto& v : kViews) {
-                ImGui::SameLine();
-                if (ImGui::Button(v.label)) {
-                    settings_->camera_view = v.view;
-                    settings_->camera_view_requested = true;
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", v.tooltip);
-                }
-            }
-        }
-
-        // ---- Waves ----
-        if (ImGui::CollapsingHeader("Waves", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Show Water", &settings_->show_water);
-
-            ImGui::Checkbox("Show Wireframe", &settings_->show_water_grid);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Show mesh edges on water surface.\n"
-                                  "Helps visualize wave motion and ripples.");
-            }
-
-            {
-                const char* resolution_labels[] = {"32x32", "64x64", "96x96", "128x128"};
-                int current_idx = 0;
-                for (int i = 0; i < ViewerSettings::kResolutionCount; ++i) {
-                    if (ViewerSettings::kResolutionOptions[i] == settings_->grid_resolution) {
-                        current_idx = i;
-                        break;
-                    }
-                }
-                int prev_idx = current_idx;
-                if (ImGui::Combo("Grid Resolution", &current_idx, resolution_labels, ViewerSettings::kResolutionCount)) {
-                    if (current_idx != prev_idx) {
-                        settings_->grid_resolution = ViewerSettings::kResolutionOptions[current_idx];
-                        settings_->resolution_changed = true;
-                    }
-                }
-            }
-
-            ImGui::Checkbox("Radiation (approx.)", &settings_->show_radiation_viz);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Qualitative visual approximation of radiated waves.\n"
-                                  "Heights are empirical - not a quantitative result.\n"
-                                  "Does NOT affect physics - for feedback only.");
-            }
-
-            if (settings_->show_radiation_viz) {
-                ImGui::Indent();
-                ImGui::SliderFloat("Visual Scale##rad", &settings_->radiation_visual_scale, 0.1f, 5.0f, "%.1fx");
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Visual amplification for inspection.\n"
-                                      "1.0x = baseline, increase to see small ripples.\n"
-                                      "Does NOT affect physics.");
-                }
-                ImGui::TextDisabled("Wavelength/speed derived from wave period");
-                ImGui::Unindent();
-            }
-        }
-
-        // ---- Mooring ----
-        RenderMooringPanel();
-
-        // ---- Display ----
-        if (ImGui::CollapsingHeader("Display")) {
-            ImGui::SliderInt("Update Hz", &settings_->update_hz, 10, 60, "%d Hz");
-
-            if (vsys_) {
-                bool chrono_panel = vsys_->IsBaseGuiVisible();
-                if (ImGui::Checkbox("Chrono debug panel", &chrono_panel)) {
-                    vsys_->SetBaseGuiVisibility(chrono_panel);
-                }
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Chrono's own panel: body/COM/link frames, labels,\n"
-                                      "collision shapes. Its wall clock includes pauses.");
-                }
-            }
-
-            ImGui::Checkbox("Show Status", &settings_->show_water_status);
-            if (settings_->show_water_status) {
-                ImGui::TextDisabled("Water: %s | Grid: %d | Hz: %d",
-                                    settings_->show_water ? "ON" : "OFF",
-                                    settings_->grid_resolution,
-                                    settings_->update_hz);
-            }
-        }
-
-        ImGui::End();
+    if (settings_ && !ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+        settings_->camera_fit_requested = true;
     }
 
+    // Docked layout: transport bar along the bottom, inspector on the right,
+    // and the 3D scene in the rectangle that is left.
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float bar_h = ImGui::GetFrameHeight() + 2.0f * ImGui::GetStyle().WindowPadding.y;
+    const float inspector_w = (settings_ && show_inspector_) ? kInspectorWidth * ui_scale_ : 0.0f;
+    scene_rect_.x = vp->WorkPos.x;
+    scene_rect_.y = vp->WorkPos.y;
+    scene_rect_.w = std::max(vp->WorkSize.x - inspector_w, 1.0f);
+    scene_rect_.h = std::max(vp->WorkSize.y - bar_h, 1.0f);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    RenderTransportBar(ImVec2(vp->WorkPos.x, vp->WorkPos.y + vp->WorkSize.y - bar_h), ImVec2(vp->WorkSize.x, bar_h));
+    if (inspector_w > 0.0f) {
+        RenderInspector(ImVec2(vp->WorkPos.x + vp->WorkSize.x - inspector_w, vp->WorkPos.y),
+                        ImVec2(inspector_w, vp->WorkSize.y - bar_h));
+    }
+    ImGui::PopStyleVar();
+
+    RenderViewToolbar();
     RenderColorBar();
+}
+
+// ---------------------------------------------------------------------------
+
+void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size) {
+    ImGui::SetNextWindowPos(pos);
+    ImGui::SetNextWindowSize(size);
+    ImGui::SetNextWindowBgAlpha(1.0f);
+    ImGui::Begin("Inspector", nullptr, kDockedFlags);
+
+    // ---- View ----
+    if (ImGui::CollapsingHeader("View", ImGuiTreeNodeFlags_DefaultOpen)) {
+        bool dark = settings_->theme == VisualTheme::kDark;
+        if (ImGui::Checkbox("Dark mode", &dark)) {
+            settings_->theme = dark ? VisualTheme::kDark : VisualTheme::kLight;
+            settings_->theme_changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Dark studio background, or light theme with sky.\n"
+                              "Visual only; set the start-up theme with\n"
+                              "simulation.visualization.theme: dark | light");
+        }
+    }
+
+    // ---- Waves ----
+    if (ImGui::CollapsingHeader("Waves", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Show Water", &settings_->show_water);
+
+        ImGui::Checkbox("Show Wireframe", &settings_->show_water_grid);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Show mesh edges on water surface.\n"
+                              "Helps visualize wave motion and ripples.");
+        }
+
+        {
+            const char* resolution_labels[] = {"32x32", "64x64", "96x96", "128x128"};
+            int current_idx = 0;
+            for (int i = 0; i < ViewerSettings::kResolutionCount; ++i) {
+                if (ViewerSettings::kResolutionOptions[i] == settings_->grid_resolution) {
+                    current_idx = i;
+                    break;
+                }
+            }
+            int prev_idx = current_idx;
+            if (ImGui::Combo("Grid Resolution", &current_idx, resolution_labels, ViewerSettings::kResolutionCount)) {
+                if (current_idx != prev_idx) {
+                    settings_->grid_resolution = ViewerSettings::kResolutionOptions[current_idx];
+                    settings_->resolution_changed = true;
+                }
+            }
+        }
+
+        ImGui::Checkbox("Radiation (approx.)", &settings_->show_radiation_viz);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Qualitative visual approximation of radiated waves.\n"
+                              "Heights are empirical - not a quantitative result.\n"
+                              "Does NOT affect physics - for feedback only.");
+        }
+
+        if (settings_->show_radiation_viz) {
+            ImGui::Indent();
+            ImGui::SliderFloat("Visual Scale##rad", &settings_->radiation_visual_scale, 0.1f, 5.0f, "%.1fx");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Visual amplification for inspection.\n"
+                                  "1.0x = baseline, increase to see small ripples.\n"
+                                  "Does NOT affect physics.");
+            }
+            ImGui::TextDisabled("Wavelength/speed derived from wave period");
+            ImGui::Unindent();
+        }
+    }
+
+    // ---- Mooring ----
+    RenderMooringPanel();
+
+    // ---- Display ----
+    if (ImGui::CollapsingHeader("Display")) {
+        ImGui::SliderInt("Update Hz", &settings_->update_hz, 10, 60, "%d Hz");
+
+        if (vsys_) {
+            bool chrono_panel = vsys_->IsBaseGuiVisible();
+            if (ImGui::Checkbox("Chrono debug panel", &chrono_panel)) {
+                vsys_->SetBaseGuiVisibility(chrono_panel);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Chrono's own panel: body/COM/link frames, labels,\n"
+                                  "collision shapes. Its wall clock includes pauses.");
+            }
+        }
+
+        ImGui::Checkbox("Show Status", &settings_->show_water_status);
+        if (settings_->show_water_status) {
+            ImGui::TextDisabled("Water: %s | Grid: %d | Hz: %d",
+                                settings_->show_water ? "ON" : "OFF",
+                                settings_->grid_resolution,
+                                settings_->update_hz);
+        }
+    }
+
+    ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+
+void SeastackGuiComponent::RenderViewToolbar() {
+    if (!settings_) return;
+
+    const float margin = kOverlayMargin * ui_scale_;
+    ImGui::SetNextWindowPos(ImVec2(scene_rect_.x + margin, scene_rect_.y + margin));
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    ImGui::Begin("##view_toolbar", nullptr,
+                 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                     ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                     ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing);
+
+    if (ImGui::Button("Fit")) {
+        settings_->camera_fit_requested = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Frame the whole model, keeping the view direction (F).");
+    }
+    struct ViewButton {
+        const char* label;
+        CameraView view;
+        const char* tooltip;
+    };
+    constexpr ViewButton kViews[] = {
+        {"Iso", CameraView::kIsometric, "Isometric view from the -Y/+X side."},
+        {"Front", CameraView::kFront, "Looking along +Y."},
+        {"Side", CameraView::kSide, "Looking along -X."},
+        {"Top", CameraView::kTop, "Looking down, +X right, +Y up."},
+    };
+    for (size_t i = 0; i < std::size(kViews); ++i) {
+        // Wider gap between Fit and the fixed views.
+        ImGui::SameLine(0.0f, i == 0 ? 3.0f * ImGui::GetStyle().ItemSpacing.x : -1.0f);
+        if (ImGui::Button(kViews[i].label)) {
+            settings_->camera_view = kViews[i].view;
+            settings_->camera_view_requested = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s", kViews[i].tooltip);
+        }
+    }
+
+    ImGui::End();
 }
 
 // ---------------------------------------------------------------------------
@@ -421,15 +489,16 @@ void SeastackGuiComponent::RenderColorBar() {
     if (!settings_ || !settings_->show_mooring_colors) return;
     if (!mooring_viz_ || !mooring_viz_->IsInitialized()) return;
 
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
     const float bar_w = 14.0f * ui_scale_;
     const float bar_h = 180.0f * ui_scale_;
-    const float margin = 20.0f * ui_scale_;
+    const float margin = kOverlayMargin * ui_scale_;
     const float label_gap = 6.0f * ui_scale_;
     const float pad = 8.0f * ui_scale_;  // legend panel padding
+    const float line_h = ImGui::GetTextLineHeight();
 
-    const float x0 = vp->WorkPos.x + vp->WorkSize.x - margin - bar_w;
-    const float y0 = vp->WorkPos.y + vp->WorkSize.y * 0.5f - bar_h * 0.5f;
+    // Top-right corner of the scene area, clear of the inspector.
+    const float x0 = scene_rect_.x + scene_rect_.w - margin - pad - bar_w;
+    const float y0 = scene_rect_.y + margin + pad + line_h + 2.0f * label_gap;
 
     ImDrawList* dl = ImGui::GetBackgroundDrawList();
 
@@ -444,7 +513,6 @@ void SeastackGuiComponent::RenderColorBar() {
                                                             : "Tension";
     const float label_w = std::max(ImGui::CalcTextSize(max_label).x, ImGui::CalcTextSize(min_label).x);
     const float title_w = ImGui::CalcTextSize(title).x;
-    const float line_h = ImGui::GetTextLineHeight();
 
     // Legend panel in the theme's window colour, so text stays readable over
     // both the dark background and the light theme's sky.
@@ -493,4 +561,3 @@ void SeastackGuiComponent::RenderColorBar() {
 }
 
 }  // namespace seastack::viz
-

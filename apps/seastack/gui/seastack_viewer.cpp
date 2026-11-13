@@ -506,13 +506,35 @@ double SeastackViewer::GetViewDistance() const {
 }
 
 double SeastackViewer::GetViewportAspect() const {
-    if (window_) {
-        const auto extent = window_->extent2D();
-        if (extent.height > 0) {
-            return static_cast<double>(extent.width) / static_cast<double>(extent.height);
+    if (camera_) {
+        const VkRect2D area = camera_->getRenderArea();
+        if (area.extent.height > 0) {
+            return static_cast<double>(area.extent.width) / static_cast<double>(area.extent.height);
         }
     }
     return 16.0 / 9.0;
+}
+
+void SeastackViewer::SetSceneViewport(int x, int y, int width, int height) {
+    if (!camera_ || !camera_->viewportState || !window_) {
+        return;
+    }
+    const VkExtent2D extent = window_->extent2D();
+    const int window_w = static_cast<int>(extent.width);
+    const int window_h = static_cast<int>(extent.height);
+    if (window_w <= 0 || window_h <= 0) {
+        return;  // minimised
+    }
+    x = std::clamp(x, 0, window_w - 1);
+    y = std::clamp(y, 0, window_h - 1);
+    width = std::clamp(width, 1, window_w - x);
+    height = std::clamp(height, 1, window_h - y);
+    // The camera viewport is applied as dynamic state each frame, and the
+    // trackball maps the mouse through it, so no pipeline rebuild is needed.
+    camera_->viewportState->set(x, y, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    if (auto* perspective = dynamic_cast<vsg::Perspective*>(camera_->projectionMatrix.get())) {
+        perspective->aspectRatio = static_cast<double>(width) / static_cast<double>(height);
+    }
 }
 
 void SeastackViewer::SetClipPlanes(const ClipPlanes& clip) {
