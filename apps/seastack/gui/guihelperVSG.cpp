@@ -36,30 +36,25 @@ using namespace vsg_config;
 
 namespace {
 
-bool IsWaterSurfaceBody(const ::chrono::ChBody& body) {
-    return body.GetName() == "water_surface" || body.GetName() == "animated_water_surface";
-}
+using seastack::chrono::IsWaterSurfaceBody;
 
-/// World-frame bounds of all body visual shapes [m] (water surfaces excluded).
-/// Bodies without visual shapes contribute their reference-frame origin.
-Bounds3 ComputeModelBounds(const ::chrono::ChSystem& system) {
-    Bounds3 bounds;
-    for (const auto& body : system.GetBodies()) {
-        if (!body || IsWaterSurfaceBody(*body)) {
-            continue;
+/// Mooring lines of a frame in the form MooringLinesViz takes.
+std::vector<MooringLineVizData> ToMooringVizData(const SceneDescription& scene, const VizFrame& frame) {
+    std::vector<MooringLineVizData> lines(frame.mooring_lines.size());
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const MooringLineState& state = frame.mooring_lines[i];
+        MooringLineVizData& line = lines[i];
+        line.node_positions = state.node_positions;
+        line.node_tensions = state.node_tensions;
+        for (double t : state.node_tensions) {
+            line.line_max_tension = std::max(line.line_max_tension, t);
         }
-        const ::chrono::ChVector3d p = body->GetPos();
-        bounds.Extend(Vec3{p.x(), p.y(), p.z()});
-        if (auto model = body->GetVisualModel()) {
-            const ::chrono::ChAABB local = model->GetBoundingBox();
-            if (!local.IsInverted()) {
-                const ::chrono::ChAABB world = local.Transform(body->GetVisualModelFrame());
-                bounds.Extend(Vec3{world.min.x(), world.min.y(), world.min.z()});
-                bounds.Extend(Vec3{world.max.x(), world.max.y(), world.max.z()});
-            }
+        if (i < scene.mooring_lines.size()) {
+            line.start_point_type = static_cast<MooringPointType>(static_cast<int>(scene.mooring_lines[i].start_type));
+            line.end_point_type = static_cast<MooringPointType>(static_cast<int>(scene.mooring_lines[i].end_type));
         }
     }
-    return bounds;
+    return lines;
 }
 
 /// Crease angle [deg] for display normals: smoother below, sharp edge above.
@@ -146,9 +141,31 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     pVis->SetWindowSize(kWindowWidth, kWindowHeight);
     pVis->SetWindowPosition(100, 100);
 
+    if (system) {
+        int body_index = 0;
+        for (auto& body : system->GetBodies()) {
+            if (body && !IsWaterSurfaceBody(*body)) {
+                SmoothBodyMeshNormals(*body);
+                const auto material = MakeBodyPaletteMaterial(body_index);
+                ApplyMaterialToAllVisualShapes(*body, material, options_.use_model_colors);
+                ++body_index;
+
+                if (kEnableWireframe) {
+                    auto model = body->GetVisualModel();
+                    if (model) {
+                        model->EnableWireframe(true);
+                    }
+                }
+            }
+        }
+    }
+
+    // Built after the materials so the scene description records what is drawn.
+    extractor_ = std::make_unique<seastack::chrono::VizExtractor>(system, mooring_provider_);
+
     // Default camera: isometric view framing the whole model, so lab-scale and
     // full-scale models both fill the view. SetCamera() overrides this.
-    model_bounds_ = system ? ComputeModelBounds(*system) : Bounds3{};
+    model_bounds_ = extractor_->Scene().model_bounds;
     if (model_bounds_.IsValid()) {
         const Vec3 s = model_bounds_.Size();
         std::cout << "[Camera] Model bounds: " << s[0] << " x " << s[1] << " x " << s[2] << " m" << std::endl;
@@ -182,25 +199,6 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
                   << " (continuing without skybox)" << std::endl;
     } catch (...) {
         std::cerr << "[VSG] WARNING: Skybox texture load failed (unknown error)" << std::endl;
-    }
-
-    if (system) {
-        int body_index = 0;
-        for (auto& body : system->GetBodies()) {
-            if (body && !IsWaterSurfaceBody(*body)) {
-                SmoothBodyMeshNormals(*body);
-                const auto material = MakeBodyPaletteMaterial(body_index);
-                ApplyMaterialToAllVisualShapes(*body, material, options_.use_model_colors);
-                ++body_index;
-
-                if (kEnableWireframe) {
-                    auto model = body->GetVisualModel();
-                    if (model) {
-                        model->EnableWireframe(true);
-                    }
-                }
-            }
-        }
     }
 
     if (!mooring_viz_)
@@ -296,6 +294,9 @@ void GUIImplVSG::SetWaterGridExtent(double width, double length, double center_x
 
 void GUIImplVSG::SetMooringLineProvider(MooringVizProvider provider) {
     mooring_provider_ = std::move(provider);
+    if (extractor_) {
+        extractor_->SetMooringProvider(mooring_provider_);
+    }
 }
 
 void GUIImplVSG::SetMooringVisualizationRadii(double line_radius_m,
@@ -393,10 +394,13 @@ bool GUIImplVSG::IsRunning(double timestep) {
 
     EnsureWaterSurface();
 
+    // One snapshot per rendered frame; everything below draws from it.
+    const VizFrame frame = extractor_ ? extractor_->Capture(0) : VizFrame{};
+
     // Mooring line visualisation (lazy-initialised on first valid data).
-    if (mooring_provider_) {
-        auto line_data = mooring_provider_();
-        if (!line_data.empty()) {
+    if (extractor_ && !frame.mooring_lines.empty()) {
+        const auto line_data = ToMooringVizData(extractor_->Scene(), frame);
+        {
             if (!mooring_viz_)
                 mooring_viz_ = std::make_unique<MooringLinesViz>();
             if (!mooring_viz_->IsInitializedFor(pVis.get())) {
@@ -437,13 +441,11 @@ bool GUIImplVSG::IsRunning(double timestep) {
     // Update animated water surface if wave model is set (or forced static).
     // VSG vertex buffers are marked dirty() in Update() for GPU re-upload.
     if (animated_water_ && animated_water_->IsInitialized()) {
-        double t = system_ ? system_->GetChTime() : 0.0;
+        const double t = frame.time;
 
-        // Update radiation source body state if radiation viz is enabled.
-        // Chooses the first non-water body in the system as the source.
-        // NOTE: This is visualization-only and does NOT affect physics.
-        if (viewer_settings_ && viewer_settings_->show_radiation_viz && system_) {
-            UpdateRadiationSourceBody(t);
+        // Radiation overlay sources (visualization only; never affects physics).
+        if (viewer_settings_ && viewer_settings_->show_radiation_viz && extractor_) {
+            UpdateRadiationSourceBody(frame);
         }
 
         // Update() handles null wave_model_ gracefully (keeps surface flat).
@@ -465,8 +467,12 @@ bool GUIImplVSG::IsRunning(double timestep) {
     return true;
 }
 
-void GUIImplVSG::UpdateRadiationSourceBody(double t) {
-    if (!animated_water_ || !system_) {
+void GUIImplVSG::UpdateRadiationSourceBody(const VizFrame& frame) {
+    if (!animated_water_ || !extractor_) {
+        return;
+    }
+    const SceneDescription& scene = extractor_->Scene();
+    if (!IsConsistent(scene, frame)) {
         return;
     }
 
@@ -496,44 +502,28 @@ void GUIImplVSG::UpdateRadiationSourceBody(double t) {
     // Log source bodies once.
     static bool logged_sources = false;
 
-    // Iterate over ALL moving bodies and update their radiation state.
-    for (auto& body : system_->GetBodies()) {
-        if (!body) {
+    // Every moving, named model body is a source (water bodies are not in the scene).
+    for (size_t i = 0; i < scene.bodies.size(); ++i) {
+        const BodyDescription& body = scene.bodies[i];
+        const BodyState& state = frame.bodies[i];
+        const std::string& name = body.name;
+        if (body.fixed || name == "ground" || name == "floor" || name.empty()) {
             continue;
         }
 
-        const std::string& name = body->GetName();
-
-        // Skip water surfaces and ground bodies.
-        if (name == "water_surface" || name == "animated_water_surface" ||
-            name == "ground" || name == "floor" || name.empty()) {
-            continue;
-        }
-
-        // Skip fixed bodies.
-        if (body->IsFixed()) {
-            continue;
-        }
-
-        // Get body motion state.
-        const ::chrono::ChVector3d pos = body->GetPos();
-        const ::chrono::ChVector3d vel = body->GetPosDt();
-        const ::chrono::ChVector3d ang_vel = body->GetAngVelParent();  // world frame
-
-        // Estimate body radius from AABB (rough approximation).
-        double radius = 5.0;  // Default
-        auto aabb = body->GetTotalAABB();
-        if (aabb.max.x() > aabb.min.x()) {
-            double dx = aabb.max.x() - aabb.min.x();
-            double dy = aabb.max.y() - aabb.min.y();
-            radius = std::max(dx, dy) / 2.0;
-            // Guard against degenerate AABBs only; a larger floor would
+        // Body radius in plan from its visual bounds (rough approximation).
+        double radius = 5.0;  // m, fallback for bodies without visual shapes
+        if (body.local_bounds.IsValid()) {
+            const Vec3 s = body.local_bounds.Size();
+            // Guard against degenerate bounds only; a larger floor would
             // over-amplify lab-scale bodies.
-            radius = std::max(radius, 0.05);  // m
+            radius = std::max(0.5 * std::max(s[0], s[1]), 0.05);
         }
 
-        // Update radiation viz for this body.
-        animated_water_->GetRadiationViz().SetSourceState(name, pos, vel, ang_vel, radius, t);
+        const auto to_ch = [](const Vec3& v) { return ::chrono::ChVector3d(v[0], v[1], v[2]); };
+        animated_water_->GetRadiationViz().SetSourceState(name, to_ch(state.com_position),
+                                                          to_ch(state.linear_velocity),
+                                                          to_ch(state.angular_velocity), radius, frame.time);
 
         if (!logged_sources) {
             std::cout << "[RadiationViz] Source: " << name << " (r=" << radius << "m)" << std::endl;

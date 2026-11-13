@@ -17,7 +17,9 @@
 
 #ifdef SEASTACK_HAVE_VSG
     #include "vsg_visual_system.h"
+    #include <seastack/adapters/chrono/viz_extractor.h>
     #include <seastack/viz_core/scene_framing.h>
+    #include <seastack/viz_core/scene_model.h>
 #endif
 
 namespace chrono {
@@ -79,9 +81,9 @@ class GUIImplVSG : public GUIImpl {
     /// Ensure water surface is created (animated if wave model set, static otherwise).
     void EnsureWaterSurface();
 
-    /// Update radiation source bodies for visualization.
-    /// Iterates over all moving bodies and updates their radiation state.
-    void UpdateRadiationSourceBody(double t);
+    /// Update radiation source bodies for visualization from the current frame.
+    /// Every moving, named model body is a source.
+    void UpdateRadiationSourceBody(const VizFrame& frame);
 
     /// Apply pending camera requests from the GUI (standard views, fit).
     void HandleCameraRequests();
@@ -97,6 +99,9 @@ class GUIImplVSG : public GUIImpl {
     Bounds3 model_bounds_;
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     ::chrono::ChSystem* system_ = nullptr;
+    /// Scene and per-frame state for the renderers; the only reader of system_
+    /// after Init() apart from Chrono's own body drawing.
+    std::unique_ptr<seastack::chrono::VizExtractor> extractor_;
     std::unique_ptr<AnimatedWaterSurface> animated_water_;
     std::unique_ptr<ViewerSettings> viewer_settings_;
 

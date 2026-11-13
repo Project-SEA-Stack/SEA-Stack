@@ -12,6 +12,7 @@ add_library(seastack_chrono_adapter STATIC
     src/model_yaml_link_coeffs.cpp
     src/helper.cpp
     src/pto_chrono_adapter.cpp
+    src/viz_extractor.cpp
 )
 add_library(SEAStack::ChronoAdapter ALIAS seastack_chrono_adapter)
 
@@ -52,6 +53,7 @@ target_link_libraries(seastack_chrono_adapter
         SEAStack::Hydro
         SEAStack::Infra
         SEAStack::PTO
+        SEAStack::VizCore
         Chrono::Chrono_core
         OpenMP::OpenMP_CXX
     PRIVATE

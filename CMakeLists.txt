@@ -573,7 +573,8 @@ endif()
 # ---------- Library install & export ----------
 
 # Always-built library targets
-set(_seastack_lib_targets seastack_core seastack_hydro seastack_infra seastack_pto seastack_control)
+set(_seastack_lib_targets seastack_core seastack_hydro seastack_infra seastack_pto seastack_control
+    seastack_viz_core)
 
 if(TARGET seastack_external)
     list(APPEND _seastack_lib_targets seastack_external)
@@ -596,6 +597,7 @@ set_target_properties(seastack_hydro PROPERTIES EXPORT_NAME Hydro)
 set_target_properties(seastack_infra PROPERTIES EXPORT_NAME Infra)
 set_target_properties(seastack_pto PROPERTIES EXPORT_NAME PTO)
 set_target_properties(seastack_control PROPERTIES EXPORT_NAME Control)
+set_target_properties(seastack_viz_core PROPERTIES EXPORT_NAME VizCore)
 if(TARGET seastack_external)
     set_target_properties(seastack_external PROPERTIES EXPORT_NAME External)
 endif()
@@ -623,6 +625,7 @@ install(DIRECTORY libs/hydro/include/         DESTINATION include)
 install(DIRECTORY libs/infrastructure/include/ DESTINATION include)
 install(DIRECTORY libs/pto/include/           DESTINATION include)
 install(DIRECTORY libs/control/include/       DESTINATION include)
+install(DIRECTORY libs/viz_core/include/      DESTINATION include)
 if(TARGET seastack_external)
     install(DIRECTORY libs/external/include/ DESTINATION include)
 endif()
