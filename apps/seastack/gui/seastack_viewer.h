@@ -17,6 +17,7 @@
 #include <vsg/all.h>
 
 #include <functional>
+#include <future>
 #include <string>
 #include <vector>
 
@@ -76,6 +77,15 @@ class SeastackViewer : public OverlayBuilder {
     /// current camera. Returns false if the point is behind the camera.
     bool ProjectToWindow(const Vec3& world, float* x_px, float* y_px) const;
 
+    /// Save the 3D view (the scene viewport, without the docked panels) as an
+    /// opaque PNG at `path` after the next rendered frame.
+    void RequestScreenshot(const std::string& path) { screenshot_path_ = path; }
+
+    /// Path of the last screenshot finished and whether it succeeded; the
+    /// path is empty until a screenshot write has completed.
+    const std::string& LastScreenshotPath() const { return last_screenshot_path_; }
+    bool LastScreenshotOk() const { return last_screenshot_ok_; }
+
     /// Clear colour, skybox visibility and light levels for `theme`.
     void ApplySceneTheme(const SceneTheme& theme);
 
@@ -113,6 +123,18 @@ class SeastackViewer : public OverlayBuilder {
     /// x / y / z arrows (red / green / blue) of `length` [m] from the origin.
     vsg::ref_ptr<vsg::Node> CreateAxisTriad(double length);
 
+    /// Copy the scene viewport of the frame just submitted into opaque RGBA
+    /// pixels; null on failure. Call between recordAndSubmit and present.
+    vsg::ref_ptr<vsg::Data> CaptureSceneViewport();
+
+    /// Start writing `pixels` to `path` as PNG on a worker thread (PNG
+    /// encoding a full-screen image takes about a second).
+    void StartScreenshotWrite(vsg::ref_ptr<vsg::Data> pixels, const std::string& path);
+
+    /// Collect a finished (or, with wait, any) background write into
+    /// last_screenshot_path_ / last_screenshot_ok_.
+    void CollectScreenshotWrite(bool wait);
+
     /// Compile a node made after Viewer::compile(); returns null on failure.
     vsg::ref_ptr<vsg::Node> CompileNode(vsg::ref_ptr<vsg::Node> node);
 
@@ -141,6 +163,12 @@ class SeastackViewer : public OverlayBuilder {
     bool show_body_frames_ = false;
     size_t num_bodies_ = 0;
     float ui_scale_ = 1.0f;
+    vsg::ref_ptr<vsg::Options> io_options_;  ///< Image writers (vsgXchange)
+    std::string screenshot_path_;            ///< Pending request; empty = none
+    std::future<bool> screenshot_write_;     ///< PNG write in progress, if valid()
+    std::string screenshot_write_path_;      ///< Path of the write in progress
+    std::string last_screenshot_path_;
+    bool last_screenshot_ok_ = false;
 };
 
 }  // namespace seastack::viz

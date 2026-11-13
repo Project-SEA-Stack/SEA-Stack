@@ -33,6 +33,8 @@ struct ViewerOptions {
     bool has_mooring_tension_range = false;
     float mooring_tension_min = 0.0f;
     float mooring_tension_max = 0.0f;
+    /// Folder for GUI screenshots; empty = working directory.
+    std::string screenshot_directory;
 };
 
 /// SEA-Stack User Interface.

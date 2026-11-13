@@ -145,9 +145,12 @@ class GUIImplSeastack : public GUIImpl {
     void UpdateMooring(const VizFrame& frame);
     /// Body names at their centres of mass (ImGui, inside the GUI frame).
     void DrawBodyLabels();
+    /// Pass a GUI screenshot request to the viewer and show the last result.
+    void HandleScreenshot();
 
     ViewerOptions options_;
     VizFrame last_frame_;  ///< Frame shown this render; labels are placed from it
+    std::string reported_screenshot_;  ///< Last screenshot whose result the GUI has shown
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     std::unique_ptr<AnimatedWaterSurface> water_;
     bool water_tried_ = false;  ///< Water creation attempted (it is not retried)

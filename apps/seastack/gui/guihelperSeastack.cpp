@@ -26,6 +26,7 @@
 #include <chrono/core/ChDataPath.h>
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 
@@ -234,6 +235,23 @@ void GUIImplSeastack::DrawBodyLabels() {
     dl->PopClipRect();
 }
 
+void GUIImplSeastack::HandleScreenshot() {
+    // Report the result of last frame's capture, then queue a new request.
+    if (!viewer_->LastScreenshotPath().empty() && viewer_->LastScreenshotPath() != reported_screenshot_) {
+        reported_screenshot_ = viewer_->LastScreenshotPath();
+        viewer_settings_->screenshot_status =
+            viewer_->LastScreenshotOk()
+                ? "Saved " + std::filesystem::path(reported_screenshot_).filename().string()
+                : std::string("Screenshot failed (see console)");
+        viewer_settings_->screenshot_status_time = -1.0;
+    }
+    viewer_settings_->capturing_frame = viewer_settings_->screenshot_requested;
+    if (viewer_settings_->screenshot_requested) {
+        viewer_settings_->screenshot_requested = false;
+        viewer_->RequestScreenshot(NextScreenshotPath(options_.screenshot_directory));
+    }
+}
+
 bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     if (!extractor_) {
         return false;
@@ -242,6 +260,7 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     const VizFrame& frame = last_frame_;
     viewer_->SetFrame(frame);
     viewer_->SetShowBodyFrames(viewer_settings_->show_body_frames);
+    HandleScreenshot();
     UpdateMooring(frame);
     UpdateWater(frame);
     UpdateSceneViewport();

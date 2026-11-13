@@ -737,6 +737,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             // The Chrono key enable_shadows is ignored: Chrono VSG shadows crash
             // when SEA-Stack adds its water and mooring meshes after Initialize().
             seastack::viz::ViewerOptions viewer_options;
+            viewer_options.screenshot_directory = config.output_directory;
             try {
                 const YAML::Node sim_yaml = YAML::LoadFile(config.simulation_file);
                 if (sim_yaml["simulation"] && sim_yaml["simulation"]["visualization"]) {

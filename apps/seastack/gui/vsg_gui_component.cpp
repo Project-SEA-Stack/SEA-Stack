@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <ctime>
+#include <filesystem>
 #include <iterator>
 
 namespace seastack::viz {
@@ -47,6 +49,28 @@ double ClampSpeed(double speed) {
 }
 
 }  // namespace
+
+std::string NextScreenshotPath(const std::string& directory) {
+    namespace fs = std::filesystem;
+    const fs::path dir = directory.empty() ? fs::current_path() : fs::path(directory);
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+#ifdef _WIN32
+    localtime_s(&local, &now);
+#else
+    localtime_r(&now, &local);
+#endif
+    char stamp[32];
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d_%H%M%S", &local);
+    fs::path path = dir / (std::string("screenshot_") + stamp + ".png");
+    for (int n = 2; fs::exists(path); ++n) {
+        path = dir / (std::string("screenshot_") + stamp + "_" + std::to_string(n) + ".png");
+    }
+    return path.string();
+}
 
 SeastackGuiComponent::SeastackGuiComponent(::chrono::vsg3d::ChVisualSystemVSG* vsys, bool& button_pressed,
                                            double& playback_speed, const RunStatus& run_status,
@@ -241,8 +265,13 @@ void SeastackGuiComponent::Draw() {
         imgui_theme_ = settings_->theme;
         imgui_theme_applied_ = true;
     }
-    if (settings_ && !ImGui::GetIO().WantCaptureKeyboard && ImGui::IsKeyPressed(ImGuiKey_F, false)) {
-        settings_->camera_fit_requested = true;
+    if (settings_ && !ImGui::GetIO().WantCaptureKeyboard) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+            settings_->camera_fit_requested = true;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_F12, false)) {
+            settings_->screenshot_requested = true;
+        }
     }
 
     // Docked layout: transport bar along the bottom, inspector on the right,
@@ -380,7 +409,7 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
 // ---------------------------------------------------------------------------
 
 void SeastackGuiComponent::RenderViewToolbar() {
-    if (!settings_) return;
+    if (!settings_ || settings_->capturing_frame) return;
 
     const float margin = kOverlayMargin * ui_scale_;
     ImGui::SetNextWindowPos(ImVec2(scene_rect_.x + margin, scene_rect_.y + margin));
@@ -417,6 +446,23 @@ void SeastackGuiComponent::RenderViewToolbar() {
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("%s", kViews[i].tooltip);
         }
+    }
+
+    ImGui::SameLine(0.0f, 3.0f * ImGui::GetStyle().ItemSpacing.x);
+    if (ImGui::Button("Screenshot")) {
+        settings_->screenshot_requested = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Save the 3D view as PNG in the case output folder (F12).");
+    }
+    constexpr double kStatusSeconds = 4.0;
+    if (settings_->screenshot_status_time < 0.0) {
+        settings_->screenshot_status_time = ImGui::GetTime();
+    }
+    if (!settings_->screenshot_status.empty() &&
+        ImGui::GetTime() - settings_->screenshot_status_time < kStatusSeconds) {
+        ImGui::SameLine();
+        ImGui::TextUnformatted(settings_->screenshot_status.c_str());
     }
 
     ImGui::End();

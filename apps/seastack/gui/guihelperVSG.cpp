@@ -18,6 +18,7 @@
 
 using namespace seastack::hydro;
 
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -469,6 +470,16 @@ bool GUIImplVSG::IsRunning(double timestep) {
     if (viewer_settings_ && viewer_settings_->theme_changed) {
         pVis->ApplySceneTheme(GetSceneTheme(viewer_settings_->theme), kFillLightName, kRimLightName);
         viewer_settings_->theme_changed = false;
+    }
+
+    // Chrono captures the whole window (panels included) after this frame.
+    if (viewer_settings_ && viewer_settings_->screenshot_requested) {
+        viewer_settings_->screenshot_requested = false;
+        const std::string path = NextScreenshotPath(options_.screenshot_directory);
+        pVis->WriteImageToFile(path);
+        std::cout << "[GUIImplVSG] Screenshot requested: " << path << std::endl;
+        viewer_settings_->screenshot_status = "Saved " + std::filesystem::path(path).filename().string();
+        viewer_settings_->screenshot_status_time = -1.0;
     }
 
     pVis->BeginScene();

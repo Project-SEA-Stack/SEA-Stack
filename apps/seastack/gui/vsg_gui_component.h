@@ -13,6 +13,8 @@
 #include <seastack/viz_core/simulation_pacer.h>
 #include <seastack/viz_core/visual_theme.h>
 
+#include <string>
+
 namespace seastack::viz {
 
 class MooringLinesViz;  // forward declaration
@@ -77,7 +79,17 @@ struct ViewerSettings {
     bool camera_view_requested = false;    ///< Move to camera_view, framing the model
     CameraView camera_view = CameraView::kIsometric;
     bool camera_fit_requested = false;     ///< Re-frame the model, keeping the view direction
+
+    // --- Screenshot ---
+    bool screenshot_requested = false;  ///< Save the 3D view as PNG (set by GUI, consumed by the viewer)
+    bool capturing_frame = false;       ///< This frame is being saved: hide the view toolbar
+    std::string screenshot_status;      ///< Last result shown next to the button; empty = none
+    double screenshot_status_time = 0.0;  ///< ImGui time the status was shown first [s]; < 0 = new status
 };
+
+/// Unused file path `<directory>/screenshot_YYYYMMDD_HHMMSS[_n].png`;
+/// an empty directory means the working directory. Creates the directory.
+std::string NextScreenshotPath(const std::string& directory);
 
 /// ImGui component for SEA-Stack visualization overlay.
 /// Docked layout: a transport bar along the bottom (play/pause, playback
