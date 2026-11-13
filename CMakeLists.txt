@@ -14,7 +14,7 @@ project(SEAStack
 # Version suffix for prerelease tags (e.g., "-beta.1", "-rc.1", or empty for releases).
 # Use "-rc.N" while a release branch is tested; "" only for the tagged release
 # (see docs/build/RELEASE_CHECKLIST.md).
-set(SEASTACK_VERSION_SUFFIX "-rc.1")
+set(SEASTACK_VERSION_SUFFIX "")
 set(SEASTACK_VERSION_FULL "${PROJECT_VERSION}${SEASTACK_VERSION_SUFFIX}")
 
 if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_BINARY_DIR})

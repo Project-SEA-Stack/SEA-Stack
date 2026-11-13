@@ -110,7 +110,7 @@ Detailed walkthroughs (toolchains, optional modules, packaging, troubleshooting,
 
 ## Project status
 
-SEA-Stack is under active development. The current release (v1.1.0) provides a robust modular core, validated offshore simulation workflows, and a suite of representative demos and test cases. Packages are currently available for Windows and macOS. Linux packaging and CI/CD are planned. Multi-fidelity capabilities and integration with higher-fidelity methods are planned as the platform evolves.
+SEA-Stack is under active development. The current release (v1.1.0) provides a robust modular core, validated offshore simulation workflows, and a suite of representative demos and test cases. Packages are available for Windows, macOS, and Linux. Multi-fidelity capabilities and integration with higher-fidelity methods are planned as the platform evolves.
 
 ## License
 

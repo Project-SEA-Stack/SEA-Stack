@@ -411,7 +411,7 @@ Nonlinear hydrodynamics (Froude–Krylov, viscous drag); multi-DOF PTO and riche
 
 SEA-Stack v1.1.0 separates domain physics from the dynamics engine: hydro as a reusable library, PTO/control as light modules, Chrono as the current backend with a thin adapter. That layout supports standalone use, alternative solvers in principle, and future fidelity options.
 
-v1.1.0 is buildable, tested, and packaged on Windows and macOS, with architecture reviewed against this design. Next focus: documentation, broader testing, community use, and the future directions above.
+v1.1.0 is buildable, tested, and packaged on Windows, macOS, and Linux, with architecture reviewed against this design. Next focus: documentation, broader testing, community use, and the future directions above.
 
 ---
 
