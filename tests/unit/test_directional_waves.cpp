@@ -1367,6 +1367,53 @@ static bool test_build_from_eta_file_exact_recovery() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Visualization component limit keeps the energetic components
+// (GUI water surface draws at most 500 of the Wigley demo's 512 x 21).
+// ─────────────────────────────────────────────────────────────────────────────
+static bool test_visualization_limit_keeps_energy() {
+    SeaStateDefinition def;
+    def.type = "irregular";
+    def.n_omega = 512;
+    def.n_theta = 21;
+    def.seed = 42;
+
+    SeaStatePartition p;
+    p.spectrum.type = "jonswap";
+    p.spectrum.Hs = 3.0;
+    p.spectrum.Tp = 10.0;
+    p.spreading.type = "cos2s";
+    p.spreading.mean_direction_deg = 0.0;
+    p.spreading.s = 12.0;
+    def.partitions.push_back(p);
+
+    auto components = ComponentSampler::Build(def);
+    constexpr int kVizLimit = 500;
+    TEST_ASSERT(static_cast<int>(components.size()) > 4 * kVizLimit,
+                "Sea should have many more components than the visualization limit");
+
+    auto field = LinearDirectionalWaveField(components, 0.0);
+    const Eigen::Vector3d origin(0.0, 0.0, 0.0);
+    double var_full = 0.0;
+    double var_viz = 0.0;
+    const int n_samples = 1200;
+    for (int n = 0; n < n_samples; ++n) {
+        const double t = 0.5 * n;
+        const double eta_full = field.GetElevation(origin, t);
+        const double eta_viz = field.GetElevationForVisualization(origin, t, kVizLimit);
+        var_full += eta_full * eta_full;
+        var_viz += eta_viz * eta_viz;
+    }
+    const double std_ratio = std::sqrt(var_viz / var_full);
+    TEST_ASSERT(std_ratio > 0.6 && std_ratio < 1.2,
+                "Visualization elevation should carry most of the sea's energy (std ratio "
+                + std::to_string(std_ratio) + ")");
+
+    std::cout << "  PASSED: test_visualization_limit_keeps_energy (std ratio " << std::fixed
+              << std::setprecision(3) << std_ratio << ")" << std::endl;
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 int main() {
@@ -1403,6 +1450,7 @@ int main() {
     run(test_heading_180_flip);
     run(test_old_new_equivalence);
     run(test_build_from_eta_file_exact_recovery);
+    run(test_visualization_limit_keeps_energy);
 
     std::cout << "\n=== Results: " << passed << " passed, " << failed << " failed ===" << std::endl;
     return (failed > 0) ? 1 : 0;

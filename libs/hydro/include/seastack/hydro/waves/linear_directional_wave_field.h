@@ -52,7 +52,7 @@ class LinearDirectionalWaveField : public WaveBase {
     /// Surface slope (d_eta/dx, d_eta/dy) at a given position and time.
     Eigen::Vector2d GetElevationGradientXY(const Eigen::Vector3d& position, double time) const override;
 
-    /// Elevation using only the first max_components components (for faster visualization).
+    /// Elevation using only the max_components largest-amplitude components (for faster visualization).
     double GetElevationForVisualization(const Eigen::Vector3d& position, double time, int max_components) const;
 
     /// Apply gravity and optional water depth from BEM simulation metadata, then
@@ -103,6 +103,14 @@ class LinearDirectionalWaveField : public WaveBase {
     Eigen::VectorXd cos_dirs_;
     Eigen::VectorXd sin_dirs_;
     Eigen::VectorXd wavenumbers_;
+
+    // Same components sorted by decreasing amplitude, so a visualization
+    // limit keeps the most energetic components.
+    Eigen::VectorXd viz_amplitudes_;
+    Eigen::VectorXd viz_kx_;
+    Eigen::VectorXd viz_ky_;
+    Eigen::VectorXd viz_omegas_;
+    Eigen::VectorXd viz_phases_;
 
     void PrecomputeArrays();
 

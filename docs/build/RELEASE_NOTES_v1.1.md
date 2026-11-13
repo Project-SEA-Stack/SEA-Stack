@@ -93,6 +93,28 @@ The v1.0.0 notes are unchanged:
 
 ## Fixes
 
+- **Linear hydrodynamic forces now turn with the body's heading.**
+  Hydrostatic restoring, radiation (RIRF, state-space and
+  constant-coefficient) and excitation (frequency-domain and IRF) were
+  applied about the fixed world axes, while the hull's roll and pitch axes
+  turn with its yaw. A free-floating hull that yawed a few degrees received
+  part of its large pitch stiffness, pitch radiation and pitch excitation
+  as roll moment. For a slender hull this fed itself and capsized it: the
+  Wigley spreading demo rolled to 90 deg after about 200 s, even with the
+  added damping of the `damping` case. Each of these components now
+  evaluates the BEM coefficients in the body's heading frame (world axes
+  rotated by yaw) and rotates the result back. The Wigley runs now complete
+  600 s with roll up to about 4.6 deg, consistent with a frequency-domain
+  estimate from the same BEM data. Results at zero yaw are unchanged: every
+  demo regression baseline matches (RMSrel at most 1e-6). New unit test
+  `test_heading_frame_transport`.
+- **The GUI now shows directional seas.** The water surface draws at most
+  500 wave components for speed, and it used the first 500 in storage
+  order: for the Wigley and trimaran seas (512 frequencies x 21 directions)
+  these were the lowest frequencies, which carry almost no energy, so the
+  sea looked flat. It now draws the 500 largest components (96% of the
+  elevation standard deviation for the Wigley sea). The forces always used
+  every component.
 - **IRF excitation now uses the sea's wave direction.** The H5 reader kept
   only the first BEM heading of the excitation impulse response, so
   `irf_convolution` ignored `waves.direction`: an OSWEC run at 30 deg was
@@ -151,6 +173,19 @@ The v1.0.0 notes are unchanged:
   nothing forbidden).
 
 ## Known issues and limitations
+
+- **Large yaw: BEM coefficients are not re-evaluated for the new heading.**
+  Linear forces now act in the body's heading frame, but the coefficients
+  still come from the BEM solution at zero yaw, and excitation still uses
+  the world wave direction rather than the direction relative to the hull.
+  Wave phase is referenced to the BEM origin, so a body that drifts away
+  sees the waves at the origin, and there is no mean wave-drift force. A
+  free-floating hull can therefore drift in yaw (up to 26 deg in the Wigley
+  spreading demo) with only approximate forcing. Interpolation over relative
+  heading is planned for v1.2.
+- **The trimaran demo's BEM file has a single heading.** Its spread sea is
+  forced as if every component came from 0 deg, so the hull sees only
+  head-sea excitation.
 
 - **Nonlinear Froude-Krylov is weakly nonlinear.** Radiation and diffraction
   stay linear about the mean position, the incident wave is not disturbed by

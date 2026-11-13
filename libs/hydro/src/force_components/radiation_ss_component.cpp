@@ -36,6 +36,7 @@
  *********************************************************************/
 
 #include <seastack/hydro/force_components/radiation_ss_component.h>
+#include <seastack/hydro/heading_frame.h>
 #include <seastack/hydro/hydro_data.h>
 #include <seastack/infra/logging.h>
 
@@ -210,7 +211,7 @@ void RadiationStateSpaceComponent::Compute(
     }
 
     // Add forces to output (with negative sign for damping)
-    AccumulateForces(force_radiation_buffer_, inout_forces);
+    AccumulateForces(state, force_radiation_buffer_, inout_forces);
 }
 
 void RadiationStateSpaceComponent::Reset() {
@@ -228,31 +229,26 @@ void RadiationStateSpaceComponent::ExtractVelocityVector(
     for (int b = 0; b < num_bodies_; ++b) {
         const auto& body_state = state.bodies[b];
         const int offset = b * kDofPerBody;
-        
-        // Linear velocities (surge, sway, heave)
-        out_velocity(offset + 0) = body_state.linear_velocity[0];
-        out_velocity(offset + 1) = body_state.linear_velocity[1];
-        out_velocity(offset + 2) = body_state.linear_velocity[2];
-        
-        // Angular velocities (roll, pitch, yaw)
-        out_velocity(offset + 3) = body_state.angular_velocity[0];
-        out_velocity(offset + 4) = body_state.angular_velocity[1];
-        out_velocity(offset + 5) = body_state.angular_velocity[2];
+        const Eigen::Matrix3d world_to_heading = HeadingToWorld(body_state).transpose();
+
+        // Linear velocities (surge, sway, heave) and angular velocities (roll, pitch, yaw)
+        out_velocity.segment<3>(offset)     = world_to_heading * body_state.linear_velocity;
+        out_velocity.segment<3>(offset + 3) = world_to_heading * body_state.angular_velocity;
     }
 }
 
 void RadiationStateSpaceComponent::AccumulateForces(
+    const SystemState& state,
     const Eigen::VectorXd& f_rad,
     BodyForces& inout_forces) const {
     
-    // Map radiation forces to per-body forces.
+    // Map radiation forces to per-body forces (heading frame to world).
     // Radiation damping opposes motion, so we SUBTRACT.
     for (int b = 0; b < num_bodies_; ++b) {
         const int offset = b * kDofPerBody;
-        for (int d = 0; d < 3; ++d) {
-            inout_forces[b].force[d]  -= f_rad(offset + d);
-            inout_forces[b].moment[d] -= f_rad(offset + 3 + d);
-        }
+        const Eigen::Matrix3d heading_to_world = HeadingToWorld(state.bodies[b]);
+        inout_forces[b].force  -= heading_to_world * f_rad.segment<3>(offset);
+        inout_forces[b].moment -= heading_to_world * f_rad.segment<3>(offset + 3);
     }
 }
 

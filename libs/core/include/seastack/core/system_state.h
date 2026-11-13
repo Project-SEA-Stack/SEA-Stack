@@ -28,8 +28,9 @@ namespace seastack::hydro {
 struct BodyState {
     /// Position of the body CG in the world (inertial) frame [m], 3-vector (x, y, z).
     Eigen::Vector3d position = Eigen::Vector3d::Zero();
-    /// Orientation as roll-pitch-yaw Euler angles in the world frame [rad]. Convention:
-    /// intrinsic ZYX rotation (yaw about Z, then pitch about Y', then roll about X'').
+    /// Orientation as Chrono Cardan XYZ angles (Tait-Bryan extrinsic X-Y-Z, as HDF5
+    /// `orientation_xyz`) [rad]: body-to-world R = Rz(yaw) * Ry(pitch) * Rx(roll), i.e.
+    /// roll, pitch and yaw about the fixed world x, y and z axes, in that order.
     /// Order in the vector is [roll, pitch, yaw].
     Eigen::Vector3d orientation_rpy = Eigen::Vector3d::Zero();
     Eigen::Vector3d linear_velocity = Eigen::Vector3d::Zero();  // Linear velocity in world frame (m/s)

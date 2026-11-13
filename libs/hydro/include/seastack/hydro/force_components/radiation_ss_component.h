@@ -149,17 +149,20 @@ private:
      * @brief Extract velocity vector from system state.
      * 
      * @param state Current system state
-     * @param out_velocity Output vector [6*num_bodies] (linear, angular for each body)
+     * @param out_velocity Output vector [6*num_bodies] (linear, angular for each body),
+     *        in each body's heading frame (heading_frame.h)
      */
     void ExtractVelocityVector(const SystemState& state, Eigen::VectorXd& out_velocity) const;
     
     /**
      * @brief Accumulate forces into BodyForces structure.
      * 
-     * @param f_rad Total radiation force vector [6*num_bodies]
+     * @param state Current system state (heading of each body)
+     * @param f_rad Total radiation force vector [6*num_bodies], heading frame
      * @param inout_forces Force output structure (per body)
      */
-    void AccumulateForces(const Eigen::VectorXd& f_rad,
+    void AccumulateForces(const SystemState& state,
+                          const Eigen::VectorXd& f_rad,
                           BodyForces& inout_forces) const;
 };
 

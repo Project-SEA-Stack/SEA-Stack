@@ -4,12 +4,14 @@
  *
  * Linear hydrostatic restoring force:
  *   F_hs = -C * (x - x_eq)
- * where C is the 6x6 hydrostatic stiffness matrix and x_eq the equilibrium.
+ * where C is the 6x6 hydrostatic stiffness matrix and x_eq the equilibrium,
+ * evaluated in the body's heading frame (heading_frame.h).
  * See: Faltinsen, O.M. (1990), "Sea Loads on Ships and Offshore Structures,"
  *      Cambridge University Press, Chapter 3.
  *********************************************************************/
 
 #include <seastack/hydro/force_components/hydrostatics_component.h>
+#include <seastack/hydro/heading_frame.h>
 #include <seastack/hydro/hydro_data.h>
 
 #include <Eigen/Dense>
@@ -102,11 +104,16 @@ void HydrostaticsComponent::Compute(const SystemState& state,
         const Eigen::Vector3d& position_world = body_state.position;
         const Eigen::Vector3d& rotation_rpy = body_state.orientation_rpy;
 
-        // 6-DOF displacement from equilibrium (translation xyz, rotation rpy)
+        // Roll and pitch are tilts about the heading-frame x and y axes, so C
+        // is applied in the heading frame (see heading_frame.h).
+        const Eigen::Matrix3d heading_to_world = HeadingToWorld(body_state);
+        const Eigen::Vector3d translation_world(position_world[0] - body_equilibrium[0],
+                                                position_world[1] - body_equilibrium[1],
+                                                position_world[2] - body_equilibrium[2]);
+
+        // 6-DOF displacement from equilibrium (translation in heading frame, rotation rpy)
         Eigen::Matrix<double, kDofPerBody, 1> displacement_from_equilibrium;
-        displacement_from_equilibrium[0] = position_world[0] - body_equilibrium[0];
-        displacement_from_equilibrium[1] = position_world[1] - body_equilibrium[1];
-        displacement_from_equilibrium[2] = position_world[2] - body_equilibrium[2];
+        displacement_from_equilibrium.head<3>() = heading_to_world.transpose() * translation_world;
         displacement_from_equilibrium[3] = rotation_rpy[0] - body_equilibrium[3];
         displacement_from_equilibrium[4] = rotation_rpy[1] - body_equilibrium[4];
         displacement_from_equilibrium[5] = rotation_rpy[2] - body_equilibrium[5];
@@ -114,8 +121,8 @@ void HydrostaticsComponent::Compute(const SystemState& state,
         // Linear hydrostatic restoring force/torque (use cached stiffness matrix and rho*g)
         const Eigen::Matrix<double, kDofPerBody, 1> restoring_force_torque =
             -cached_rho_times_g_ * (cached_stiffness_matrices_[b] * displacement_from_equilibrium);
-        inout_forces[b].force  += restoring_force_torque.head<3>();
-        inout_forces[b].moment += restoring_force_torque.tail<3>();
+        inout_forces[b].force  += heading_to_world * restoring_force_torque.head<3>();
+        inout_forces[b].moment += heading_to_world * restoring_force_torque.tail<3>();
 
         // Buoyancy force at equilibrium (use cached value)
         inout_forces[b].force += cached_buoyancy_forces_[b];

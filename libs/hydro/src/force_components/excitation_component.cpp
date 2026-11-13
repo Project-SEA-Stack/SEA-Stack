@@ -4,6 +4,7 @@
  *********************************************************************/
 
 #include <seastack/hydro/force_components/excitation_component.h>
+#include <seastack/hydro/heading_frame.h>
 
 #include <cmath>
 #include <stdexcept>
@@ -44,10 +45,17 @@ void ExcitationComponent::Compute(const SystemState& state,
             std::to_string(num_bodies_) + ", got " + std::to_string(inout_forces.size()) + ")");
     }
 
-    ComputeFromTFData(time, inout_forces);
+    if (static_cast<int>(state.bodies.size()) != num_bodies_) {
+        throw std::runtime_error(
+            "ExcitationComponent::Compute: state.bodies.size() mismatch (expected " +
+            std::to_string(num_bodies_) + ", got " + std::to_string(state.bodies.size()) + ")");
+    }
+
+    ComputeFromTFData(state, time, inout_forces);
 }
 
-void ExcitationComponent::ComputeFromTFData(double time, BodyForces& inout_forces) {
+void ExcitationComponent::ComputeFromTFData(const SystemState& state, double time,
+                                            BodyForces& inout_forces) {
     const Eigen::Index n_comp = wave_data_.amplitudes.size();
     if (n_comp == 0) return;
 
@@ -74,14 +82,10 @@ void ExcitationComponent::ComputeFromTFData(double time, BodyForces& inout_force
         const Eigen::VectorXd f_re = excitation_re_[b] * weighted_cos.matrix();
         const Eigen::VectorXd f_im = excitation_im_[b] * weighted_sin.matrix();
 
-        for (int dof = 0; dof < kDofPerBody; ++dof) {
-            double val = (f_re[dof] - f_im[dof]) * ramp;
-            if (dof < 3) {
-                inout_forces[b].force[dof] += val;
-            } else {
-                inout_forces[b].moment[dof - 3] += val;
-            }
-        }
+        const Eigen::VectorXd f_heading = (f_re - f_im) * ramp;
+        const Eigen::Matrix3d heading_to_world = HeadingToWorld(state.bodies[b]);
+        inout_forces[b].force  += heading_to_world * f_heading.head<3>();
+        inout_forces[b].moment += heading_to_world * f_heading.segment<3>(3);
     }
 }
 

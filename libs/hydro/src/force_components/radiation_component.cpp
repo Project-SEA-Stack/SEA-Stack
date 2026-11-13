@@ -5,6 +5,7 @@
 
 #include <seastack/hydro/force_components/radiation_component.h>
 #include <seastack/core/force_component.h>
+#include <seastack/hydro/heading_frame.h>
 #include <seastack/hydro/hydro_data.h>
 
 #include <Eigen/Dense>
@@ -116,15 +117,17 @@ void RadiationComponent::Compute(const SystemState& state,
         EnsureProcessedRIRF();
     }
 
-    // Prepare body velocities for recording (use member buffer)
+    // Prepare body velocities for recording (use member buffer), in each
+    // body's heading frame (heading_frame.h).
     for (int b = 0; b < num_bodies_; ++b) {
         const auto& body_state = state.bodies[b];
-        body_velocities_buffer_[b][0] = body_state.linear_velocity[0];
-        body_velocities_buffer_[b][1] = body_state.linear_velocity[1];
-        body_velocities_buffer_[b][2] = body_state.linear_velocity[2];
-        body_velocities_buffer_[b][3] = body_state.angular_velocity[0];
-        body_velocities_buffer_[b][4] = body_state.angular_velocity[1];
-        body_velocities_buffer_[b][5] = body_state.angular_velocity[2];
+        const Eigen::Matrix3d world_to_heading = HeadingToWorld(body_state).transpose();
+        const Eigen::Vector3d v_lin = world_to_heading * body_state.linear_velocity;
+        const Eigen::Vector3d v_ang = world_to_heading * body_state.angular_velocity;
+        for (int d = 0; d < 3; ++d) {
+            body_velocities_buffer_[b][d]     = v_lin[d];
+            body_velocities_buffer_[b][3 + d] = v_ang[d];
+        }
     }
 
     // Record velocities in the convolution module
@@ -145,10 +148,13 @@ void RadiationComponent::Compute(const SystemState& state,
     // This ensures HydroSystem::Evaluate() produces: total = hydrostatics - radiation + waves.
     for (int b = 0; b < num_bodies_; ++b) {
         const int body_offset = kDofPerBody * b;
-        for (int i = 0; i < 3; ++i) {
-            inout_forces[b].force[i]  -= force_flat[body_offset + i];
-            inout_forces[b].moment[i] -= force_flat[body_offset + 3 + i];
-        }
+        const Eigen::Matrix3d heading_to_world = HeadingToWorld(state.bodies[b]);
+        const Eigen::Vector3d f_heading(force_flat[body_offset + 0], force_flat[body_offset + 1],
+                                        force_flat[body_offset + 2]);
+        const Eigen::Vector3d m_heading(force_flat[body_offset + 3], force_flat[body_offset + 4],
+                                        force_flat[body_offset + 5]);
+        inout_forces[b].force  -= heading_to_world * f_heading;
+        inout_forces[b].moment -= heading_to_world * m_heading;
     }
 }
 

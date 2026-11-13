@@ -17,7 +17,8 @@ namespace seastack::hydro {
 
 namespace {
 
-// Build the body-to-world rotation matrix from intrinsic ZYX Euler angles.
+// Build the body-to-world rotation matrix from Cardan XYZ angles
+// (Tait-Bryan extrinsic X-Y-Z): R = Rz(yaw) * Ry(pitch) * Rx(roll).
 // orientation_rpy is [roll, pitch, yaw].
 Eigen::Matrix3d BodyToWorldRotation(const Eigen::Vector3d& rpy) {
     const double roll  = rpy[0];

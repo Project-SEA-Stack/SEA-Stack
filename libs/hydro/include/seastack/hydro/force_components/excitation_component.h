@@ -65,7 +65,9 @@ class ExcitationComponent : public IHydroForceComponent {
     int num_bodies_;
     double ramp_duration_ = 0.0;
 
-    void ComputeFromTFData(double time, BodyForces& inout_forces);
+    /// Excitation in each body's heading frame, rotated to world (heading_frame.h).
+    /// The BEM heading used for the coefficients is the world wave direction.
+    void ComputeFromTFData(const SystemState& state, double time, BodyForces& inout_forces);
 };
 
 }  // namespace seastack::hydro

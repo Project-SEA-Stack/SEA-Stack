@@ -427,6 +427,13 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
     target_compile_definitions(test_yaml_damping_regression PRIVATE
         "SEASTACK_TEST_SPHERE_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/iea_sphere/assets/hydroData/sphere.h5\"")
     set_tests_properties(test_yaml_damping_regression PROPERTIES LABELS "unit;chrono")
+
+    # Linear BEM forces evaluated in the body's heading frame (yawed body).
+    build_unit_test(test_heading_frame_transport)
+    target_link_libraries(test_heading_frame_transport PRIVATE SEAStack::HydroIO)
+    target_compile_definitions(test_heading_frame_transport PRIVATE
+        "SEASTACK_TEST_WIGLEY_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/wigley/assets/hydroData/wigley_directional.h5\"")
+    set_tests_properties(test_heading_frame_transport PROPERTIES LABELS "unit")
 else()
     message(STATUS "Skipping test_radiation_constant_coefficients and test_yaml_damping_regression (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
 endif()

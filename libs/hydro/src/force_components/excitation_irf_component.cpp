@@ -9,6 +9,7 @@
  *********************************************************************/
 
 #include <seastack/hydro/force_components/excitation_irf_component.h>
+#include <seastack/hydro/heading_frame.h>
 #include <seastack/hydro/hydro_data.h>
 #include <seastack/core/math_constants.h>
 
@@ -232,13 +233,14 @@ void ExcitationIrfComponent::ComputeSlowPath(
 }
 
 void ExcitationIrfComponent::Compute(
-    const SystemState& /*state*/,
+    const SystemState& state,
     double time,
     BodyForces& inout_forces) {
 
-    if (static_cast<int>(inout_forces.size()) != num_bodies_) {
+    if (static_cast<int>(inout_forces.size()) != num_bodies_ ||
+        static_cast<int>(state.bodies.size()) != num_bodies_) {
         throw std::runtime_error(
-            "ExcitationIrfComponent::Compute: inout_forces.size() mismatch");
+            "ExcitationIrfComponent::Compute: inout_forces or state.bodies size mismatch");
     }
 
     const auto& birf0 = body_irfs_[0];
@@ -256,9 +258,11 @@ void ExcitationIrfComponent::Compute(
         ComputeSlowPath(time, eta_at_tau);
     }
 
+    // Excitation in each body's heading frame, rotated to world (heading_frame.h).
     for (int b = 0; b < num_bodies_; ++b) {
         const auto& birf = body_irfs_[b];
 
+        Eigen::Matrix<double, kDofPerBody, 1> f_heading;
         for (int dof = 0; dof < kDofPerBody; ++dof) {
             double force_dof = 0.0;
             for (Eigen::Index s = 0; s < n_steps; ++s) {
@@ -266,12 +270,11 @@ void ExcitationIrfComponent::Compute(
                 if (w == 0.0) continue;
                 force_dof += birf.kernel(dof, s) * eta_at_tau[s] * w;
             }
-            if (dof < 3) {
-                inout_forces[b].force[dof] += force_dof;
-            } else {
-                inout_forces[b].moment[dof - 3] += force_dof;
-            }
+            f_heading[dof] = force_dof;
         }
+        const Eigen::Matrix3d heading_to_world = HeadingToWorld(state.bodies[b]);
+        inout_forces[b].force  += heading_to_world * f_heading.head<3>();
+        inout_forces[b].moment += heading_to_world * f_heading.tail<3>();
     }
 }
 

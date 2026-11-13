@@ -5,6 +5,7 @@
 
 #include <seastack/hydro/force_components/radiation_cc_component.h>
 #include <seastack/core/types.h>
+#include <seastack/hydro/heading_frame.h>
 
 #include <stdexcept>
 #include <string>
@@ -48,13 +49,13 @@ void RadiationConstantCoefficientComponent::Compute(const SystemState& state,
             ", forces have " + std::to_string(inout_forces.size()) + ")");
     }
 
+    // Velocities and forces in each body's heading frame (heading_frame.h).
     for (int b = 0; b < num_bodies_; ++b) {
         const auto& body_state = state.bodies[b];
         const int offset = b * kDofPerBody;
-        for (int d = 0; d < 3; ++d) {
-            velocity_buffer_(offset + d)     = body_state.linear_velocity[d];
-            velocity_buffer_(offset + 3 + d) = body_state.angular_velocity[d];
-        }
+        const Eigen::Matrix3d world_to_heading = HeadingToWorld(body_state).transpose();
+        velocity_buffer_.segment<3>(offset)     = world_to_heading * body_state.linear_velocity;
+        velocity_buffer_.segment<3>(offset + 3) = world_to_heading * body_state.angular_velocity;
     }
 
     force_buffer_.noalias() = radiation_damping_ * velocity_buffer_;
@@ -62,10 +63,9 @@ void RadiationConstantCoefficientComponent::Compute(const SystemState& state,
     // F_rad,damping = -B(w) * xdot
     for (int b = 0; b < num_bodies_; ++b) {
         const int offset = b * kDofPerBody;
-        for (int d = 0; d < 3; ++d) {
-            inout_forces[b].force[d]  -= force_buffer_(offset + d);
-            inout_forces[b].moment[d] -= force_buffer_(offset + 3 + d);
-        }
+        const Eigen::Matrix3d heading_to_world = HeadingToWorld(state.bodies[b]);
+        inout_forces[b].force  -= heading_to_world * force_buffer_.segment<3>(offset);
+        inout_forces[b].moment -= heading_to_world * force_buffer_.segment<3>(offset + 3);
     }
 }
 

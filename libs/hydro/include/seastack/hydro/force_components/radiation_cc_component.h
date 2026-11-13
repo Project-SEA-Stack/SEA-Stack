@@ -13,7 +13,8 @@
  *
  * Velocity convention (same as the RIRF and state-space components): per
  * body, [linear velocity of the body reference point; angular velocity],
- * world frame, in DOF order surge, sway, heave, roll, pitch, yaw.
+ * in the body's heading frame (heading_frame.h), in DOF order surge, sway,
+ * heave, roll, pitch, yaw. The force is rotated back to the world frame.
  *********************************************************************/
 
 #ifndef SEASTACK_HYDRO_FORCE_COMPONENTS_RADIATION_CC_COMPONENT_H

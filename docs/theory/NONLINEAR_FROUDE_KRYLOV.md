@@ -86,6 +86,9 @@ vertices dominates.
   ignore the body's horizontal position. The mesh linear FK in section 6 uses
   the same assumption, so the subtraction is consistent with the BEM data.
   Bodies placed away from their BEM position get a startup warning (section 7).
+  The linear BEM forces are evaluated in the body's heading frame (world axes
+  rotated by yaw; `heading_frame.h`), but the mesh linear FK stays at the BEM
+  pose, so the subtraction is exact only at zero yaw.
 - **Mesh contract** (unchanged from nonlinear hydrostatics):
   - a closed OBJ triangle mesh with outward normals, in the BEM frame;
   - at build time it is translated by $-\mathbf{r}_{CG}$ (`HydroData::cg`)

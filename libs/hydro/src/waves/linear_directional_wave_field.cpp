@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -88,6 +89,25 @@ void LinearDirectionalWaveField::PrecomputeArrays() {
         sin_dirs_[i]    = std::sin(c.direction);
         wavenumbers_[i] = c.k;
     }
+
+    std::vector<Eigen::Index> order(static_cast<std::size_t>(n));
+    for (Eigen::Index i = 0; i < n; ++i) order[static_cast<std::size_t>(i)] = i;
+    std::stable_sort(order.begin(), order.end(), [this](Eigen::Index a, Eigen::Index b) {
+        return amplitudes_[a] > amplitudes_[b];
+    });
+    viz_amplitudes_.resize(n);
+    viz_kx_.resize(n);
+    viz_ky_.resize(n);
+    viz_omegas_.resize(n);
+    viz_phases_.resize(n);
+    for (Eigen::Index j = 0; j < n; ++j) {
+        const Eigen::Index i = order[static_cast<std::size_t>(j)];
+        viz_amplitudes_[j] = amplitudes_[i];
+        viz_kx_[j]         = kx_[i];
+        viz_ky_[j]         = ky_[i];
+        viz_omegas_[j]     = omegas_[i];
+        viz_phases_[j]     = phases_[i];
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,11 +153,11 @@ double LinearDirectionalWaveField::GetElevationForVisualization(
     const double x = position.x();
     const double y = position.y();
 
-    const Eigen::ArrayXd phase_args = kx_.head(n).array() * x
-                                    + ky_.head(n).array() * y
-                                    - omegas_.head(n).array() * time
-                                    + phases_.head(n).array();
-    return (amplitudes_.head(n).array() * phase_args.cos()).sum();
+    const Eigen::ArrayXd phase_args = viz_kx_.head(n).array() * x
+                                    + viz_ky_.head(n).array() * y
+                                    - viz_omegas_.head(n).array() * time
+                                    + viz_phases_.head(n).array();
+    return (viz_amplitudes_.head(n).array() * phase_args.cos()).sum();
 }
 
 double LinearDirectionalWaveField::GetElevation(
