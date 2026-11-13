@@ -6,6 +6,8 @@
 #include "vsg_materials.h"
 #include "vsg_radiation_surface.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -149,7 +151,7 @@ void AnimatedWaterSurface::Reset() {
         }
     }
 
-    mesh_.reset();
+    grid_ = TriangleMesh{};
     vsg_vertices_.reset();
     vsg_normals_.reset();
     vsg_colors_.reset();
@@ -161,7 +163,7 @@ void AnimatedWaterSurface::Reset() {
     wireframe_initialized_ = false;
 
     scene_.reset();
-    bound_vis_ = nullptr;
+    builder_ = nullptr;
     initialized_ = false;
     visible_ = true;
     num_triangles_ = 0;
@@ -174,15 +176,14 @@ void AnimatedWaterSurface::Reset() {
     adaptive_range_initialized_ = false;
 }
 
-void AnimatedWaterSurface::Initialize(::chrono::vsg3d::ChVisualSystemVSG* vis, int resolution,
-                                       const ViewerSettings* settings) {
+void AnimatedWaterSurface::Initialize(OverlayBuilder* builder, int resolution, const ViewerSettings* settings) {
     // Use default resolution from config if not specified.
     int res = (resolution > 0) ? resolution : kWaterGridResolution;
-    InitializeInternal(vis, res, settings);
+    InitializeInternal(builder, res, settings);
 }
 
 void AnimatedWaterSurface::Reinitialize(int resolution, const ViewerSettings* settings) {
-    if (!bound_vis_) {
+    if (!builder_) {
         return;
     }
 
@@ -204,28 +205,28 @@ void AnimatedWaterSurface::Reinitialize(int resolution, const ViewerSettings* se
         std::cout << "[WaveSurfaceDebug] Reinitialize with resolution " << resolution << std::endl;
     }
 
-    // Save visual system pointer before reset.
-    auto* vis = bound_vis_;
+    // Save builder pointer before reset.
+    auto* builder = builder_;
 
     // Reset and reinitialize with new resolution.
     Reset();
-    InitializeInternal(vis, resolution, settings);
+    InitializeInternal(builder, resolution, settings);
 }
 
-void AnimatedWaterSurface::InitializeInternal(::chrono::vsg3d::ChVisualSystemVSG* vis, int resolution,
+void AnimatedWaterSurface::InitializeInternal(OverlayBuilder* builder, int resolution,
                                                const ViewerSettings* settings) {
     if constexpr (kDebugWaveSurface) {
-        std::cout << "[WaveSurfaceDebug] Initialize called, vis=" << static_cast<void*>(vis)
+        std::cout << "[WaveSurfaceDebug] Initialize called, builder=" << static_cast<void*>(builder)
                   << " resolution=" << resolution << std::endl;
     }
-    if (!vis) {
+    if (!builder) {
         return;
     }
 
-    // If visual system changed, reset and reinitialize.
-    if (initialized_ && bound_vis_ != vis) {
+    // If the viewer changed, reset and reinitialize.
+    if (initialized_ && builder_ != builder) {
         if constexpr (kDebugWaveSurface) {
-            std::cout << "[WaveSurfaceDebug] vis changed, resetting" << std::endl;
+            std::cout << "[WaveSurfaceDebug] builder changed, resetting" << std::endl;
         }
         Reset();
     }
@@ -233,7 +234,7 @@ void AnimatedWaterSurface::InitializeInternal(::chrono::vsg3d::ChVisualSystemVSG
         return;
     }
 
-    bound_vis_ = vis;
+    builder_ = builder;
     current_resolution_ = resolution;
 
     // Store custom grid extent from settings.
@@ -244,17 +245,13 @@ void AnimatedWaterSurface::InitializeInternal(::chrono::vsg3d::ChVisualSystemVSG
         grid_center_y_ = settings->grid_center_y;
     }
 
-    auto shape_builder = vis->GetVSGShapeBuilder();
-    scene_ = vis->GetVSGScene();
-    if (!shape_builder || !scene_) {
+    scene_ = builder->OverlayScene();
+    if (!scene_) {
         if constexpr (kDebugWaveSurface) {
-            std::cout << "[WaveSurfaceDebug] Failed to get shapeBuilder or scene\n";
+            std::cout << "[WaveSurfaceDebug] Failed to get overlay scene\n";
         }
         return;
     }
-
-    // Create the Chrono mesh geometry.
-    mesh_ = ::chrono_types::make_shared<::chrono::ChTriangleMeshConnected>();
 
     const int n = resolution;
 
@@ -267,18 +264,18 @@ void AnimatedWaterSurface::InitializeInternal(::chrono::vsg3d::ChVisualSystemVSG
     const double spacing_y = grid_size_y / (n - 1);
 
     // Create vertices (n x n grid centered at custom center).
-    std::vector<::chrono::ChVector3d>& verts = mesh_->m_vertices;
+    std::vector<Vec3>& verts = grid_.vertices;
     verts.resize(static_cast<size_t>(n * n));
     for (int j = 0; j < n; ++j) {
         for (int i = 0; i < n; ++i) {
             double x = grid_center_x_ - half_size_x + i * spacing_x;
             double y = grid_center_y_ - half_size_y + j * spacing_y;
-            verts[static_cast<size_t>(j * n + i)] = ::chrono::ChVector3d(x, y, 0.0);
+            verts[static_cast<size_t>(j * n + i)] = Vec3{x, y, 0.0};
         }
     }
 
     // Create triangle faces (two triangles per grid cell).
-    std::vector<::chrono::ChVector3i>& faces = mesh_->m_face_v_indices;
+    std::vector<std::array<int, 3>>& faces = grid_.faces;
     faces.reserve(static_cast<size_t>(2 * (n - 1) * (n - 1)));
     for (int j = 0; j < n - 1; ++j) {
         for (int i = 0; i < n - 1; ++i) {
@@ -287,8 +284,8 @@ void AnimatedWaterSurface::InitializeInternal(::chrono::vsg3d::ChVisualSystemVSG
             int v01 = (j + 1) * n + i;
             int v11 = (j + 1) * n + i + 1;
             // Two triangles per quad.
-            faces.push_back(::chrono::ChVector3i(v00, v10, v11));
-            faces.push_back(::chrono::ChVector3i(v00, v11, v01));
+            faces.push_back({v00, v10, v11});
+            faces.push_back({v00, v11, v01});
         }
     }
 
@@ -297,16 +294,11 @@ void AnimatedWaterSurface::InitializeInternal(::chrono::vsg3d::ChVisualSystemVSG
     // Create transparent white material for the water surface.
     // White diffuse allows vertex colors to show through when multiplied.
     // Opacity enables transparency so we can see through the water.
-    auto water_material = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
-    water_material->SetDiffuseColor(::chrono::ChColor(1.0f, 1.0f, 1.0f));
-    water_material->SetOpacity(kWaterOpacity);
-    water_material->SetRoughness(kWaterRoughness);
-    water_material->SetMetallic(kWaterMetallic);
-
-    auto transform = vsg::MatrixTransform::create();
-    std::vector<::chrono::ChVisualMaterialSharedPtr> materials = {water_material};
-    vsg_node_ = shape_builder->CreateTrimeshPbrMatShape(
-        mesh_, transform, materials, /*double_faced=*/false, /*wireframe=*/false);
+    OverlayMaterial water_material;
+    water_material.color = {1.0f, 1.0f, 1.0f, kWaterOpacity};
+    water_material.roughness = kWaterRoughness;
+    water_material.metallic = kWaterMetallic;
+    vsg_node_ = builder->CreateOverlayMesh(grid_, water_material);
 
     if (!vsg_node_) {
         if constexpr (kDebugWaveSurface) {
@@ -431,12 +423,7 @@ void AnimatedWaterSurface::SetWireframeVisible(bool visible) {
 }
 
 void AnimatedWaterSurface::InitializeWireframe() {
-    if (wireframe_initialized_ || !bound_vis_ || !scene_) {
-        return;
-    }
-
-    auto shape_builder = bound_vis_->GetVSGShapeBuilder();
-    if (!shape_builder) {
+    if (wireframe_initialized_ || !builder_ || !scene_) {
         return;
     }
 
@@ -446,7 +433,7 @@ void AnimatedWaterSurface::InitializeWireframe() {
     }
 
     // Create thin quad segments as "lines" that follow the wave surface.
-    auto wireframe_mesh = ::chrono_types::make_shared<::chrono::ChTriangleMeshConnected>();
+    TriangleMesh wireframe_mesh;
 
     // Use custom grid extent if specified, otherwise use defaults.
     const double grid_size_x = (grid_width_ > 0) ? grid_width_ : kWaterGridSize;
@@ -457,8 +444,8 @@ void AnimatedWaterSurface::InitializeWireframe() {
     const double spacing_y = grid_size_y / (n - 1);
     const double line_half_width = 0.05;
 
-    std::vector<::chrono::ChVector3d>& verts = wireframe_mesh->m_vertices;
-    std::vector<::chrono::ChVector3i>& faces = wireframe_mesh->m_face_v_indices;
+    std::vector<Vec3>& verts = wireframe_mesh.vertices;
+    std::vector<std::array<int, 3>>& faces = wireframe_mesh.faces;
 
     int vertex_idx = 0;
 
@@ -469,13 +456,13 @@ void AnimatedWaterSurface::InitializeWireframe() {
             double x0 = grid_center_x_ - half_size_x + i * spacing_x;
             double x1 = grid_center_x_ - half_size_x + (i + 1) * spacing_x;
 
-            verts.push_back(::chrono::ChVector3d(x0, y - line_half_width, 0.0));
-            verts.push_back(::chrono::ChVector3d(x1, y - line_half_width, 0.0));
-            verts.push_back(::chrono::ChVector3d(x1, y + line_half_width, 0.0));
-            verts.push_back(::chrono::ChVector3d(x0, y + line_half_width, 0.0));
+            verts.push_back(Vec3{x0, y - line_half_width, 0.0});
+            verts.push_back(Vec3{x1, y - line_half_width, 0.0});
+            verts.push_back(Vec3{x1, y + line_half_width, 0.0});
+            verts.push_back(Vec3{x0, y + line_half_width, 0.0});
 
-            faces.push_back(::chrono::ChVector3i(vertex_idx, vertex_idx + 1, vertex_idx + 2));
-            faces.push_back(::chrono::ChVector3i(vertex_idx, vertex_idx + 2, vertex_idx + 3));
+            faces.push_back({vertex_idx, vertex_idx + 1, vertex_idx + 2});
+            faces.push_back({vertex_idx, vertex_idx + 2, vertex_idx + 3});
             vertex_idx += 4;
         }
     }
@@ -487,28 +474,23 @@ void AnimatedWaterSurface::InitializeWireframe() {
             double y0 = grid_center_y_ - half_size_y + j * spacing_y;
             double y1 = grid_center_y_ - half_size_y + (j + 1) * spacing_y;
 
-            verts.push_back(::chrono::ChVector3d(x - line_half_width, y0, 0.0));
-            verts.push_back(::chrono::ChVector3d(x + line_half_width, y0, 0.0));
-            verts.push_back(::chrono::ChVector3d(x + line_half_width, y1, 0.0));
-            verts.push_back(::chrono::ChVector3d(x - line_half_width, y1, 0.0));
+            verts.push_back(Vec3{x - line_half_width, y0, 0.0});
+            verts.push_back(Vec3{x + line_half_width, y0, 0.0});
+            verts.push_back(Vec3{x + line_half_width, y1, 0.0});
+            verts.push_back(Vec3{x - line_half_width, y1, 0.0});
 
-            faces.push_back(::chrono::ChVector3i(vertex_idx, vertex_idx + 1, vertex_idx + 2));
-            faces.push_back(::chrono::ChVector3i(vertex_idx, vertex_idx + 2, vertex_idx + 3));
+            faces.push_back({vertex_idx, vertex_idx + 1, vertex_idx + 2});
+            faces.push_back({vertex_idx, vertex_idx + 2, vertex_idx + 3});
             vertex_idx += 4;
         }
     }
 
     // Faint blue-gray material.
-    auto wire_material = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
-    wire_material->SetDiffuseColor(::chrono::ChColor(0.1f, 0.2f, 0.3f));
-    wire_material->SetOpacity(0.35f);
-    wire_material->SetRoughness(0.9f);
-    wire_material->SetMetallic(0.0f);
-
-    auto transform = vsg::MatrixTransform::create();
-    std::vector<::chrono::ChVisualMaterialSharedPtr> materials = {wire_material};
-    wireframe_node_ = shape_builder->CreateTrimeshPbrMatShape(
-        wireframe_mesh, transform, materials, /*double_faced=*/false, /*wireframe=*/false);
+    OverlayMaterial wire_material;
+    wire_material.color = {0.1f, 0.2f, 0.3f, 0.35f};
+    wire_material.roughness = 0.9f;
+    wire_material.metallic = 0.0f;
+    wireframe_node_ = builder_->CreateOverlayMesh(wireframe_mesh, wire_material);
 
     if (!wireframe_node_) {
         return;
@@ -632,7 +614,7 @@ void AnimatedWaterSurface::UpdateWireframe() {
 
 void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t,
                                   const ViewerSettings* settings) {
-    if (!initialized_ || !vsg_vertices_ || !vsg_normals_ || !mesh_) {
+    if (!initialized_ || !vsg_vertices_ || !vsg_normals_ || grid_.vertices.empty()) {
         if constexpr (kDebugWaveSurface) {
             if (frame_count_++ % kDebugPrintEveryNFrames == 0) {
                 std::cout << "[WaveSurfaceDebug] Update() early return: initialized_="
@@ -675,8 +657,8 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     // to ensure amplitude computation uses the correct source radius.
     const bool use_radiation = settings && settings->show_radiation_viz;
 
-    const auto& orig_verts = mesh_->m_vertices;
-    const auto& faces = mesh_->m_face_v_indices;
+    const auto& orig_verts = grid_.vertices;
+    const auto& faces = grid_.faces;
 
     // Track min/max eta this frame for adaptive range.
     float frame_min_eta = std::numeric_limits<float>::max();
@@ -693,16 +675,16 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     [[maybe_unused]] double max_eta = std::numeric_limits<double>::lowest();
 
     // -------------------------------------------------------------------------
-    // Step 1: Compute wave elevation η(x,y,t) for each unique grid vertex.
+    // Step 1: Compute wave elevation ?(x,y,t) for each unique grid vertex.
     //
     // Performance optimization: The GPU mesh uses a "triangle soup" format where
     // each triangle stores its own copy of vertices. This means interior grid
-    // points appear in up to 6 triangles. By computing η once per unique grid
+    // points appear in up to 6 triangles. By computing ? once per unique grid
     // point and then copying to the soup, we avoid redundant wave calculations.
     //
     // For irregular sea states with ~1000 frequency components:
-    //   - Without optimization: ~24,000 × 1000 = 24M trig operations/frame
-    //   - With optimization:     ~4,000 × 1000 = 4M trig operations/frame
+    //   - Without optimization: ~24,000 � 1000 = 24M trig operations/frame
+    //   - With optimization:     ~4,000 � 1000 = 4M trig operations/frame
     // -------------------------------------------------------------------------
     std::vector<float> grid_eta(orig_verts.size(), 0.0f);
 
@@ -716,7 +698,7 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
 
     for (size_t i = 0; i < orig_verts.size(); ++i) {
         const auto& grid_pos = orig_verts[i];
-        const Eigen::Vector3d pos(grid_pos.x(), grid_pos.y(), 0.0);
+        const Eigen::Vector3d pos(grid_pos[0], grid_pos[1], 0.0);
 
         // Incident wave elevation from the wave model.
         // For spectral waves, use limited components for visualization performance.
@@ -729,7 +711,7 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
         // Radiated wave visualization (approximate, for visual feedback only).
         double eta_radiation = 0.0;
         if (use_radiation && radiation_viz_.IsInitialized()) {
-            eta_radiation = radiation_viz_.EvaluateEta(grid_pos.x(), grid_pos.y(), t);
+            eta_radiation = radiation_viz_.EvaluateEta(grid_pos[0], grid_pos[1], t);
         }
 
         // Total surface elevation with visual scaling.
@@ -766,8 +748,8 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
             // Write updated position to VSG vertex buffer.
             size_t vsg_idx = tri * 3 + static_cast<size_t>(corner);
             if (vsg_idx < vsg_vertices_->size()) {
-                (*vsg_vertices_)[vsg_idx].x = static_cast<float>(grid_pos.x());
-                (*vsg_vertices_)[vsg_idx].y = static_cast<float>(grid_pos.y());
+                (*vsg_vertices_)[vsg_idx].x = static_cast<float>(grid_pos[0]);
+                (*vsg_vertices_)[vsg_idx].y = static_cast<float>(grid_pos[1]);
                 (*vsg_vertices_)[vsg_idx].z = eta_f;
             }
 
@@ -825,7 +807,7 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     // faces[tri][k]), so accumulate area-weighted face normals per grid
     // vertex, then copy the normalised result back to every duplicate.
     const size_t num_tris = std::min(faces.size(), vsg_vertices_->size() / 3);
-    grid_normals_.assign(mesh_->m_vertices.size(), vsg::vec3(0.0f, 0.0f, 0.0f));
+    grid_normals_.assign(grid_.vertices.size(), vsg::vec3(0.0f, 0.0f, 0.0f));
     for (size_t tri = 0; tri < num_tris; ++tri) {
         const auto& v0 = (*vsg_vertices_)[tri * 3];
         const auto& v1 = (*vsg_vertices_)[tri * 3 + 1];
@@ -906,8 +888,8 @@ bool AnimatedWaterSurface::IsInitialized() const {
     return initialized_;
 }
 
-bool AnimatedWaterSurface::IsInitializedFor(::chrono::vsg3d::ChVisualSystemVSG* vis) const {
-    return initialized_ && bound_vis_ == vis;
+bool AnimatedWaterSurface::IsInitializedFor(const OverlayBuilder* builder) const {
+    return initialized_ && builder_ == builder;
 }
 
 std::string AnimatedWaterSurface::GetStatusString() const {
@@ -937,6 +919,92 @@ std::shared_ptr<::chrono::ChBody> CreateStaticWaterPlane() {
     ApplyMaterialToAllVisualShapes(*water, water_mat);
 
     return water;
+}
+
+bool AutoSizeWaterGrid(ViewerSettings* settings, const Bounds3& model_bounds, const WaveBase* wave) {
+    if (!settings || settings->grid_width > 0.0 || settings->grid_length > 0.0 || !model_bounds.IsValid()) {
+        return false;
+    }
+    double wavelength = 0.0;
+    if (wave && wave->GetWaveMode() != WaveMode::kNoWave) {
+        wavelength = DeepWaterWavelength(wave->GetCharacteristicPeriod(), wave->GetGravity());
+    }
+    const WaterExtent w = ComputeWaterExtent(model_bounds, wavelength);
+    settings->grid_width = w.width;
+    settings->grid_length = w.length;
+    settings->grid_center_x = w.center_x;
+    settings->grid_center_y = w.center_y;
+    std::cout << "[WaterSurface] Auto-sized grid: " << w.width << " x " << w.length << " m, center: ("
+              << w.center_x << ", " << w.center_y << ")" << std::endl;
+    return true;
+}
+
+void ApplyWaterSettings(AnimatedWaterSurface* water, ViewerSettings* settings) {
+    if (!water || !settings) {
+        return;
+    }
+    water->SetVisible(settings->show_water);
+    // Resolution or extent change requires a mesh rebuild.
+    if ((settings->resolution_changed || settings->grid_extent_changed) && water->IsInitialized()) {
+        water->Reinitialize(settings->grid_resolution, settings);
+        settings->resolution_changed = false;
+        settings->grid_extent_changed = false;
+    }
+}
+
+void UpdateRadiationSources(AnimatedWaterSurface* water, const ViewerSettings& settings, const WaveBase* wave,
+                            const SceneDescription& scene, const VizFrame& frame) {
+    if (!water || !IsConsistent(scene, frame)) {
+        return;
+    }
+
+    RadiationSurfaceViz::Params rad_params;
+    rad_params.visual_scale = static_cast<double>(settings.radiation_visual_scale);
+    rad_params.wave_period = 8.0;  // Default; should match body oscillation frequency
+    if (wave) {
+        // Water depth and gravity (available in all wave models).
+        if (wave->GetWaterDepth() > 0.0) {
+            rad_params.water_depth = wave->GetWaterDepth();
+        }
+        rad_params.gravity = wave->GetGravity();
+        const double T_char = wave->GetCharacteristicPeriod();
+        if (T_char > 0.0) {
+            rad_params.wave_period = T_char;
+        }
+    }
+    water->GetRadiationViz().SetParams(rad_params);
+
+    // Log source bodies once.
+    static bool logged_sources = false;
+
+    // Every moving, named model body is a source (water bodies are not in the scene).
+    for (size_t i = 0; i < scene.bodies.size(); ++i) {
+        const BodyDescription& body = scene.bodies[i];
+        const BodyState& state = frame.bodies[i];
+        const std::string& name = body.name;
+        if (body.fixed || name == "ground" || name == "floor" || name.empty()) {
+            continue;
+        }
+
+        // Body radius in plan from its visual bounds (rough approximation).
+        double radius = 5.0;  // m, fallback for bodies without visual shapes
+        if (body.local_bounds.IsValid()) {
+            const Vec3 s = body.local_bounds.Size();
+            // Guard against degenerate bounds only; a larger floor would
+            // over-amplify lab-scale bodies.
+            radius = std::max(0.5 * std::max(s[0], s[1]), 0.05);
+        }
+
+        const auto to_ch = [](const Vec3& v) { return ::chrono::ChVector3d(v[0], v[1], v[2]); };
+        water->GetRadiationViz().SetSourceState(name, to_ch(state.com_position), to_ch(state.linear_velocity),
+                                                to_ch(state.angular_velocity), radius, frame.time);
+
+        if (!logged_sources) {
+            std::cout << "[RadiationViz] Source: " << name << " (r=" << radius << "m)" << std::endl;
+        }
+    }
+
+    logged_sources = true;
 }
 
 }  // namespace seastack::viz

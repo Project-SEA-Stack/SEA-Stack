@@ -8,12 +8,14 @@
 
 #include <seastack/hydro/waves/wave_base.h>
 
-#include <chrono/geometry/ChTriangleMeshConnected.h>
 #include <chrono/physics/ChBody.h>
-#include <chrono_vsg/ChVisualSystemVSG.h>
+
+#include <seastack/viz_core/scene_framing.h>
+#include <seastack/viz_core/scene_model.h>
 
 #include <vsg/all.h>
 
+#include "vsg_overlay_builder.h"
 #include "vsg_radiation_surface.h"
 
 namespace seastack::viz {
@@ -32,12 +34,12 @@ class AnimatedWaterSurface {
     AnimatedWaterSurface(const AnimatedWaterSurface&) = delete;
     AnimatedWaterSurface& operator=(const AnimatedWaterSurface&) = delete;
 
-    /// Reset state for reuse with a new visual system.
+    /// Reset state for reuse with a new viewer.
     void Reset();
 
-    /// Initialize mesh and add to scene (call after ChVisualSystemVSG::Initialize).
-    void Initialize(::chrono::vsg3d::ChVisualSystemVSG* vis, int resolution = 0,
-                    const ViewerSettings* settings = nullptr);
+    /// Initialize mesh and add it to the builder's overlay scene (call once
+    /// the viewer is initialized).
+    void Initialize(OverlayBuilder* builder, int resolution = 0, const ViewerSettings* settings = nullptr);
 
     /// Reinitialize with new grid resolution or extent.
     void Reinitialize(int resolution, const ViewerSettings* settings = nullptr);
@@ -49,7 +51,7 @@ class AnimatedWaterSurface {
     void SetVisible(bool visible);
     bool IsVisible() const;
     bool IsInitialized() const;
-    bool IsInitializedFor(::chrono::vsg3d::ChVisualSystemVSG* vis) const;
+    bool IsInitializedFor(const OverlayBuilder* builder) const;
     int GetGridResolution() const { return current_resolution_; }
     std::string GetStatusString() const;
 
@@ -60,19 +62,18 @@ class AnimatedWaterSurface {
     bool IsWireframeVisible() const { return wireframe_visible_; }
 
   private:
-    void InitializeInternal(::chrono::vsg3d::ChVisualSystemVSG* vis, int resolution,
-                            const ViewerSettings* settings = nullptr);
+    void InitializeInternal(OverlayBuilder* builder, int resolution, const ViewerSettings* settings = nullptr);
     void InitializeWireframe();
     void UpdateWireframe();
 
-    std::shared_ptr<::chrono::ChTriangleMeshConnected> mesh_;
+    TriangleMesh grid_;  ///< Flat grid at z = 0: vertex positions [m] and faces
     vsg::ref_ptr<vsg::vec3Array> vsg_vertices_;
     vsg::ref_ptr<vsg::vec3Array> vsg_normals_;
     vsg::ref_ptr<vsg::vec4Array> vsg_colors_;  ///< Per-vertex colors for height shading
     std::vector<vsg::vec3> grid_normals_;      ///< Scratch: accumulated normal per grid vertex
     vsg::ref_ptr<vsg::Node> vsg_node_;
     vsg::ref_ptr<vsg::Group> scene_;
-    ::chrono::vsg3d::ChVisualSystemVSG* bound_vis_ = nullptr;
+    OverlayBuilder* builder_ = nullptr;
     size_t num_triangles_ = 0;
     int current_resolution_ = 0;
     bool initialized_ = false;
@@ -102,6 +103,23 @@ class AnimatedWaterSurface {
 
 /// Creates a static water plane (visual only, no collision).
 std::shared_ptr<::chrono::ChBody> CreateStaticWaterPlane();
+
+// ---- Shared by both viewers' GUI implementations ----
+
+/// Size the water grid from the model bounds and wavelength when no extent
+/// was set (grid_width and grid_length <= 0). Returns true if it changed.
+bool AutoSizeWaterGrid(ViewerSettings* settings, const Bounds3& model_bounds,
+                       const seastack::hydro::WaveBase* wave);
+
+/// Apply panel settings: visibility, and a rebuild after a resolution or
+/// extent change.
+void ApplyWaterSettings(AnimatedWaterSurface* water, ViewerSettings* settings);
+
+/// Feed the radiation overlay: wave parameters, and every moving, named body
+/// of `frame` as a source. Visual only; never affects physics.
+void UpdateRadiationSources(AnimatedWaterSurface* water, const ViewerSettings& settings,
+                            const seastack::hydro::WaveBase* wave, const SceneDescription& scene,
+                            const VizFrame& frame);
 
 }  // namespace seastack::viz
 

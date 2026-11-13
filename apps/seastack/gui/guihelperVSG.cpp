@@ -22,8 +22,10 @@ using namespace seastack::hydro;
 #include <memory>
 #include <stdexcept>
 
+#include <chrono/assets/ChVisualMaterial.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/core/ChTypes.h>
+#include <chrono/geometry/ChTriangleMeshConnected.h>
 
 #include <seastack/viz_core/mesh_normals.h>
 
@@ -37,6 +39,39 @@ using namespace vsg_config;
 namespace {
 
 using seastack::chrono::IsWaterSurfaceBody;
+
+/// Overlay nodes built with Chrono's shape builder, in Chrono's scene.
+class ChronoOverlayBuilder : public OverlayBuilder {
+  public:
+    explicit ChronoOverlayBuilder(::chrono::vsg3d::ChVisualSystemVSG* vis) : vis_(vis) {}
+
+    vsg::ref_ptr<vsg::Group> OverlayScene() override { return vis_->GetVSGScene(); }
+
+    vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) override {
+        auto shape_builder = vis_->GetVSGShapeBuilder();
+        if (!shape_builder) {
+            return {};
+        }
+        auto ch_mesh = ::chrono_types::make_shared<::chrono::ChTriangleMeshConnected>();
+        for (const Vec3& v : mesh.vertices) {
+            ch_mesh->m_vertices.emplace_back(v[0], v[1], v[2]);
+        }
+        for (const auto& f : mesh.faces) {
+            ch_mesh->m_face_v_indices.emplace_back(f[0], f[1], f[2]);
+        }
+        auto ch_material = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
+        ch_material->SetDiffuseColor(::chrono::ChColor(material.color[0], material.color[1], material.color[2]));
+        ch_material->SetOpacity(material.color[3]);
+        ch_material->SetRoughness(material.roughness);
+        ch_material->SetMetallic(material.metallic);
+        std::vector<::chrono::ChVisualMaterialSharedPtr> materials = {ch_material};
+        return shape_builder->CreateTrimeshPbrMatShape(ch_mesh, vsg::MatrixTransform::create(), materials,
+                                                       /*double_faced=*/false, /*wireframe=*/false);
+    }
+
+  private:
+    ::chrono::vsg3d::ChVisualSystemVSG* vis_;
+};
 
 /// Mooring lines of a frame in the form MooringLinesViz takes.
 std::vector<MooringLineVizData> ToMooringVizData(const SceneDescription& scene, const VizFrame& frame) {
@@ -223,6 +258,7 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     }
 
     std::cerr << "[VSG] Stage 4: studio lights + scene ready" << std::endl;
+    overlay_builder_ = std::make_unique<ChronoOverlayBuilder>(pVis.get());
     AddStudioLights(pVis.get());
     pVis->CaptureSkyNode();
     UpdateClipPlanes();
@@ -311,21 +347,22 @@ void GUIImplVSG::SetMooringVisualizationRadii(double line_radius_m,
 }
 
 void GUIImplVSG::EnsureWaterSurface() {
-    // Require both system and visual system to be valid.
-    if (!system_ || !pVis) {
+    // Require both system and overlay builder to be valid.
+    if (!system_ || !overlay_builder_) {
         if constexpr (kDebugWaveSurface) {
             static bool printed_once = false;
             if (!printed_once) {
                 std::cout << "[WaterSurface] EnsureWaterSurface early return: system_="
-                          << (system_ ? "ok" : "null") << " pVis=" << (pVis ? "ok" : "null") << std::endl;
+                          << (system_ ? "ok" : "null") << " overlay_builder_="
+                          << (overlay_builder_ ? "ok" : "null") << std::endl;
                 printed_once = true;
             }
         }
         return;
     }
 
-    // If already initialized for this visual system, nothing to do.
-    if (animated_water_->IsInitializedFor(pVis.get())) {
+    // If already initialized for this viewer, nothing to do.
+    if (animated_water_->IsInitializedFor(overlay_builder_.get())) {
         return;
     }
 
@@ -337,28 +374,14 @@ void GUIImplVSG::EnsureWaterSurface() {
     // Auto-size the water patch from the model bounds and the wavelength when
     // no manual extent has been set via SetWaterGridExtent(), so lab-scale and
     // full-scale models both get a sensible patch.
-    if (viewer_settings_ &&
-        viewer_settings_->grid_width <= 0.0 && viewer_settings_->grid_length <= 0.0 &&
-        model_bounds_.IsValid()) {
-        double wavelength = 0.0;
-        if (wave_model_ && wave_model_->GetWaveMode() != WaveMode::kNoWave) {
-            wavelength = DeepWaterWavelength(wave_model_->GetCharacteristicPeriod(), wave_model_->GetGravity());
-        }
-        const WaterExtent w = ComputeWaterExtent(model_bounds_, wavelength);
-        viewer_settings_->grid_width    = w.width;
-        viewer_settings_->grid_length   = w.length;
-        viewer_settings_->grid_center_x = w.center_x;
-        viewer_settings_->grid_center_y = w.center_y;
-        std::cout << "[WaterSurface] Auto-sized grid: "
-                  << w.width << " x " << w.length << " m, center: ("
-                  << w.center_x << ", " << w.center_y << ")" << std::endl;
+    if (AutoSizeWaterGrid(viewer_settings_.get(), model_bounds_, wave_model_.get())) {
         UpdateClipPlanes();
     }
 
     // Always create animated water surface (supports waves + radiation viz).
     // Static plane fallback removed - animated water handles all cases.
     int resolution = (viewer_settings_) ? viewer_settings_->grid_resolution : 0;
-    animated_water_->Initialize(pVis.get(), resolution, viewer_settings_.get());
+    animated_water_->Initialize(overlay_builder_.get(), resolution, viewer_settings_.get());
 
     if (animated_water_->IsInitialized()) {
         std::cout << "[WaterSurface] wave_ptr=" << (wave_model_ ? "ok" : "null");
@@ -424,19 +447,7 @@ bool GUIImplVSG::IsRunning(double timestep) {
         }
     }
 
-    // Handle viewer settings changes.
-    if (viewer_settings_ && animated_water_) {
-        // Handle visibility toggle.
-        animated_water_->SetVisible(viewer_settings_->show_water);
-
-        // Handle resolution or extent change (requires mesh rebuild).
-        if ((viewer_settings_->resolution_changed || viewer_settings_->grid_extent_changed) &&
-            animated_water_->IsInitialized()) {
-            animated_water_->Reinitialize(viewer_settings_->grid_resolution, viewer_settings_.get());
-            viewer_settings_->resolution_changed = false;
-            viewer_settings_->grid_extent_changed = false;
-        }
-    }
+    ApplyWaterSettings(animated_water_.get(), viewer_settings_.get());
 
     // Update animated water surface if wave model is set (or forced static).
     // VSG vertex buffers are marked dirty() in Update() for GPU re-upload.
@@ -445,7 +456,8 @@ bool GUIImplVSG::IsRunning(double timestep) {
 
         // Radiation overlay sources (visualization only; never affects physics).
         if (viewer_settings_ && viewer_settings_->show_radiation_viz && extractor_) {
-            UpdateRadiationSourceBody(frame);
+            UpdateRadiationSources(animated_water_.get(), *viewer_settings_, wave_model_.get(),
+                                   extractor_->Scene(), frame);
         }
 
         // Update() handles null wave_model_ gracefully (keeps surface flat).
@@ -465,72 +477,6 @@ bool GUIImplVSG::IsRunning(double timestep) {
     pVis->EndScene();
 
     return true;
-}
-
-void GUIImplVSG::UpdateRadiationSourceBody(const VizFrame& frame) {
-    if (!animated_water_ || !extractor_) {
-        return;
-    }
-    const SceneDescription& scene = extractor_->Scene();
-    if (!IsConsistent(scene, frame)) {
-        return;
-    }
-
-    // Update global params.
-    if (viewer_settings_) {
-        RadiationSurfaceViz::Params rad_params;
-        rad_params.visual_scale = static_cast<double>(viewer_settings_->radiation_visual_scale);
-        rad_params.wave_period = 8.0;  // Default; should match body oscillation frequency
-
-        // Get wave properties from wave model if available.
-        if (wave_model_) {
-            // Water depth and gravity (available in all wave models).
-            if (wave_model_->GetWaterDepth() > 0.0) {
-                rad_params.water_depth = wave_model_->GetWaterDepth();
-            }
-            rad_params.gravity = wave_model_->GetGravity();
-
-            double T_char = wave_model_->GetCharacteristicPeriod();
-            if (T_char > 0.0) {
-                rad_params.wave_period = T_char;
-            }
-        }
-
-        animated_water_->GetRadiationViz().SetParams(rad_params);
-    }
-
-    // Log source bodies once.
-    static bool logged_sources = false;
-
-    // Every moving, named model body is a source (water bodies are not in the scene).
-    for (size_t i = 0; i < scene.bodies.size(); ++i) {
-        const BodyDescription& body = scene.bodies[i];
-        const BodyState& state = frame.bodies[i];
-        const std::string& name = body.name;
-        if (body.fixed || name == "ground" || name == "floor" || name.empty()) {
-            continue;
-        }
-
-        // Body radius in plan from its visual bounds (rough approximation).
-        double radius = 5.0;  // m, fallback for bodies without visual shapes
-        if (body.local_bounds.IsValid()) {
-            const Vec3 s = body.local_bounds.Size();
-            // Guard against degenerate bounds only; a larger floor would
-            // over-amplify lab-scale bodies.
-            radius = std::max(0.5 * std::max(s[0], s[1]), 0.05);
-        }
-
-        const auto to_ch = [](const Vec3& v) { return ::chrono::ChVector3d(v[0], v[1], v[2]); };
-        animated_water_->GetRadiationViz().SetSourceState(name, to_ch(state.com_position),
-                                                          to_ch(state.linear_velocity),
-                                                          to_ch(state.angular_velocity), radius, frame.time);
-
-        if (!logged_sources) {
-            std::cout << "[RadiationViz] Source: " << name << " (r=" << radius << "m)" << std::endl;
-        }
-    }
-
-    logged_sources = true;
 }
 
 }  // namespace seastack::viz

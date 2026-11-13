@@ -8,6 +8,7 @@
 // =============================================================================
 #pragma once
 
+#include "vsg_overlay_builder.h"
 #include "vsg_theme.h"
 
 #include <seastack/viz_core/scene_framing.h>
@@ -21,7 +22,7 @@
 
 namespace seastack::viz {
 
-class SeastackViewer {
+class SeastackViewer : public OverlayBuilder {
   public:
     struct Options {
         std::string title = "SEA-Stack";
@@ -62,9 +63,17 @@ class SeastackViewer {
     /// Clear colour and light levels for `theme`.
     void ApplySceneTheme(const SceneTheme& theme);
 
+    // OverlayBuilder: overlays are drawn after the bodies so translucent
+    // water blends over them.
+    vsg::ref_ptr<vsg::Group> OverlayScene() override { return overlay_root_; }
+    vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) override;
+
   private:
-    /// PBR node for one triangle mesh, in the shape's local frame.
-    vsg::ref_ptr<vsg::Node> CreateMeshNode(const TriangleMesh& mesh, const VisualShape& shape);
+    /// PBR node for one triangle mesh with unshared vertices (see
+    /// OverlayBuilder for the array layout). Alpha < 1 enables blending;
+    /// `dynamic` marks the arrays for per-frame updates.
+    vsg::ref_ptr<vsg::Node> CreateMeshNode(const TriangleMesh& mesh, const OverlayMaterial& material,
+                                           bool dynamic);
 
     vsg::ref_ptr<vsg::Viewer> viewer_;
     vsg::ref_ptr<vsg::Window> window_;
@@ -73,6 +82,7 @@ class SeastackViewer {
     vsg::ref_ptr<vsg::Trackball> trackball_;
     vsg::ref_ptr<vsg::RenderGraph> render_graph_;
     vsg::ref_ptr<vsg::Group> scene_root_;
+    vsg::ref_ptr<vsg::Group> overlay_root_;
     vsg::ref_ptr<vsg::ShaderSet> pbr_shader_set_;
     vsg::ref_ptr<vsg::SharedObjects> shared_objects_;
 

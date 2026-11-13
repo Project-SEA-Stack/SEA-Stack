@@ -57,6 +57,7 @@ class GUIImpl {
 // Forward declarations (defined in vsg_water_surface.h, vsg_gui_component.h, vsg_mooring_lines.h).
 class AnimatedWaterSurface;
 class MooringLinesViz;
+class OverlayBuilder;
 struct ViewerSettings;
 
 class GUIImplVSG : public GUIImpl {
@@ -81,10 +82,6 @@ class GUIImplVSG : public GUIImpl {
     /// Ensure water surface is created (animated if wave model set, static otherwise).
     void EnsureWaterSurface();
 
-    /// Update radiation source bodies for visualization from the current frame.
-    /// Every moving, named model body is a source.
-    void UpdateRadiationSourceBody(const VizFrame& frame);
-
     /// Apply pending camera requests from the GUI (standard views, fit).
     void HandleCameraRequests();
 
@@ -92,6 +89,7 @@ class GUIImplVSG : public GUIImpl {
     void UpdateClipPlanes();
 
     std::shared_ptr<SeastackVisualSystemVSG> pVis;
+    std::unique_ptr<OverlayBuilder> overlay_builder_;  ///< Water nodes via Chrono's shape builder
     ViewerOptions options_;
 
     /// World-frame bounds of all body visual shapes at Init() [m]; drives
@@ -118,8 +116,8 @@ class SeastackViewer;
 class SeastackGuiComponent;
 
 /// GUI backed by SEA-Stack's own viewer (--viewer=seastack). Reads Chrono
-/// only through the VizExtractor. Water and mooring rendering are not ported
-/// yet; their setters are accepted and ignored.
+/// only through the VizExtractor. Mooring rendering is not ported yet; its
+/// setters are accepted and ignored.
 class GUIImplSeastack : public GUIImpl {
   public:
     GUIImplSeastack();
@@ -131,13 +129,20 @@ class GUIImplSeastack : public GUIImpl {
     void Init(UI& ui, ::chrono::ChSystem* system, const char* title) override;
     void SetCamera(double x, double y, double z, double dirx, double diry, double dirz) override;
     bool IsRunning(double timestep) override;
+    void SetWaveModel(std::shared_ptr<seastack::hydro::WaveBase> wave) override { wave_model_ = std::move(wave); }
+    void SetWaterGridExtent(double width, double length, double center_x, double center_y) override;
     void SetMooringLineProvider(MooringVizProvider provider) override;
 
   private:
     void HandleCameraRequests();
     void UpdateClipPlanes();
+    /// Create the water surface on the first frame, then animate it from `frame`.
+    void UpdateWater(const VizFrame& frame);
 
     ViewerOptions options_;
+    std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
+    std::unique_ptr<AnimatedWaterSurface> water_;
+    bool water_tried_ = false;  ///< Water creation attempted (it is not retried)
     Bounds3 model_bounds_;  ///< World bounds of all body visual shapes at Init() [m]
     std::unique_ptr<seastack::chrono::VizExtractor> extractor_;
     std::unique_ptr<SeastackViewer> viewer_;

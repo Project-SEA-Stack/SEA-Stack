@@ -48,10 +48,26 @@ class SeastackTrackball : public vsg::Inherit<vsg::Trackball, SeastackTrackball>
     }
 };
 
-/// Draw both faces: BEM panel meshes may be open or wound inwards.
-struct DisableBackFaceCulling : public vsg::Visitor {
+/// Pipeline states for SEA-Stack meshes: both faces drawn (BEM panel meshes
+/// may be open or wound inwards), optional alpha blending.
+struct SetPipelineStates : public vsg::Visitor {
+    bool blend = false;
     void apply(vsg::Object& object) override { object.traverse(*this); }
     void apply(vsg::RasterizationState& state) override { state.cullMode = VK_CULL_MODE_NONE; }
+    void apply(vsg::ColorBlendState& state) override {
+        if (!blend) {
+            return;
+        }
+        for (auto& att : state.attachments) {
+            att.blendEnable = VK_TRUE;
+            att.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            att.colorBlendOp = VK_BLEND_OP_ADD;
+            att.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+            att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            att.alphaBlendOp = VK_BLEND_OP_ADD;
+        }
+    }
 };
 
 /// Parent <- local transform of `pose`. Filled element by element: the 16-scalar
@@ -137,7 +153,11 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
         auto transform = vsg::MatrixTransform::create();
         for (const VisualShape& shape : body.shapes) {
             const TriangleMesh mesh = MakeShapeMesh(shape);
-            auto node = CreateMeshNode(mesh, shape);
+            OverlayMaterial material;
+            material.color = shape.color;
+            material.roughness = shape.roughness;
+            material.metallic = shape.metallic;
+            auto node = CreateMeshNode(mesh, material, /*dynamic=*/false);
             if (!node) {
                 continue;
             }
@@ -148,6 +168,8 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
         scene_root_->addChild(transform);
         body_transforms_.push_back(transform);
     }
+    overlay_root_ = vsg::Group::create();
+    scene_root_->addChild(overlay_root_);
 
     // ---- Camera ----
     look_at_ = vsg::LookAt::create(vsg::dvec3(10.0, -10.0, 10.0), vsg::dvec3(0.0, 0.0, 0.0), vsg::dvec3(0.0, 0.0, 1.0));
@@ -187,7 +209,22 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     return true;
 }
 
-vsg::ref_ptr<vsg::Node> SeastackViewer::CreateMeshNode(const TriangleMesh& mesh, const VisualShape& shape) {
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) {
+    auto node = CreateMeshNode(mesh, material, /*dynamic=*/true);
+    if (node && viewer_ && viewer_->compileManager) {
+        // Nodes made after Viewer::compile() must be compiled before drawing.
+        auto result = viewer_->compileManager->compile(node);
+        if (!result) {
+            std::cerr << "[SeastackViewer] Could not compile overlay mesh." << std::endl;
+            return {};
+        }
+        vsg::updateViewer(*viewer_, result);
+    }
+    return node;
+}
+
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateMeshNode(const TriangleMesh& mesh, const OverlayMaterial& shape,
+                                                       bool dynamic) {
     const size_t num_faces = mesh.faces.size();
     if (num_faces == 0) {
         return {};
@@ -223,7 +260,14 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreateMeshNode(const TriangleMesh& mesh,
         }
     }
 
-    // Shape colours are linear (see Rgba); vertex colour stays white.
+    if (dynamic) {
+        for (vsg::Data* data : {static_cast<vsg::Data*>(vertices.get()), static_cast<vsg::Data*>(normals.get()),
+                                static_cast<vsg::Data*>(colors.get())}) {
+            data->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
+        }
+    }
+
+    // Shape colours are linear (see Rgba); vertex colour starts white.
     auto material = vsg::PbrMaterialValue::create();
     material->value().baseColorFactor.set(shape.color[0], shape.color[1], shape.color[2], shape.color[3]);
     material->value().diffuseFactor.set(shape.color[0], shape.color[1], shape.color[2], shape.color[3]);
@@ -232,8 +276,9 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreateMeshNode(const TriangleMesh& mesh,
 
     auto config = vsg::GraphicsPipelineConfigurator::create(pbr_shader_set_);
     config->shaderHints->defines.insert("VSG_TWO_SIDED_LIGHTING");
-    DisableBackFaceCulling disable_culling;
-    config->accept(disable_culling);
+    SetPipelineStates states;
+    states.blend = shape.color[3] < 1.0f;
+    config->accept(states);
     if (!config->assignDescriptor("material", material) && !config->assignDescriptor("PbrMaterial", material)) {
         std::cerr << "[SeastackViewer] PBR shader set has no material descriptor." << std::endl;
         return {};
