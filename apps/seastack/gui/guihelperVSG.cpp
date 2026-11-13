@@ -225,6 +225,7 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     // Chrono's panel duplicates the playback HUD and its wall clock includes
     // pauses; hidden by default, re-enabled from Display > Chrono debug panel.
     pVis->SetBaseGuiVisibility(false);
+    pVis->HideLogo();  // SEA-Stack owns the chrome; Chrono's watermark is noise
 
     pVis->SetLightIntensity(kKeyIntensity);
     pVis->SetLightDirection(kKeyAzimuth, kKeyElevation);
