@@ -314,13 +314,14 @@ def assert_workspace(L: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _write_obj(path: Path, verts: list, quads: list, header: str) -> None:
+def _write_obj(path: Path, verts: list, faces: list, header: str) -> None:
+    """Faces are polygons (quads or end caps), counter-clockwise seen from outside."""
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"# {header}\n")
         for x, y, z in verts:
             f.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
-        for a, b, c, d in quads:
-            f.write(f"f {a + 1} {b + 1} {c + 1} {d + 1}\n")
+        for face in faces:
+            f.write("f " + " ".join(str(i + 1) for i in face) + "\n")
 
 
 def _add_box(verts, quads, xmin, xmax, ymin, ymax, zmin, zmax) -> None:
@@ -339,7 +340,7 @@ def _add_box(verts, quads, xmin, xmax, ymin, ymax, zmin, zmax) -> None:
     )
     quads.extend(
         [
-            (base + 0, base + 1, base + 2, base + 3),
+            (base + 0, base + 3, base + 2, base + 1),  # bottom, -z
             (base + 4, base + 5, base + 6, base + 7),
             (base + 0, base + 1, base + 5, base + 4),
             (base + 1, base + 2, base + 6, base + 5),
@@ -358,6 +359,9 @@ def _add_cyl(verts, quads, z0, z1, r, n=20) -> None:
     for k in range(n):
         k1 = (k + 1) % n
         quads.append((base + k, base + k1, base + n + k1, base + n + k))
+    # Closed ends, so viewers that cull back faces do not show the inside.
+    quads.append(tuple(base + k for k in reversed(range(n))))  # bottom, -z
+    quads.append(tuple(base + n + k for k in range(n)))  # top, +z
 
 
 def write_crane_objs() -> None:

@@ -81,7 +81,7 @@ def _write_box_obj(
         (xmin, ymax, zmax),
     ]
     faces = [
-        (1, 2, 3, 4),   # bottom
+        (1, 4, 3, 2),   # bottom
         (5, 6, 7, 8),   # top
         (1, 2, 6, 5),   # starboard
         (2, 3, 7, 6),   # forward (bow side of box)
@@ -132,7 +132,7 @@ def build_topsides_obj(output_dir: Path) -> None:
         for x, y, z in cap:
             f.write(f"v {x:.6f} {y:.6f} {z:.6f}\n")
         faces = [
-            (base + 1, base + 2, base + 3, base + 4),
+            (base + 1, base + 4, base + 3, base + 2),
             (base + 5, base + 6, base + 7, base + 8),
             (base + 1, base + 2, base + 6, base + 5),
             (base + 2, base + 3, base + 7, base + 6),
