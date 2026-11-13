@@ -29,6 +29,16 @@
 #include <cmath>
 #include <iostream>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace seastack::viz {
 
 using namespace vsg_config;
@@ -142,6 +152,19 @@ vsg::dmat4 ToMatrix(const Pose& pose) {
     return m;
 }
 
+/// Tell Windows this process draws at full resolution (otherwise it renders
+/// at 96 DPI and stretches the window, blurring text and geometry) and return
+/// the display scale [-], e.g. 1.5 at 150 %. Process-wide; must run before
+/// the first window is created. Returns 1 on other platforms.
+float EnableDpiAwareness() {
+#ifdef _WIN32
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    return static_cast<float>(GetDpiForSystem()) / 96.0f;
+#else
+    return 1.0f;
+#endif
+}
+
 float SrgbToLinear(float c) {
     return (c <= 0.04045f) ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
 }
@@ -164,10 +187,11 @@ vsg::ref_ptr<vsg::DirectionalLight> MakeDirectionalLight(const char* name, doubl
 }  // namespace
 
 bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& options, GuiCallback draw_gui) {
+    ui_scale_ = EnableDpiAwareness();
     auto traits = vsg::WindowTraits::create();
     traits->windowTitle = options.title;
-    traits->width = static_cast<uint32_t>(options.width);
-    traits->height = static_cast<uint32_t>(options.height);
+    traits->width = static_cast<uint32_t>(options.width * ui_scale_);
+    traits->height = static_cast<uint32_t>(options.height * ui_scale_);
     traits->x = 100;
     traits->y = 100;
     traits->samples = VK_SAMPLE_COUNT_4_BIT;                                 // 4x MSAA
@@ -247,7 +271,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;  // no imgui.ini next to the case
     if (!options.font_path.empty()) {
-        if (!ImGui::GetIO().Fonts->AddFontFromFileTTF(options.font_path.c_str(), options.font_size)) {
+        if (!ImGui::GetIO().Fonts->AddFontFromFileTTF(options.font_path.c_str(), options.font_size * ui_scale_)) {
             std::cerr << "[SeastackViewer] Could not load font " << options.font_path << std::endl;
         }
     }

@@ -93,6 +93,9 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// by viewers that are not a Chrono visual system (vsys == nullptr).
     void Draw();
 
+    /// Display scale for panel sizes (e.g. 1.5 at 150 %); 1 by default.
+    void SetUiScale(float scale);
+
   private:
     void RenderToolbar();
     void RenderMooringPanel();
@@ -111,6 +114,7 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     double& playback_speed_;
     double last_finite_speed_ = 1.0;  ///< Speed restored when "Max" is switched off [-]
     bool imgui_theme_applied_ = false;
+    float ui_scale_ = 1.0f;  ///< Display scale applied to panel sizes [-]
     bool fixed_range_error_ = false;  ///< Last fixed mooring range entry was rejected
     VisualTheme imgui_theme_ = VisualTheme::kDark;  ///< Theme of the current ImGui style
     const RunStatus& run_status_;

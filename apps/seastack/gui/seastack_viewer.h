@@ -26,11 +26,11 @@ class SeastackViewer : public OverlayBuilder {
   public:
     struct Options {
         std::string title = "SEA-Stack";
-        int width = 1280;         ///< Window width [px]
-        int height = 720;         ///< Window height [px]
+        int width = 1280;         ///< Window width [px at 100 % display scale]
+        int height = 720;         ///< Window height [px at 100 % display scale]
         double fov_deg = 40.0;    ///< Vertical field of view [deg]
         std::string font_path;    ///< ImGui TrueType font; empty = ImGui default
-        float font_size = 20.0f;  ///< ImGui font size [px]
+        float font_size = 15.0f;  ///< ImGui font size [px at 100 % display scale]
         std::string skybox_path;  ///< KTX cubemap shown by themes with a sky; empty = none
     };
 
@@ -58,6 +58,9 @@ class SeastackViewer : public OverlayBuilder {
 
     /// Viewport width / height [-].
     double GetViewportAspect() const;
+
+    /// Display scale [-] (e.g. 1.5 at 150 %); window and font are scaled by it.
+    float UiScale() const { return ui_scale_; }
 
     void SetClipPlanes(const ClipPlanes& clip);
 
@@ -115,6 +118,7 @@ class SeastackViewer : public OverlayBuilder {
     /// One transform per scene body, in scene order (world <- body ref frame).
     std::vector<vsg::ref_ptr<vsg::MatrixTransform>> body_transforms_;
     size_t num_bodies_ = 0;
+    float ui_scale_ = 1.0f;
 };
 
 }  // namespace seastack::viz

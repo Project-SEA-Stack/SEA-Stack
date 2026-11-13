@@ -75,17 +75,17 @@ void SeastackGuiComponent::RenderToolbar() {
                                     ImGuiWindowFlags_AlwaysAutoResize;
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(viewport->GetCenter().x, viewport->WorkPos.y + 10.0f),
+    ImGui::SetNextWindowPos(ImVec2(viewport->GetCenter().x, viewport->WorkPos.y + 10.0f * ui_scale_),
                             ImGuiCond_Always, ImVec2(0.5f, 0.0f));
     // Grow-only width: the status text changes length every frame (e.g. the
     // "cannot keep up" warning), and a centred auto-sized window would jitter.
     ImGui::SetNextWindowSizeConstraints(ImVec2(toolbar_width_, 0.0f), ImVec2(FLT_MAX, FLT_MAX));
-    ImGui::SetNextWindowBgAlpha(0.55f);
+    ImGui::SetNextWindowBgAlpha(0.85f);
     ImGui::Begin("SEA-Stack", nullptr, window_flags);
 
     // Play / Pause: the button names the action it performs.
     ImGui::BeginDisabled(run_status_.finished);
-    if (ImGui::Button(pressed_ ? "Pause" : "Play", ImVec2(90, 0))) {
+    if (ImGui::Button(pressed_ ? "Pause" : "Play", ImVec2(70.0f * ui_scale_, 0))) {
         pressed_ = !pressed_;
     }
     ImGui::EndDisabled();
@@ -97,7 +97,7 @@ void SeastackGuiComponent::RenderToolbar() {
     unlimited = playback_speed_ <= 0.0;
     float slider_speed = static_cast<float>(unlimited ? last_finite_speed_ : playback_speed_);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200.0f);
+    ImGui::SetNextItemWidth(180.0f * ui_scale_);
     ImGui::BeginDisabled(unlimited);
     if (ImGui::SliderFloat("##speed", &slider_speed, kMinSpeed, kMaxSpeed, "%.2fx",
                            ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
@@ -192,9 +192,14 @@ void SeastackGuiComponent::render(vsg::CommandBuffer& /*cb*/) {
     Draw();
 }
 
+void SeastackGuiComponent::SetUiScale(float scale) {
+    ui_scale_ = scale > 0.0f ? scale : 1.0f;
+    imgui_theme_applied_ = false;  // re-apply sizes on the next frame
+}
+
 void SeastackGuiComponent::Draw() {
     if (settings_ && (!imgui_theme_applied_ || imgui_theme_ != settings_->theme)) {
-        ApplyImGuiTheme(settings_->theme);
+        ApplyImGuiTheme(settings_->theme, ui_scale_);
         imgui_theme_ = settings_->theme;
         imgui_theme_applied_ = true;
     }
@@ -207,8 +212,8 @@ void SeastackGuiComponent::Draw() {
         settings_flags |= ImGuiWindowFlags_AlwaysAutoResize;
 
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 10,
-                                       viewport->WorkPos.y + viewport->WorkSize.y - 10),
+        ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + 10.0f * ui_scale_,
+                                       viewport->WorkPos.y + viewport->WorkSize.y - 10.0f * ui_scale_),
                                 ImGuiCond_FirstUseEver, ImVec2(0.0f, 1.0f));  // Anchor bottom-left
 
         ImGui::Begin("Viewer Settings", nullptr, settings_flags);
@@ -417,15 +422,42 @@ void SeastackGuiComponent::RenderColorBar() {
     if (!mooring_viz_ || !mooring_viz_->IsInitialized()) return;
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    const float bar_w = 20.0f;
-    const float bar_h = 200.0f;
-    const float margin = 30.0f;
-    const float label_gap = 6.0f;
+    const float bar_w = 14.0f * ui_scale_;
+    const float bar_h = 180.0f * ui_scale_;
+    const float margin = 20.0f * ui_scale_;
+    const float label_gap = 6.0f * ui_scale_;
+    const float pad = 8.0f * ui_scale_;  // legend panel padding
 
     const float x0 = vp->WorkPos.x + vp->WorkSize.x - margin - bar_w;
     const float y0 = vp->WorkPos.y + vp->WorkSize.y * 0.5f - bar_h * 0.5f;
 
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+
+    // Labels first, so the legend panel can be sized around them.
+    char max_label[64];
+    char min_label[64];
+    std::snprintf(max_label, sizeof(max_label), "%.3g N", mooring_viz_->TensionMax());
+    std::snprintf(min_label, sizeof(min_label), "%.3g N", mooring_viz_->TensionMin());
+    const ColorRangeMode mode = mooring_viz_->TensionRange().Mode();
+    const char* title = (mode == ColorRangeMode::kFixed)    ? "Tension (fixed)"
+                        : (mode == ColorRangeMode::kLocked) ? "Tension (locked)"
+                                                            : "Tension";
+    const float label_w = std::max(ImGui::CalcTextSize(max_label).x, ImGui::CalcTextSize(min_label).x);
+    const float title_w = ImGui::CalcTextSize(title).x;
+    const float line_h = ImGui::GetTextLineHeight();
+
+    // Legend panel in the theme's window colour, so text stays readable over
+    // both the dark background and the light theme's sky.
+    const float panel_x0 = std::min(x0 - label_gap - label_w, x0 + bar_w - title_w) - pad;
+    const float panel_y0 = y0 - line_h - 2.0f * label_gap - pad;
+    const float panel_x1 = x0 + bar_w + pad;
+    const float panel_y1 = y0 + bar_h + pad;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    dl->AddRectFilled(ImVec2(panel_x0, panel_y0), ImVec2(panel_x1, panel_y1),
+                      ImGui::GetColorU32(ImGuiCol_WindowBg), style.WindowRounding);
+    dl->AddRect(ImVec2(panel_x0, panel_y0), ImVec2(panel_x1, panel_y1), ImGui::GetColorU32(ImGuiCol_Border),
+                style.WindowRounding);
+    const ImU32 text_color = ImGui::GetColorU32(ImGuiCol_Text);
 
     // Draw the gradient as a stack of thin horizontal strips.
     constexpr int kStrips = 64;
@@ -451,27 +483,13 @@ void SeastackGuiComponent::RenderColorBar() {
     }
 
     // Outline.
-    dl->AddRect(ImVec2(x0, y0), ImVec2(x0 + bar_w, y0 + bar_h),
-                IM_COL32(200, 200, 200, 180));
+    dl->AddRect(ImVec2(x0, y0), ImVec2(x0 + bar_w, y0 + bar_h), ImGui::GetColorU32(ImGuiCol_Border));
 
-    // Labels.
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "%.3g N", mooring_viz_->TensionMax());
-    dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(buf).x, y0 - 2.0f),
-                IM_COL32(220, 220, 220, 255), buf);
-
-    std::snprintf(buf, sizeof(buf), "%.3g N", mooring_viz_->TensionMin());
-    dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(buf).x,
-                        y0 + bar_h - ImGui::GetTextLineHeight() + 2.0f),
-                IM_COL32(220, 220, 220, 255), buf);
-
-    const ColorRangeMode mode = mooring_viz_->TensionRange().Mode();
-    const char* title = (mode == ColorRangeMode::kFixed)    ? "Tension (fixed)"
-                        : (mode == ColorRangeMode::kLocked) ? "Tension (locked)"
-                                                            : "Tension";
-    dl->AddText(ImVec2(x0 + bar_w * 0.5f - ImGui::CalcTextSize(title).x * 0.5f,
-                        y0 - ImGui::GetTextLineHeight() - 4.0f),
-                IM_COL32(220, 220, 220, 255), title);
+    // Labels: max at the top of the bar, min at the bottom, title above.
+    dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(max_label).x, y0), text_color, max_label);
+    dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(min_label).x, y0 + bar_h - line_h), text_color,
+                min_label);
+    dl->AddText(ImVec2(x0 + bar_w - title_w, y0 - line_h - label_gap), text_color, title);
 }
 
 }  // namespace seastack::viz

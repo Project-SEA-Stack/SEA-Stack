@@ -23,7 +23,8 @@ struct SceneTheme {
 
 SceneTheme GetSceneTheme(VisualTheme theme);
 
-/// Apply the ImGui panel style for `theme`. Call inside an ImGui frame.
-void ApplyImGuiTheme(VisualTheme theme);
+/// Apply the ImGui panel style for `theme`, with sizes multiplied by
+/// `ui_scale` (display scale, e.g. 1.5 at 150 %). Call inside an ImGui frame.
+void ApplyImGuiTheme(VisualTheme theme, float ui_scale = 1.0f);
 
 }  // namespace seastack::viz
