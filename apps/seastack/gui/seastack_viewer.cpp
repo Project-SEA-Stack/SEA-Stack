@@ -11,6 +11,7 @@
 #include "seastack_viewer.h"
 
 #include "vsg_config.h"
+#include "vsg_skybox.h"
 
 #include <seastack/viz_core/mesh_normals.h>
 #include <seastack/viz_core/primitive_meshes.h>
@@ -18,6 +19,7 @@
 #include <vsgImGui/RenderImGui.h>
 #include <vsgImGui/SendEventsToImGui.h>
 #include <vsgImGui/imgui.h>
+#include <vsgImGui/imgui_internal.h>  // FindHoveredWindowEx
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -46,6 +48,56 @@ class SeastackTrackball : public vsg::Inherit<vsg::Trackball, SeastackTrackball>
         }
         Inherit::apply(key_press);
     }
+};
+
+/// Mouse forwarding to ImGui. vsgImGui's handler decides from the previous
+/// frame's hover state, so when the cursor jumps between panel and scene
+/// within one frame a press can go to the wrong side, and a release can be
+/// withheld from ImGui, which then thinks the button is held and ignores
+/// every later click. Here ImGui always sees every mouse event, as its own
+/// backends do; a press belongs to ImGui if it lands on a panel (last
+/// frame's window rectangles) or a popup is open, and the camera gets the
+/// rest. Keyboard handling is vsgImGui's.
+class SeastackImGuiEvents : public vsg::Inherit<vsgImGui::SendEventsToImGui, SeastackImGuiEvents> {
+  public:
+    void apply(vsg::ButtonPressEvent& press) override {
+        ImGuiIO& io = ImGui::GetIO();
+        const ImVec2 pos(static_cast<float>(press.x), static_cast<float>(press.y));
+        io.AddMousePosEvent(pos.x, pos.y);
+        io.AddMouseButtonEvent(ToImGuiButton(press.button), true);
+        ImGuiWindow* hovered = nullptr;
+        ImGuiWindow* hovered_under_moving = nullptr;
+        ImGui::FindHoveredWindowEx(pos, false, &hovered, &hovered_under_moving);
+        imgui_owns_drag_ = hovered != nullptr || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+        press.handled = imgui_owns_drag_;
+    }
+    void apply(vsg::ButtonReleaseEvent& release) override {
+        ImGuiIO& io = ImGui::GetIO();
+        io.AddMousePosEvent(static_cast<float>(release.x), static_cast<float>(release.y));
+        io.AddMouseButtonEvent(ToImGuiButton(release.button), false);
+        release.handled = imgui_owns_drag_;
+        imgui_owns_drag_ = false;
+    }
+    void apply(vsg::MoveEvent& move) override {
+        ImGuiIO& io = ImGui::GetIO();
+        io.AddMousePosEvent(static_cast<float>(move.x), static_cast<float>(move.y));
+        // A drag that started over the scene stays with the camera.
+        const bool button_down = move.mask != vsg::BUTTON_MASK_OFF;
+        move.handled = button_down ? imgui_owns_drag_ : io.WantCaptureMouse;
+    }
+    void apply(vsg::ScrollWheelEvent& wheel) override {
+        ImGuiIO& io = ImGui::GetIO();
+        io.AddMouseWheelEvent(wheel.delta.x, wheel.delta.y);
+        wheel.handled = io.WantCaptureMouse;
+    }
+
+  private:
+    /// VSG buttons 1 / 2 / 3 = left / middle / right; ImGui 0 / 2 / 1.
+    static int ToImGuiButton(uint32_t button) {
+        return button == 1 ? 0 : button == 3 ? 1 : 2;
+    }
+
+    bool imgui_owns_drag_ = false;  ///< Current press went to ImGui (not the camera)
 };
 
 /// Pipeline states for SEA-Stack meshes: both faces drawn (BEM panel meshes
@@ -129,8 +181,15 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     viewer_ = vsg::Viewer::create();
     viewer_->addWindow(window_);
 
-    // ---- Scene: lights and bodies ----
+    // ---- Scene: sky, lights and bodies ----
     scene_root_ = vsg::Group::create();
+    sky_switch_ = vsg::Switch::create();
+    if (!options.skybox_path.empty()) {
+        if (auto sky = CreateSkybox(options.skybox_path)) {
+            sky_switch_->addChild(false, sky);  // shown by ApplySceneTheme
+        }
+    }
+    scene_root_->addChild(sky_switch_);
     ambient_light_ = vsg::AmbientLight::create();
     ambient_light_->name = "ambient";
     ambient_light_->color.set(1.0f, 1.0f, 1.0f);
@@ -200,7 +259,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
                                                           })));
 
     // ImGui gets events first, so dragging a slider does not move the camera.
-    viewer_->addEventHandler(vsgImGui::SendEventsToImGui::create());
+    viewer_->addEventHandler(SeastackImGuiEvents::create());
     viewer_->addEventHandler(vsg::CloseHandler::create(viewer_));
     trackball_ = SeastackTrackball::create(camera_);
     viewer_->addEventHandler(trackball_);
@@ -374,13 +433,23 @@ void SeastackViewer::SetFrame(const VizFrame& frame) {
 }
 
 bool SeastackViewer::RenderFrame() {
-    if (!viewer_ || !viewer_->advanceToNextFrame()) {
+    if (!viewer_) {
         return false;
     }
-    viewer_->handleEvents();
-    viewer_->update();
-    viewer_->recordAndSubmit();
-    viewer_->present();
+    // vsg::Exception does not derive from std::exception; report it here so
+    // the run ends with a readable message instead of "unknown error".
+    try {
+        if (!viewer_->advanceToNextFrame()) {
+            return false;
+        }
+        viewer_->handleEvents();
+        viewer_->update();
+        viewer_->recordAndSubmit();
+        viewer_->present();
+    } catch (const vsg::Exception& e) {
+        std::cerr << "[SeastackViewer] VSG error: " << e.message << " (VkResult " << e.result << ")" << std::endl;
+        return false;
+    }
     return viewer_->active();
 }
 
@@ -441,6 +510,9 @@ void SeastackViewer::ApplySceneTheme(const SceneTheme& theme) {
         }
         clear.float32[3] = 1.0f;
         render_graph_->setClearValues(clear);
+    }
+    if (sky_switch_) {
+        sky_switch_->setAllChildren(theme.show_sky);
     }
     if (ambient_light_) {
         ambient_light_->intensity = theme.ambient_intensity;

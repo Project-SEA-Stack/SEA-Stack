@@ -31,6 +31,7 @@ class SeastackViewer : public OverlayBuilder {
         double fov_deg = 40.0;    ///< Vertical field of view [deg]
         std::string font_path;    ///< ImGui TrueType font; empty = ImGui default
         float font_size = 20.0f;  ///< ImGui font size [px]
+        std::string skybox_path;  ///< KTX cubemap shown by themes with a sky; empty = none
     };
 
     /// ImGui drawing callback, called once per rendered frame.
@@ -60,7 +61,7 @@ class SeastackViewer : public OverlayBuilder {
 
     void SetClipPlanes(const ClipPlanes& clip);
 
-    /// Clear colour and light levels for `theme`.
+    /// Clear colour, skybox visibility and light levels for `theme`.
     void ApplySceneTheme(const SceneTheme& theme);
 
     // OverlayBuilder: overlays are drawn after the bodies so translucent
@@ -103,6 +104,7 @@ class SeastackViewer : public OverlayBuilder {
     vsg::ref_ptr<vsg::RenderGraph> render_graph_;
     vsg::ref_ptr<vsg::Group> scene_root_;
     vsg::ref_ptr<vsg::Group> overlay_root_;
+    vsg::ref_ptr<vsg::Switch> sky_switch_;  ///< Holds the skybox, if it loaded
     vsg::ref_ptr<vsg::ShaderSet> pbr_shader_set_;
     vsg::ref_ptr<vsg::SharedObjects> shared_objects_;
 

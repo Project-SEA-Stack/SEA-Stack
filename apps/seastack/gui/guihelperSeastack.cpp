@@ -54,6 +54,7 @@ void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title
     options.height = kWindowHeight;
     options.fov_deg = kCameraFovDeg;
     options.font_path = ::chrono::GetChronoDataFile("vsg/fonts/Ubuntu_Mono/UbuntuMono-Regular.ttf");
+    options.skybox_path = ::chrono::GetChronoDataFile("vsg/textures/vsg_skybox.ktx");  // as the Chrono viewer
     SeastackGuiComponent* gui = gui_.get();
     if (!viewer_->Initialize(extractor_->Scene(), options, [gui]() { gui->Draw(); })) {
         throw std::runtime_error("SEA-Stack viewer initialization failed. Try --viewer=chrono or --nogui.");
