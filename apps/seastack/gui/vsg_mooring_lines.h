@@ -2,10 +2,12 @@
 /// @brief VSG mooring-line tube-mesh renderer for SEA-Stack.
 #pragma once
 
+#include "vsg_overlay_builder.h"
+
 #include <seastack/core/mooring_viz_data.h>
 #include <seastack/viz_core/color_range.h>
-
-#include <chrono_vsg/ChVisualSystemVSG.h>
+#include <seastack/viz_core/scene_framing.h>
+#include <seastack/viz_core/scene_model.h>
 
 #include <vsg/all.h>
 
@@ -27,18 +29,18 @@ class MooringLinesViz {
     MooringLinesViz& operator=(const MooringLinesViz&) = delete;
 
     /// Build tube meshes from initial line data and add to the VSG scene.
-    /// Call once after ChVisualSystemVSG::Initialize().
+    /// Call once the viewer is initialized.
     ///
-    /// @param vis            Pointer to the active visual system (must outlive
-    ///                       this object).
+    /// @param builder        Overlay node builder of the active viewer (must
+    ///                       outlive this object).
     /// @param initial_lines  One entry per mooring line with initial node
     ///                       positions and endpoint types.
     /// @param parent_group   Optional scene-graph group.  When provided,
-    ///                       mooring geometry is added here instead of the root
-    ///                       VSG scene.  Use this to guarantee render order
-    ///                       (e.g. render mooring lines before the transparent
-    ///                       water surface).
-    void Initialize(::chrono::vsg3d::ChVisualSystemVSG* vis,
+    ///                       mooring geometry is added here instead of the
+    ///                       builder's overlay scene.  Use this to guarantee
+    ///                       render order (e.g. render mooring lines before the
+    ///                       transparent water surface).
+    void Initialize(OverlayBuilder* builder,
                     const std::vector<MooringLineVizData>& initial_lines,
                     vsg::ref_ptr<vsg::Group> parent_group = {});
 
@@ -48,8 +50,8 @@ class MooringLinesViz {
     void Update(const std::vector<MooringLineVizData>& lines, bool color_enabled = true);
 
     bool IsInitialized() const { return initialized_; }
-    bool IsInitializedFor(::chrono::vsg3d::ChVisualSystemVSG* vis) const {
-        return initialized_ && bound_vis_ == vis;
+    bool IsInitializedFor(const OverlayBuilder* builder) const {
+        return initialized_ && builder_ == builder;
     }
 
     /// Current tension colour range [N] (for the GUI colour bar).
@@ -101,13 +103,11 @@ class MooringLinesViz {
         std::vector<PointMarker> node_markers;
     };
 
-    void BuildTubeMesh(const MooringLineVizData& line_data, LineMesh& lm,
-                       ::chrono::vsg3d::ChVisualSystemVSG* vis);
+    void BuildTubeMesh(const MooringLineVizData& line_data, LineMesh& lm);
     void UpdateTubeMesh(const MooringLineVizData& line_data, LineMesh& lm,
                         bool color_enabled, float range_min, float range_max);
 
-    PointMarker CreateSphereMarker(::chrono::vsg3d::ChVisualSystemVSG* vis,
-                                   double x, double y, double z,
+    PointMarker CreateSphereMarker(double x, double y, double z,
                                    double radius, int point_type);
 
     static void UpdateMarkerPosition(PointMarker& marker,
@@ -116,10 +116,35 @@ class MooringLinesViz {
 
     std::vector<LineMesh> line_meshes_;
     vsg::ref_ptr<vsg::Group> scene_;
-    ::chrono::vsg3d::ChVisualSystemVSG* bound_vis_ = nullptr;
+    OverlayBuilder* builder_ = nullptr;
     bool initialized_ = false;
 
     ColorRange tension_range_;
 };
+
+// ---- Shared by both viewers' GUI implementations ----
+
+/// Start-up mooring display options (from YAML).
+struct MooringVizOptions {
+    /// Radii [m] for line / endpoint / node-marker geometry; < 0 keeps the
+    /// model-scaled default.
+    double line_radius_m = -1.0;
+    double endpoint_radius_m = -1.0;
+    double node_marker_radius_m = -1.0;
+    /// Fixed tension colour range [N]; otherwise the range auto-tracks.
+    bool has_tension_range = false;
+    float tension_min = 0.0f;
+    float tension_max = 0.0f;
+};
+
+/// Mooring lines of a frame in the form MooringLinesViz takes.
+std::vector<MooringLineVizData> ToMooringVizData(const SceneDescription& scene, const VizFrame& frame);
+
+/// Create the mooring renderer on the first frame with line data (radii
+/// scaled to the model, then YAML overrides, then any fixed colour range)
+/// and update it from `frame`. No effect for frames without mooring lines.
+void DrawMooringLines(MooringLinesViz* viz, OverlayBuilder* builder, vsg::ref_ptr<vsg::Group> parent_group,
+                      const SceneDescription& scene, const VizFrame& frame, const Bounds3& model_bounds,
+                      const MooringVizOptions& options, bool color_enabled);
 
 }  // namespace seastack::viz

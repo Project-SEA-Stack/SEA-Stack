@@ -4,11 +4,6 @@
 
 #include "vsg_config.h"
 
-#include <chrono/assets/ChVisualMaterial.h>
-#include <chrono/core/ChTypes.h>
-#include <chrono/geometry/ChTriangleMeshConnected.h>
-#include <chrono_vsg/utils/ChShapeBuilderVSG.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -112,14 +107,14 @@ static void PerpFrame(const vsg::dvec3& tang, vsg::dvec3& u, vsg::dvec3& v) {
 }
 
 /// Map a MoorDyn point type (or kIntermediateNode) to a display colour.
-static ::chrono::ChColor PointTypeColor(int point_type) {
+static Rgba PointTypeColor(int point_type) {
     using PT = MooringPointType;
     switch (static_cast<PT>(point_type)) {
-        case PT::kFixed:   return {0.6f, 0.15f, 0.1f};   // anchor -- dark rust
-        case PT::kCoupled: return {0.2f, 0.4f, 0.7f};    // fairlead -- steel blue
-        case PT::kFree:    return {0.9f, 0.6f, 0.1f};    // buoy/free -- orange
+        case PT::kFixed:   return {0.6f, 0.15f, 0.1f, 1.0f};   // anchor -- dark rust
+        case PT::kCoupled: return {0.2f, 0.4f, 0.7f, 1.0f};    // fairlead -- steel blue
+        case PT::kFree:    return {0.9f, 0.6f, 0.1f, 1.0f};    // buoy/free -- orange
     }
-    return {0.05f, 0.05f, 0.05f};  // intermediate node -- near black
+    return {0.05f, 0.05f, 0.05f, 1.0f};  // intermediate node -- near black
 }
 
 vsg::vec4 MooringLinesViz::TurboColormap(float t) {
@@ -163,20 +158,20 @@ void MooringLinesViz::SetVisualizationRadii(double line_radius_m,
 }
 
 void MooringLinesViz::Initialize(
-    ::chrono::vsg3d::ChVisualSystemVSG* vis,
+    OverlayBuilder* builder,
     const std::vector<MooringLineVizData>& initial_lines,
     vsg::ref_ptr<vsg::Group> parent_group) {
-    if (!vis || initial_lines.empty()) return;
-    if (initialized_ && bound_vis_ == vis) return;
+    if (!builder || initial_lines.empty()) return;
+    if (initialized_ && builder_ == builder) return;
 
-    bound_vis_ = vis;
-    scene_ = parent_group ? parent_group : vis->GetVSGScene();
+    builder_ = builder;
+    scene_ = parent_group ? parent_group : builder->OverlayScene();
     if (!scene_) return;
 
     line_meshes_.resize(initial_lines.size());
     for (size_t li = 0; li < initial_lines.size(); ++li) {
         if (initial_lines[li].node_positions.size() < 2) continue;
-        BuildTubeMesh(initial_lines[li], line_meshes_[li], vis);
+        BuildTubeMesh(initial_lines[li], line_meshes_[li]);
     }
 
     initialized_ = true;
@@ -210,20 +205,16 @@ void MooringLinesViz::Update(const std::vector<MooringLineVizData>& lines,
 // ---------------------------------------------------------------------------
 
 void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
-                                    LineMesh& lm,
-                                    ::chrono::vsg3d::ChVisualSystemVSG* vis) {
-    auto shape_builder = vis->GetVSGShapeBuilder();
-    if (!shape_builder) return;
-
+                                    LineMesh& lm) {
     const auto& pts = line_data.node_positions;
     const size_t num_nodes = pts.size();
     lm.num_nodes = num_nodes;
 
     // -- Tessellate a closed tube (N rings of kSides verts + 2 cap centres). --
 
-    auto mesh = ::chrono_types::make_shared<::chrono::ChTriangleMeshConnected>();
-    auto& verts      = mesh->m_vertices;
-    auto& mesh_faces = mesh->m_face_v_indices;
+    TriangleMesh mesh;
+    auto& verts      = mesh.vertices;
+    auto& mesh_faces = mesh.faces;
 
     const size_t ring_verts  = num_nodes * static_cast<size_t>(kSides);
     const size_t total_verts = ring_verts + 2;  // +2 cap centres
@@ -246,10 +237,10 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
         for (int s = 0; s < kSides; ++s) {
             const double cs = cos_table[s];
             const double sn = sin_table[s];
-            verts[ni * kSides + s] = ::chrono::ChVector3d(
+            verts[ni * kSides + s] = Vec3{
                 pts[ni][0] + tube_radius_ * (cs * u.x + sn * v.x),
                 pts[ni][1] + tube_radius_ * (cs * u.y + sn * v.y),
-                pts[ni][2] + tube_radius_ * (cs * u.z + sn * v.z));
+                pts[ni][2] + tube_radius_ * (cs * u.z + sn * v.z)};
         }
     }
 
@@ -269,32 +260,28 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
             const int b  = static_cast<int>(ni       * kSides + sn);
             const int c  = static_cast<int>((ni + 1) * kSides + sn);
             const int d  = static_cast<int>((ni + 1) * kSides + s);
-            mesh_faces.emplace_back(a, d, c);
-            mesh_faces.emplace_back(a, c, b);
+            mesh_faces.push_back({a, d, c});
+            mesh_faces.push_back({a, c, b});
         }
     }
 
     // Start cap (fan around ring_verts).
     for (int s = 0; s < kSides; ++s) {
         const int sn = (s + 1) % kSides;
-        mesh_faces.emplace_back(static_cast<int>(ring_verts), sn, s);
+        mesh_faces.push_back({static_cast<int>(ring_verts), sn, s});
     }
 
     // End cap (fan around ring_verts + 1).
     const int end_base = static_cast<int>((num_nodes - 1) * kSides);
     for (int s = 0; s < kSides; ++s) {
         const int sn = (s + 1) % kSides;
-        mesh_faces.emplace_back(static_cast<int>(ring_verts + 1),
-                                end_base + s, end_base + sn);
+        mesh_faces.push_back({static_cast<int>(ring_verts + 1), end_base + s, end_base + sn});
     }
 
-    // CreateTrimeshColAvgShape produces indexed geometry with a viewer-
-    // connected compile traversal, so subsequent dirty() calls on the vertex
-    // buffer trigger GPU re-upload.
-    static const ::chrono::ChColor kCableColor(0.55f, 0.45f, 0.35f);
-    auto transform = vsg::MatrixTransform::create();
-    lm.node = shape_builder->CreateTrimeshColAvgShape(
-        mesh, transform, kCableColor, /*double_faced=*/false, /*wireframe=*/false);
+    // Indexed geometry compiled by the builder, so subsequent dirty() calls
+    // on the vertex buffer trigger GPU re-upload.
+    static const Rgba kCableColor{0.55f, 0.45f, 0.35f, 1.0f};
+    lm.node = builder_->CreateIndexedOverlayMesh(mesh, kCableColor);
     if (!lm.node) return;
 
     // Extract the VSG vertex / normal / colour arrays for per-frame writes.
@@ -314,10 +301,10 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
     const auto& p0 = pts.front();
     const auto& pN = pts.back();
     lm.start_marker = CreateSphereMarker(
-        vis, p0[0], p0[1], p0[2], endpoint_radius_,
+        p0[0], p0[1], p0[2], endpoint_radius_,
         static_cast<int>(line_data.start_point_type));
     lm.end_marker = CreateSphereMarker(
-        vis, pN[0], pN[1], pN[2], endpoint_radius_,
+        pN[0], pN[1], pN[2], endpoint_radius_,
         static_cast<int>(line_data.end_point_type));
 
     // Small intermediate-node markers to visualise segment boundaries.
@@ -325,7 +312,7 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
         lm.node_markers.reserve(num_nodes - 2);
         for (size_t ni = 1; ni + 1 < num_nodes; ++ni) {
             lm.node_markers.push_back(CreateSphereMarker(
-                vis, pts[ni][0], pts[ni][1], pts[ni][2],
+                pts[ni][0], pts[ni][1], pts[ni][2],
                 node_marker_radius_, kIntermediateNode));
         }
     }
@@ -334,30 +321,25 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
 // ---------------------------------------------------------------------------
 
 MooringLinesViz::PointMarker MooringLinesViz::CreateSphereMarker(
-    ::chrono::vsg3d::ChVisualSystemVSG* vis,
     double x, double y, double z,
     double radius, int point_type) {
     PointMarker pm;
-    auto shape_builder = vis->GetVSGShapeBuilder();
-    if (!shape_builder) return pm;
 
-    auto mat = std::make_shared<::chrono::ChVisualMaterial>();
-    mat->SetDiffuseColor(PointTypeColor(point_type));
+    OverlayMaterial mat;
+    mat.color = PointTypeColor(point_type);
     if (point_type == kIntermediateNode) {
-        mat->SetMetallic(0.4f);
-        mat->SetRoughness(0.4f);
+        mat.metallic = 0.4f;
+        mat.roughness = 0.4f;
     } else {
-        mat->SetMetallic(0.5f);
-        mat->SetRoughness(0.3f);
+        mat.metallic = 0.5f;
+        mat.roughness = 0.3f;
     }
 
     pm.transform = vsg::MatrixTransform::create();
     pm.transform->matrix =
         vsg::translate(x, y, z) * vsg::scale(radius, radius, radius);
 
-    using ST = ::chrono::vsg3d::ShapeBuilder::ShapeType;
-    pm.node = shape_builder->CreatePbrShape(
-        ST::SPHERE, mat, pm.transform, /*double_faced=*/false, /*wireframe=*/false);
+    pm.node = builder_->CreateSphereOverlay(mat, pm.transform);
     if (pm.node) scene_->addChild(pm.node);
     return pm;
 }
@@ -498,6 +480,51 @@ void MooringLinesViz::UpdateTubeMesh(const MooringLineVizData& line_data,
                                  node_marker_radius_);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Shared by both viewers
+// ---------------------------------------------------------------------------
+
+std::vector<MooringLineVizData> ToMooringVizData(const SceneDescription& scene, const VizFrame& frame) {
+    std::vector<MooringLineVizData> lines(frame.mooring_lines.size());
+    for (size_t i = 0; i < lines.size(); ++i) {
+        const MooringLineState& state = frame.mooring_lines[i];
+        MooringLineVizData& line = lines[i];
+        line.node_positions = state.node_positions;
+        line.node_tensions = state.node_tensions;
+        for (double t : state.node_tensions) {
+            line.line_max_tension = std::max(line.line_max_tension, t);
+        }
+        if (i < scene.mooring_lines.size()) {
+            line.start_point_type = static_cast<MooringPointType>(static_cast<int>(scene.mooring_lines[i].start_type));
+            line.end_point_type = static_cast<MooringPointType>(static_cast<int>(scene.mooring_lines[i].end_type));
+        }
+    }
+    return lines;
+}
+
+void DrawMooringLines(MooringLinesViz* viz, OverlayBuilder* builder, vsg::ref_ptr<vsg::Group> parent_group,
+                      const SceneDescription& scene, const VizFrame& frame, const Bounds3& model_bounds,
+                      const MooringVizOptions& options, bool color_enabled) {
+    if (!viz || !builder || frame.mooring_lines.empty()) {
+        return;
+    }
+    const auto line_data = ToMooringVizData(scene, frame);
+    if (!viz->IsInitializedFor(builder)) {
+        // Model-scaled defaults; explicit YAML radii (>= 0) override them.
+        const MooringVizRadii defaults = DefaultMooringVizRadii(ModelLengthScale(model_bounds));
+        viz->SetVisualizationRadii(defaults.line, defaults.endpoint, defaults.node_marker);
+        viz->SetVisualizationRadii(options.line_radius_m, options.endpoint_radius_m, options.node_marker_radius_m);
+        viz->Initialize(builder, line_data, parent_group);
+        if (options.has_tension_range) {
+            auto& range = viz->TensionRange();
+            if (range.SetFixedRange(options.tension_min, options.tension_max)) {
+                range.SetMode(ColorRangeMode::kFixed);
+            }
+        }
+    }
+    viz->Update(line_data, color_enabled);
 }
 
 }  // namespace seastack::viz

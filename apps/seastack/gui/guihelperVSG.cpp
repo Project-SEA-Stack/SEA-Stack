@@ -26,6 +26,7 @@ using namespace seastack::hydro;
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/core/ChTypes.h>
 #include <chrono/geometry/ChTriangleMeshConnected.h>
+#include <chrono_vsg/utils/ChShapeBuilderVSG.h>
 
 #include <seastack/viz_core/mesh_normals.h>
 
@@ -52,6 +53,34 @@ class ChronoOverlayBuilder : public OverlayBuilder {
         if (!shape_builder) {
             return {};
         }
+        std::vector<::chrono::ChVisualMaterialSharedPtr> materials = {ToChronoMaterial(material)};
+        return shape_builder->CreateTrimeshPbrMatShape(ToChronoMesh(mesh), vsg::MatrixTransform::create(), materials,
+                                                       /*double_faced=*/false, /*wireframe=*/false);
+    }
+
+    vsg::ref_ptr<vsg::Node> CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) override {
+        auto shape_builder = vis_->GetVSGShapeBuilder();
+        if (!shape_builder) {
+            return {};
+        }
+        return shape_builder->CreateTrimeshColAvgShape(ToChronoMesh(mesh), vsg::MatrixTransform::create(),
+                                                       ::chrono::ChColor(color[0], color[1], color[2]),
+                                                       /*double_faced=*/false, /*wireframe=*/false);
+    }
+
+    vsg::ref_ptr<vsg::Node> CreateSphereOverlay(const OverlayMaterial& material,
+                                                vsg::ref_ptr<vsg::MatrixTransform> transform) override {
+        auto shape_builder = vis_->GetVSGShapeBuilder();
+        if (!shape_builder) {
+            return {};
+        }
+        using ST = ::chrono::vsg3d::ShapeBuilder::ShapeType;
+        return shape_builder->CreatePbrShape(ST::SPHERE, ToChronoMaterial(material), transform,
+                                             /*double_faced=*/false, /*wireframe=*/false);
+    }
+
+  private:
+    static std::shared_ptr<::chrono::ChTriangleMeshConnected> ToChronoMesh(const TriangleMesh& mesh) {
         auto ch_mesh = ::chrono_types::make_shared<::chrono::ChTriangleMeshConnected>();
         for (const Vec3& v : mesh.vertices) {
             ch_mesh->m_vertices.emplace_back(v[0], v[1], v[2]);
@@ -59,38 +88,20 @@ class ChronoOverlayBuilder : public OverlayBuilder {
         for (const auto& f : mesh.faces) {
             ch_mesh->m_face_v_indices.emplace_back(f[0], f[1], f[2]);
         }
+        return ch_mesh;
+    }
+
+    static std::shared_ptr<::chrono::ChVisualMaterial> ToChronoMaterial(const OverlayMaterial& material) {
         auto ch_material = ::chrono_types::make_shared<::chrono::ChVisualMaterial>();
         ch_material->SetDiffuseColor(::chrono::ChColor(material.color[0], material.color[1], material.color[2]));
         ch_material->SetOpacity(material.color[3]);
         ch_material->SetRoughness(material.roughness);
         ch_material->SetMetallic(material.metallic);
-        std::vector<::chrono::ChVisualMaterialSharedPtr> materials = {ch_material};
-        return shape_builder->CreateTrimeshPbrMatShape(ch_mesh, vsg::MatrixTransform::create(), materials,
-                                                       /*double_faced=*/false, /*wireframe=*/false);
+        return ch_material;
     }
 
-  private:
     ::chrono::vsg3d::ChVisualSystemVSG* vis_;
 };
-
-/// Mooring lines of a frame in the form MooringLinesViz takes.
-std::vector<MooringLineVizData> ToMooringVizData(const SceneDescription& scene, const VizFrame& frame) {
-    std::vector<MooringLineVizData> lines(frame.mooring_lines.size());
-    for (size_t i = 0; i < lines.size(); ++i) {
-        const MooringLineState& state = frame.mooring_lines[i];
-        MooringLineVizData& line = lines[i];
-        line.node_positions = state.node_positions;
-        line.node_tensions = state.node_tensions;
-        for (double t : state.node_tensions) {
-            line.line_max_tension = std::max(line.line_max_tension, t);
-        }
-        if (i < scene.mooring_lines.size()) {
-            line.start_point_type = static_cast<MooringPointType>(static_cast<int>(scene.mooring_lines[i].start_type));
-            line.end_point_type = static_cast<MooringPointType>(static_cast<int>(scene.mooring_lines[i].end_type));
-        }
-    }
-    return lines;
-}
 
 /// Crease angle [deg] for display normals: smoother below, sharp edge above.
 constexpr double kCreaseAngleDeg = 40.0;
@@ -421,30 +432,17 @@ bool GUIImplVSG::IsRunning(double timestep) {
     const VizFrame frame = extractor_ ? extractor_->Capture(0) : VizFrame{};
 
     // Mooring line visualisation (lazy-initialised on first valid data).
-    if (extractor_ && !frame.mooring_lines.empty()) {
-        const auto line_data = ToMooringVizData(extractor_->Scene(), frame);
-        {
-            if (!mooring_viz_)
-                mooring_viz_ = std::make_unique<MooringLinesViz>();
-            if (!mooring_viz_->IsInitializedFor(pVis.get())) {
-                // Model-scaled defaults; explicit YAML radii (>= 0) override them.
-                const MooringVizRadii defaults = DefaultMooringVizRadii(ModelLengthScale(model_bounds_));
-                mooring_viz_->SetVisualizationRadii(defaults.line, defaults.endpoint, defaults.node_marker);
-                mooring_viz_->SetVisualizationRadii(mooring_viz_line_radius_request_,
-                                                   mooring_viz_endpoint_radius_request_,
-                                                   mooring_viz_node_marker_radius_request_);
-                mooring_viz_->Initialize(pVis.get(), line_data, mooring_scene_group_);
-                if (options_.has_mooring_tension_range) {
-                    auto& range = mooring_viz_->TensionRange();
-                    if (range.SetFixedRange(options_.mooring_tension_min, options_.mooring_tension_max)) {
-                        range.SetMode(ColorRangeMode::kFixed);
-                    }
-                }
-            }
-
-            const bool color_on = viewer_settings_ && viewer_settings_->show_mooring_colors;
-            mooring_viz_->Update(line_data, color_on);
-        }
+    if (extractor_ && mooring_viz_) {
+        MooringVizOptions mooring_options;
+        mooring_options.line_radius_m = mooring_viz_line_radius_request_;
+        mooring_options.endpoint_radius_m = mooring_viz_endpoint_radius_request_;
+        mooring_options.node_marker_radius_m = mooring_viz_node_marker_radius_request_;
+        mooring_options.has_tension_range = options_.has_mooring_tension_range;
+        mooring_options.tension_min = options_.mooring_tension_min;
+        mooring_options.tension_max = options_.mooring_tension_max;
+        const bool color_on = viewer_settings_ && viewer_settings_->show_mooring_colors;
+        DrawMooringLines(mooring_viz_.get(), overlay_builder_.get(), mooring_scene_group_, extractor_->Scene(),
+                         frame, model_bounds_, mooring_options, color_on);
     }
 
     ApplyWaterSettings(animated_water_.get(), viewer_settings_.get());

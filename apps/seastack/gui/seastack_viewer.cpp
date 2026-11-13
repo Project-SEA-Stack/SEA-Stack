@@ -157,7 +157,8 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
             material.color = shape.color;
             material.roughness = shape.roughness;
             material.metallic = shape.metallic;
-            auto node = CreateMeshNode(mesh, material, /*dynamic=*/false);
+            auto node = mesh.faces.empty() ? vsg::ref_ptr<vsg::Node>()
+                                           : CreatePbrNode(UnsharedArrays(mesh), material, /*dynamic=*/false);
             if (!node) {
                 continue;
             }
@@ -209,28 +210,50 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     return true;
 }
 
-vsg::ref_ptr<vsg::Node> SeastackViewer::CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) {
-    auto node = CreateMeshNode(mesh, material, /*dynamic=*/true);
-    if (node && viewer_ && viewer_->compileManager) {
-        // Nodes made after Viewer::compile() must be compiled before drawing.
-        auto result = viewer_->compileManager->compile(node);
-        if (!result) {
-            std::cerr << "[SeastackViewer] Could not compile overlay mesh." << std::endl;
-            return {};
-        }
-        vsg::updateViewer(*viewer_, result);
+vsg::ref_ptr<vsg::Node> SeastackViewer::CompileNode(vsg::ref_ptr<vsg::Node> node) {
+    if (!node || !viewer_ || !viewer_->compileManager) {
+        return node;
     }
+    auto result = viewer_->compileManager->compile(node);
+    if (!result) {
+        std::cerr << "[SeastackViewer] Could not compile overlay node." << std::endl;
+        return {};
+    }
+    vsg::updateViewer(*viewer_, result);
     return node;
 }
 
-vsg::ref_ptr<vsg::Node> SeastackViewer::CreateMeshNode(const TriangleMesh& mesh, const OverlayMaterial& shape,
-                                                       bool dynamic) {
-    const size_t num_faces = mesh.faces.size();
-    if (num_faces == 0) {
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) {
+    if (mesh.faces.empty()) {
         return {};
     }
+    return CompileNode(CreatePbrNode(UnsharedArrays(mesh), material, /*dynamic=*/true));
+}
 
-    // Per-corner normals: authored or primitive ones, else crease-angle smoothing.
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) {
+    if (mesh.faces.empty()) {
+        return {};
+    }
+    // White material so the per-vertex colours show unchanged.
+    return CompileNode(CreatePbrNode(SharedArrays(mesh, color), OverlayMaterial{}, /*dynamic=*/true));
+}
+
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateSphereOverlay(const OverlayMaterial& material,
+                                                            vsg::ref_ptr<vsg::MatrixTransform> transform) {
+    if (!transform) {
+        return {};
+    }
+    auto sphere = CreatePbrNode(UnsharedArrays(MakeSphereMesh(1.0, 24, 12)), material, /*dynamic=*/false);
+    if (!sphere) {
+        return {};
+    }
+    transform->addChild(sphere);
+    return CompileNode(transform);
+}
+
+SeastackViewer::MeshArrays SeastackViewer::UnsharedArrays(const TriangleMesh& mesh) {
+    const size_t num_faces = mesh.faces.size();
+
     std::vector<Vec3> corner_normals = mesh.corner_normals;
     if (corner_normals.size() != 3 * num_faces) {
         const CornerNormals smooth = ComputeCreaseNormals(mesh.vertices, mesh.faces, kCreaseAngleDeg);
@@ -242,32 +265,71 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreateMeshNode(const TriangleMesh& mesh,
         }
     }
 
-    // Unshared corners: one vertex per face corner, so normals can be per corner.
     const uint32_t n = static_cast<uint32_t>(3 * num_faces);
-    auto vertices = vsg::vec3Array::create(n);
-    auto normals = vsg::vec3Array::create(n);
-    auto texcoords = vsg::vec2Array::create(n, vsg::vec2(0.0f, 0.0f));
-    auto colors = vsg::vec4Array::create(n, vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f));
-    auto indices = vsg::uintArray::create(n);
+    MeshArrays a;
+    a.vertices = vsg::vec3Array::create(n);
+    a.normals = vsg::vec3Array::create(n);
+    a.texcoords = vsg::vec2Array::create(n, vsg::vec2(0.0f, 0.0f));
+    a.colors = vsg::vec4Array::create(n, vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+    a.indices = vsg::uintArray::create(n);
     for (size_t f = 0; f < num_faces; ++f) {
         for (int k = 0; k < 3; ++k) {
             const size_t c = 3 * f + k;
             const Vec3& p = mesh.vertices[static_cast<size_t>(mesh.faces[f][k])];
             const Vec3& nn = corner_normals[c];
-            (*vertices)[c] = vsg::vec3(static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2]));
-            (*normals)[c] = vsg::vec3(static_cast<float>(nn[0]), static_cast<float>(nn[1]), static_cast<float>(nn[2]));
-            (*indices)[c] = static_cast<uint32_t>(c);
+            (*a.vertices)[c] = vsg::vec3(static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2]));
+            (*a.normals)[c] = vsg::vec3(static_cast<float>(nn[0]), static_cast<float>(nn[1]), static_cast<float>(nn[2]));
+            (*a.indices)[c] = static_cast<uint32_t>(c);
         }
     }
+    return a;
+}
 
+SeastackViewer::MeshArrays SeastackViewer::SharedArrays(const TriangleMesh& mesh, const Rgba& color) {
+    const uint32_t nv = static_cast<uint32_t>(mesh.vertices.size());
+    MeshArrays a;
+    a.vertices = vsg::vec3Array::create(nv);
+    a.normals = vsg::vec3Array::create(nv, vsg::vec3(0.0f, 0.0f, 0.0f));
+    a.texcoords = vsg::vec2Array::create(nv, vsg::vec2(0.0f, 0.0f));
+    a.colors = vsg::vec4Array::create(nv, vsg::vec4(color[0], color[1], color[2], 1.0f));
+    a.indices = vsg::uintArray::create(static_cast<uint32_t>(3 * mesh.faces.size()));
+    for (uint32_t i = 0; i < nv; ++i) {
+        const Vec3& p = mesh.vertices[i];
+        (*a.vertices)[i] = vsg::vec3(static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2]));
+    }
+    // Area-weighted vertex normals (unnormalised face cross products summed).
+    for (size_t f = 0; f < mesh.faces.size(); ++f) {
+        const auto& face = mesh.faces[f];
+        const vsg::vec3& p0 = (*a.vertices)[static_cast<uint32_t>(face[0])];
+        const vsg::vec3& p1 = (*a.vertices)[static_cast<uint32_t>(face[1])];
+        const vsg::vec3& p2 = (*a.vertices)[static_cast<uint32_t>(face[2])];
+        const vsg::vec3 face_normal = vsg::cross(p1 - p0, p2 - p0);
+        for (int k = 0; k < 3; ++k) {
+            (*a.normals)[static_cast<uint32_t>(face[k])] += face_normal;
+            (*a.indices)[static_cast<uint32_t>(3 * f + k)] = static_cast<uint32_t>(face[k]);
+        }
+    }
+    for (auto& nn : *a.normals) {
+        const float len = vsg::length(nn);
+        nn = (len > 1e-12f) ? nn / len : vsg::vec3(0.0f, 0.0f, 1.0f);
+    }
+    return a;
+}
+
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreatePbrNode(const MeshArrays& arrays, const OverlayMaterial& shape,
+                                                      bool dynamic) {
+    if (!arrays.indices || arrays.indices->size() == 0) {
+        return {};
+    }
     if (dynamic) {
-        for (vsg::Data* data : {static_cast<vsg::Data*>(vertices.get()), static_cast<vsg::Data*>(normals.get()),
-                                static_cast<vsg::Data*>(colors.get())}) {
+        for (vsg::Data* data : {static_cast<vsg::Data*>(arrays.vertices.get()),
+                                static_cast<vsg::Data*>(arrays.normals.get()),
+                                static_cast<vsg::Data*>(arrays.colors.get())}) {
             data->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
         }
     }
 
-    // Shape colours are linear (see Rgba); vertex colour starts white.
+    // Material colours are linear (see Rgba); vertex colours multiply them.
     auto material = vsg::PbrMaterialValue::create();
     material->value().baseColorFactor.set(shape.color[0], shape.color[1], shape.color[2], shape.color[3]);
     material->value().diffuseFactor.set(shape.color[0], shape.color[1], shape.color[2], shape.color[3]);
@@ -283,17 +345,17 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreateMeshNode(const TriangleMesh& mesh,
         std::cerr << "[SeastackViewer] PBR shader set has no material descriptor." << std::endl;
         return {};
     }
-    vsg::DataList arrays;
-    config->assignArray(arrays, "vsg_Vertex", VK_VERTEX_INPUT_RATE_VERTEX, vertices);
-    config->assignArray(arrays, "vsg_Normal", VK_VERTEX_INPUT_RATE_VERTEX, normals);
-    config->assignArray(arrays, "vsg_TexCoord0", VK_VERTEX_INPUT_RATE_VERTEX, texcoords);
-    config->assignArray(arrays, "vsg_Color", VK_VERTEX_INPUT_RATE_VERTEX, colors);
+    vsg::DataList data_list;
+    config->assignArray(data_list, "vsg_Vertex", VK_VERTEX_INPUT_RATE_VERTEX, arrays.vertices);
+    config->assignArray(data_list, "vsg_Normal", VK_VERTEX_INPUT_RATE_VERTEX, arrays.normals);
+    config->assignArray(data_list, "vsg_TexCoord0", VK_VERTEX_INPUT_RATE_VERTEX, arrays.texcoords);
+    config->assignArray(data_list, "vsg_Color", VK_VERTEX_INPUT_RATE_VERTEX, arrays.colors);
     config->init();
 
     auto draw = vsg::VertexIndexDraw::create();
-    draw->assignArrays(arrays);
-    draw->assignIndices(indices);
-    draw->indexCount = n;
+    draw->assignArrays(data_list);
+    draw->assignIndices(arrays.indices);
+    draw->indexCount = static_cast<uint32_t>(arrays.indices->size());
     draw->instanceCount = 1;
 
     auto state_group = vsg::StateGroup::create();

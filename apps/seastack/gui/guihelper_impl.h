@@ -116,8 +116,7 @@ class SeastackViewer;
 class SeastackGuiComponent;
 
 /// GUI backed by SEA-Stack's own viewer (--viewer=seastack). Reads Chrono
-/// only through the VizExtractor. Mooring rendering is not ported yet; its
-/// setters are accepted and ignored.
+/// only through the VizExtractor.
 class GUIImplSeastack : public GUIImpl {
   public:
     GUIImplSeastack();
@@ -132,12 +131,16 @@ class GUIImplSeastack : public GUIImpl {
     void SetWaveModel(std::shared_ptr<seastack::hydro::WaveBase> wave) override { wave_model_ = std::move(wave); }
     void SetWaterGridExtent(double width, double length, double center_x, double center_y) override;
     void SetMooringLineProvider(MooringVizProvider provider) override;
+    void SetMooringVisualizationRadii(double line_radius_m, double endpoint_radius_m,
+                                      double node_marker_radius_m) override;
 
   private:
     void HandleCameraRequests();
     void UpdateClipPlanes();
     /// Create the water surface on the first frame, then animate it from `frame`.
     void UpdateWater(const VizFrame& frame);
+    /// Create the mooring lines on the first frame with line data, then update them.
+    void UpdateMooring(const VizFrame& frame);
 
     ViewerOptions options_;
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
@@ -149,6 +152,12 @@ class GUIImplSeastack : public GUIImpl {
     std::unique_ptr<ViewerSettings> viewer_settings_;
     std::unique_ptr<SeastackGuiComponent> gui_;
     MooringVizProvider mooring_provider_;
+    std::unique_ptr<MooringLinesViz> mooring_viz_;
+    /// Drawn before the water so opaque lines show through the translucent surface.
+    vsg::ref_ptr<vsg::Group> mooring_group_;
+    double mooring_line_radius_m_ = -1.0;         ///< YAML override [m]; < 0 = model-scaled default
+    double mooring_endpoint_radius_m_ = -1.0;     ///< YAML override [m]; < 0 = model-scaled default
+    double mooring_node_marker_radius_m_ = -1.0;  ///< YAML override [m]; < 0 = model-scaled default
 };
 #endif
 

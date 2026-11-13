@@ -67,13 +67,33 @@ class SeastackViewer : public OverlayBuilder {
     // water blends over them.
     vsg::ref_ptr<vsg::Group> OverlayScene() override { return overlay_root_; }
     vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) override;
+    vsg::ref_ptr<vsg::Node> CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) override;
+    vsg::ref_ptr<vsg::Node> CreateSphereOverlay(const OverlayMaterial& material,
+                                                vsg::ref_ptr<vsg::MatrixTransform> transform) override;
 
   private:
-    /// PBR node for one triangle mesh with unshared vertices (see
-    /// OverlayBuilder for the array layout). Alpha < 1 enables blending;
-    /// `dynamic` marks the arrays for per-frame updates.
-    vsg::ref_ptr<vsg::Node> CreateMeshNode(const TriangleMesh& mesh, const OverlayMaterial& material,
-                                           bool dynamic);
+    /// Vertex arrays in the OverlayBuilder layout, plus triangle indices.
+    struct MeshArrays {
+        vsg::ref_ptr<vsg::vec3Array> vertices;
+        vsg::ref_ptr<vsg::vec3Array> normals;
+        vsg::ref_ptr<vsg::vec2Array> texcoords;
+        vsg::ref_ptr<vsg::vec4Array> colors;
+        vsg::ref_ptr<vsg::uintArray> indices;
+    };
+
+    /// One vertex per face corner (3 f + k), so normals can be per corner;
+    /// authored normals, else crease-angle smoothing. Colours white.
+    static MeshArrays UnsharedArrays(const TriangleMesh& mesh);
+
+    /// Vertex i = mesh vertex i, area-weighted vertex normals, colours `color`.
+    static MeshArrays SharedArrays(const TriangleMesh& mesh, const Rgba& color);
+
+    /// PBR node drawing `arrays`. Alpha < 1 enables blending; `dynamic`
+    /// marks the vertex, normal and colour arrays for per-frame updates.
+    vsg::ref_ptr<vsg::Node> CreatePbrNode(const MeshArrays& arrays, const OverlayMaterial& material, bool dynamic);
+
+    /// Compile a node made after Viewer::compile(); returns null on failure.
+    vsg::ref_ptr<vsg::Node> CompileNode(vsg::ref_ptr<vsg::Node> node);
 
     vsg::ref_ptr<vsg::Viewer> viewer_;
     vsg::ref_ptr<vsg::Window> window_;

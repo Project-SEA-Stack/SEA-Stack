@@ -7,6 +7,7 @@
 #include "vsg_config.h"
 #include "vsg_gui_component.h"
 #include "vsg_materials.h"
+#include "vsg_mooring_lines.h"
 #include "vsg_theme.h"
 #include "vsg_water_surface.h"
 
@@ -43,8 +44,9 @@ void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title
 
     viewer_settings_->theme = options_.theme;
     viewer_settings_->theme_changed = true;
+    mooring_viz_ = std::make_unique<MooringLinesViz>();
     gui_ = std::make_unique<SeastackGuiComponent>(nullptr, ui.simulationStarted, ui.playbackSpeed, ui.runStatus,
-                                                  viewer_settings_.get(), nullptr);
+                                                  viewer_settings_.get(), mooring_viz_.get());
 
     SeastackViewer::Options options;
     options.title = title ? title : "SEA-Stack";
@@ -56,8 +58,8 @@ void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title
     if (!viewer_->Initialize(extractor_->Scene(), options, [gui]() { gui->Draw(); })) {
         throw std::runtime_error("SEA-Stack viewer initialization failed. Try --viewer=chrono or --nogui.");
     }
-    std::cout << "[SeastackViewer] " << extractor_->Scene().bodies.size()
-              << " bodies; mooring lines are not drawn by this viewer yet." << std::endl;
+    mooring_group_ = vsg::Group::create();
+    viewer_->OverlayScene()->addChild(mooring_group_);  // before the water is added
 
     viewer_->SetCameraPose(
         FrameBounds(model_bounds_, CameraView::kIsometric, kCameraFovDeg, viewer_->GetViewportAspect()));
@@ -104,6 +106,25 @@ void GUIImplSeastack::UpdateWater(const VizFrame& frame) {
     water_->Update(wave_model_, frame.time, viewer_settings_.get());
 }
 
+void GUIImplSeastack::SetMooringVisualizationRadii(double line_radius_m, double endpoint_radius_m,
+                                                   double node_marker_radius_m) {
+    mooring_line_radius_m_ = line_radius_m;
+    mooring_endpoint_radius_m_ = endpoint_radius_m;
+    mooring_node_marker_radius_m_ = node_marker_radius_m;
+}
+
+void GUIImplSeastack::UpdateMooring(const VizFrame& frame) {
+    MooringVizOptions mooring_options;
+    mooring_options.line_radius_m = mooring_line_radius_m_;
+    mooring_options.endpoint_radius_m = mooring_endpoint_radius_m_;
+    mooring_options.node_marker_radius_m = mooring_node_marker_radius_m_;
+    mooring_options.has_tension_range = options_.has_mooring_tension_range;
+    mooring_options.tension_min = options_.mooring_tension_min;
+    mooring_options.tension_max = options_.mooring_tension_max;
+    DrawMooringLines(mooring_viz_.get(), viewer_.get(), mooring_group_, extractor_->Scene(), frame, model_bounds_,
+                     mooring_options, viewer_settings_->show_mooring_colors);
+}
+
 void GUIImplSeastack::SetMooringLineProvider(MooringVizProvider provider) {
     mooring_provider_ = std::move(provider);
     if (extractor_) {
@@ -140,6 +161,7 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     }
     const VizFrame frame = extractor_->Capture(0);
     viewer_->SetFrame(frame);
+    UpdateMooring(frame);
     UpdateWater(frame);
     HandleCameraRequests();
     UpdateClipPlanes();  // the trackball zoom changes the view distance

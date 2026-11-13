@@ -1,8 +1,8 @@
 // =============================================================================
 // SEA-Stack VSG Overlay Builder
 // =============================================================================
-// Creates the VSG nodes for SEA-Stack's dynamic overlays (water surface and
-// its wireframe) and owns the scene group they attach to. Implemented by the
+// Creates the VSG nodes for SEA-Stack's dynamic overlays (water surface, its
+// wireframe, mooring lines) and owns the scene group they attach to. Implemented by the
 // Chrono viewer (Chrono's shape builder) and the SEA-Stack viewer (plain VSG),
 // so each overlay is written once for both.
 // =============================================================================
@@ -34,6 +34,16 @@ class OverlayBuilder {
     /// [2] texture coordinates, [3] colours (vec4). Overlays update the arrays
     /// in place and call dirty().
     virtual vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) = 0;
+
+    /// Compiled mesh node with shared vertices: vertex i is mesh vertex i.
+    /// Same array layout as CreateOverlayMesh; colours start at `color`
+    /// (linear, opaque) and carry the per-vertex colour.
+    virtual vsg::ref_ptr<vsg::Node> CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) = 0;
+
+    /// Compiled unit-radius sphere [m] drawn under `transform`; move or scale
+    /// it by setting transform->matrix. Returns the node to add to the scene.
+    virtual vsg::ref_ptr<vsg::Node> CreateSphereOverlay(const OverlayMaterial& material,
+                                                        vsg::ref_ptr<vsg::MatrixTransform> transform) = 0;
 };
 
 }  // namespace seastack::viz
