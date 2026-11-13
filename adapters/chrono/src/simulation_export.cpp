@@ -1392,6 +1392,10 @@ void SimulationExporter::Finalize() {
         if (!impl_->options.run_started_at_utc.empty()) g_run.WriteAttribute("started_at_utc", impl_->options.run_started_at_utc);
         if (!impl_->options.run_finished_at_utc.empty()) g_run.WriteAttribute("finished_at_utc", impl_->options.run_finished_at_utc);
         if (impl_->options.run_wall_time_s > 0.0) g_run.WriteAttribute("wall_time_s", impl_->options.run_wall_time_s);
+        if (impl_->options.run_setup_wall_time_s >= 0.0) g_run.WriteAttribute("setup_wall_time_s", impl_->options.run_setup_wall_time_s);
+        if (impl_->options.run_active_wall_time_s >= 0.0) g_run.WriteAttribute("active_wall_time_s", impl_->options.run_active_wall_time_s);
+        if (impl_->options.run_paused_wall_time_s >= 0.0) g_run.WriteAttribute("paused_wall_time_s", impl_->options.run_paused_wall_time_s);
+        if (!impl_->options.run_mode.empty()) g_run.WriteAttribute("mode", impl_->options.run_mode);
         if (impl_->options.run_steps > 0) g_run.WriteAttribute("steps", static_cast<double>(impl_->options.run_steps));
         if (impl_->options.run_dt > 0.0) g_run.WriteAttribute("dt_s", impl_->options.run_dt);
         if (impl_->options.run_time_final > 0.0) g_run.WriteAttribute("time_final_s", impl_->options.run_time_final);
@@ -1419,6 +1423,13 @@ void SimulationExporter::SetRunMetadata(const std::string& started_at_utc,
     impl_->options.run_steps = steps;
     impl_->options.run_dt = dt_s;
     impl_->options.run_time_final = time_final_s;
+}
+
+void SimulationExporter::SetRunTiming(double setup_s, double active_s, double paused_s, bool interactive) {
+    impl_->options.run_setup_wall_time_s = setup_s;
+    impl_->options.run_active_wall_time_s = active_s;
+    impl_->options.run_paused_wall_time_s = paused_s;
+    impl_->options.run_mode = interactive ? "interactive" : "headless";
 }
 
 void SimulationExporter::WriteRadiationDiagnostics(
@@ -1602,6 +1613,7 @@ void SimulationExporter::WriteIrregularInputs(const std::vector<double>&, const 
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }
 void SimulationExporter::SetRunMetadata(const std::string&, const std::string&, double, int, double, double) {}
+void SimulationExporter::SetRunTiming(double, double, double, bool) {}
 void SimulationExporter::RecordHydroForces(const std::vector<seastack::hydro::ComponentForceRecord>&) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }

@@ -61,6 +61,7 @@
 #include <chrono>
 #include <iomanip>
 #include <cmath>
+#include <thread>
 
 #ifdef SEASTACK_HAVE_HYDRO_IO
 #include <H5Cpp.h>
@@ -724,6 +725,53 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
         if (pui && !nogui) {
+            // Start-up viewer options from simulation.visualization (all optional):
+            //   theme: dark | light       initial theme (switchable in the GUI)
+            //   body_colors: palette | model   keep colours set in the model YAML
+            //   mooring_tension_range: [min, max]   fixed tension colour range [N]
+            // The Chrono key enable_shadows is ignored: Chrono VSG shadows crash
+            // when SEA-Stack adds its water and mooring meshes after Initialize().
+            seastack::viz::ViewerOptions viewer_options;
+            try {
+                const YAML::Node sim_yaml = YAML::LoadFile(config.simulation_file);
+                if (sim_yaml["simulation"] && sim_yaml["simulation"]["visualization"]) {
+                    const YAML::Node vis = sim_yaml["simulation"]["visualization"];
+                    if (vis["theme"]) {
+                        const std::string theme = vis["theme"].as<std::string>();
+                        if (!seastack::viz::ParseVisualTheme(theme, &viewer_options.theme)) {
+                            seastack::infra::cli::LogWarning("Unknown visualization.theme '" + theme +
+                                                             "' (expected dark or light); using dark");
+                        }
+                    }
+                    if (vis["body_colors"]) {
+                        const std::string colors = vis["body_colors"].as<std::string>();
+                        viewer_options.use_model_colors = (colors == "model");
+                        if (colors != "model" && colors != "palette") {
+                            seastack::infra::cli::LogWarning("Unknown visualization.body_colors '" + colors +
+                                                             "' (expected palette or model); using palette");
+                        }
+                    }
+                    if (vis["mooring_tension_range"]) {
+                        const YAML::Node range = vis["mooring_tension_range"];
+                        const bool valid = range.IsSequence() && range.size() == 2 &&
+                                           range[1].as<double>() > range[0].as<double>() &&
+                                           range[0].as<double>() >= 0.0;
+                        if (valid) {
+                            viewer_options.has_mooring_tension_range = true;
+                            viewer_options.mooring_tension_min = range[0].as<float>();
+                            viewer_options.mooring_tension_max = range[1].as<float>();
+                        } else {
+                            seastack::infra::cli::LogWarning(
+                                "visualization.mooring_tension_range must be [min, max] in N with "
+                                "0 <= min < max; using auto range");
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogWarning(std::string("Ignoring invalid visualization options: ") + e.what());
+            }
+            pui->SetViewerOptions(viewer_options);
+
             try {
                 pui->Init(system.get(), "SEA-Stack YAML");
                 gui_init_ok = true;
@@ -752,8 +800,25 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         seastack::viz::UI& ui = *pui;
 
         if (gui_init_ok) {
+            // The GUI frames the model automatically. An explicit camera in
+            // simulation.visualization.camera (location and target [m], world
+            // frame, Chrono YAML keys) overrides that default.
             try {
-                ui.SetCamera(0, -50, -10, 0, 0, -10);
+                const YAML::Node sim_yaml = YAML::LoadFile(config.simulation_file);
+                YAML::Node camera;
+                if (sim_yaml["simulation"] && sim_yaml["simulation"]["visualization"]) {
+                    camera = sim_yaml["simulation"]["visualization"]["camera"];
+                }
+                if (camera && camera["location"] && camera["target"]) {
+                    const auto loc = camera["location"].as<std::vector<double>>();
+                    const auto tgt = camera["target"].as<std::vector<double>>();
+                    if (loc.size() == 3 && tgt.size() == 3) {
+                        ui.SetCamera(loc[0], loc[1], loc[2], tgt[0], tgt[1], tgt[2]);
+                    } else {
+                        seastack::infra::cli::LogWarning(
+                            "visualization.camera location/target must have 3 components; using automatic framing");
+                    }
+                }
             } catch (const std::exception& e) {
                 seastack::infra::cli::LogWarning(std::string("Camera setup failed: ") + e.what());
             }
@@ -975,19 +1040,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         double yaml_end_time = 0.0;
         TryFindYamlDouble(config.simulation_file, "end_time", yaml_end_time);
 
-        // Chrono YAML parses enforce_realtime, but run_seastack steps via
-        // DoStepDynamics directly (not ChParserMbsYAML::Advance), so honour it
-        // here. It only affects the GUI loop: true paces simulated time to
-        // wall-clock time, false (default) runs as fast as possible.
-        // Headless runs always run as fast as possible.
-        bool enforce_realtime = false;
-        try {
-            auto sim_yaml = YAML::LoadFile(config.simulation_file);
-            if (sim_yaml["simulation"] && sim_yaml["simulation"]["enforce_realtime"]) {
-                enforce_realtime = sim_yaml["simulation"]["enforce_realtime"].as<bool>();
-            }
-        } catch (...) {
-        }
+        // run_seastack steps via DoStepDynamics directly (not
+        // ChParserMbsYAML::Advance), so the YAML enforce_realtime flag has no
+        // effect. The GUI always starts at 1x (real time) and the speed is set
+        // at runtime from the toolbar. Headless runs always run as fast as
+        // possible.
 
         // Diagnostic dump: compare system state to compiled regression tests.
         if (config.debug_mode) {
@@ -1005,6 +1062,12 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             }
             seastack::infra::debug::LogDebug(diag.str());
         }
+
+        // Wall-time breakdown (SIM-161): total elapsed = setup + active + paused
+        // (+ export). Active is the time spent stepping; GUI pauses, waiting
+        // before Play and idling after end_time count as paused.
+        const auto loop_start = std::chrono::steady_clock::now();
+        double active_wall_s = 0.0;
 
         if (nogui) {
             const double end_time_bound = (yaml_end_time > 0.0) ? yaml_end_time : 40.0;
@@ -1075,17 +1138,61 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             } else {
                 seastack::infra::cli::StopProgress();
             }
+            active_wall_s =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - loop_start).count();
         } else {
             // GUI-driven loop
             startup_line("Tip: if the GUI becomes unresponsive, try --nogui for headless mode.");
-            ::chrono::ChRealtimeStepTimer realtime_timer;
+
+            // Playback pacing. The pacer only decides how many fixed-dt steps
+            // to take per rendered frame; it never changes loop_dt, so results
+            // are identical at every playback speed.
+            using SteadyClock = std::chrono::steady_clock;
+            const auto pacing_epoch = SteadyClock::now();
+            auto wall_seconds = [&pacing_epoch]() {
+                return std::chrono::duration<double>(SteadyClock::now() - pacing_epoch).count();
+            };
+            constexpr double kGuiFrameWallBudget = 1.0 / 30.0;  // max stepping time per frame [s]
+            constexpr double kGuiRunningFrameRate = 60.0;       // frame cap while paced [Hz]
+            constexpr double kGuiPausedFrameRate = 30.0;        // frame cap while paused [Hz]
+#ifdef _WIN32
+            // Default Windows timer resolution (~15.6 ms) makes 60 Hz frame
+            // pacing visibly uneven; request 1 ms while the GUI loop runs.
+            timeBeginPeriod(1);
+#endif
+            ui.playbackSpeed = 1.0;
+            seastack::viz::SimulationPacer pacer;
+            seastack::viz::RunClock run_clock;
+            double paced_speed = ui.playbackSpeed;
+            bool was_stepping = false;
+            ui.runStatus.end_time = yaml_end_time;
+            ui.runStatus.time_step = loop_dt;
+            ui.runStatus.sim_time = system->GetChTime();
+
+            // Start of the previous frame, used to accumulate active wall time
+            // over whole frames (stepping + rendering + pacing wait).
+            double prev_frame_wall = wall_seconds();
+            double prev_frame_sim = system->GetChTime();
+
             bool announced_end_time = false;
             while (ui.IsRunning(loop_dt)) {
+                const double frame_wall_start = wall_seconds();
+                if (was_stepping) {
+                    run_clock.AddActiveInterval(prev_frame_wall, frame_wall_start,
+                                                system->GetChTime() - prev_frame_sim);
+                    ui.runStatus.active_wall_time = run_clock.ActiveWallTime();
+                    ui.runStatus.achieved_speed = run_clock.AchievedSpeed();
+                    ui.runStatus.has_achieved_speed = run_clock.HasAchievedSpeed();
+                }
+                prev_frame_wall = frame_wall_start;
+                prev_frame_sim = system->GetChTime();
+
                 if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
                     // Keep the window open at end_time; do not quit (that looks like a crash).
                     if (ui.simulationStarted) {
                         ui.simulationStarted = false;
                     }
+                    ui.runStatus.finished = true;
                     if (!announced_end_time) {
                         seastack::infra::cli::LogInfo(
                             std::string("Reached configured end_time: ") +
@@ -1094,6 +1201,22 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         announced_end_time = true;
                     }
                 }
+
+                // Re-anchor pacing when stepping starts or the speed changes,
+                // so paused time or an old speed never causes a catch-up burst.
+                if (ui.simulationStarted && (!was_stepping || ui.playbackSpeed != paced_speed)) {
+                    pacer.SetSpeed(ui.playbackSpeed);
+                    pacer.Reset(system->GetChTime(), frame_wall_start);
+                    run_clock.ResetSpeedWindow();
+                    paced_speed = ui.playbackSpeed;
+                }
+                was_stepping = ui.simulationStarted;
+
+                if (!ui.simulationStarted) {
+                    ui.runStatus.steps_last_frame = 0;
+                    ui.runStatus.falling_behind = false;
+                }
+
                 if (ui.simulationStarted) {
                 double current_time = system->GetChTime();
 
@@ -1115,29 +1238,22 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 }
 
                 try {
-                    // Small Chrono steps (e.g. MoorDyn dt = 0.5 ms) need many
-                    // substeps per render frame or the GUI crawls at ~0.03× realtime.
-                    // Realtime: step 1/60 s of simulated time per frame, then pace.
-                    // As fast as possible: step until the frame's wall-clock
-                    // budget is used, so the window still redraws ~30 times/s.
-                    constexpr double kGuiFrameSimBudget = 1.0 / 60.0;   // s (simulated)
-                    constexpr double kGuiFrameWallBudget = 1.0 / 30.0;  // s (wall clock)
-                    constexpr int kGuiMaxSubsteps = 400;
-                    int n_substeps = 1;
-                    if (enforce_realtime && loop_dt > 0.0) {
-                        n_substeps = static_cast<int>(std::ceil(kGuiFrameSimBudget / loop_dt));
-                        n_substeps = std::max(1, std::min(n_substeps, kGuiMaxSubsteps));
-                    }
-                    const auto frame_wall_start = std::chrono::steady_clock::now();
+                    // Steps due to keep simulated time on track at the requested
+                    // speed (unlimited: as many as fit in the frame's wall budget).
+                    // Stepping is always capped by the wall budget so the window
+                    // keeps redrawing; if the cap is hit, re-anchor and report
+                    // that the requested speed cannot be sustained.
+                    const int steps_due = pacer.StepsDue(current_time, frame_wall_start, loop_dt);
+                    int steps_taken = 0;
+                    bool budget_exhausted = false;
 
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
-                    for (int sub = 0; !enforce_realtime || sub < n_substeps; ++sub) {
+                    while (steps_taken < steps_due) {
                         if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
                             break;
                         }
-                        if (!enforce_realtime && sub > 0 &&
-                            std::chrono::duration<double>(std::chrono::steady_clock::now() - frame_wall_start)
-                                    .count() >= kGuiFrameWallBudget) {
+                        if (steps_taken > 0 && wall_seconds() - frame_wall_start >= kGuiFrameWallBudget) {
+                            budget_exhausted = true;
                             break;
                         }
 #ifdef SEASTACK_HAVE_EXTERNAL
@@ -1147,6 +1263,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 #endif
                         system->DoStepDynamics(loop_dt);
                         step_count++;
+                        steps_taken++;
                         if (exporter) {
                             exporter->RecordStep(system.get());
                             if (export_detailed_hydro) {
@@ -1157,12 +1274,16 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                             break;
                         }
                     }
-                    if (enforce_realtime) {
-                        realtime_timer.Spin(static_cast<double>(n_substeps) * loop_dt);
-                    }
                     if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
 
-                    if (first_step) {
+                    const bool falling_behind = budget_exhausted && !pacer.IsUnlimited();
+                    if (falling_behind) {
+                        pacer.Reset(system->GetChTime(), wall_seconds());
+                    }
+                    ui.runStatus.steps_last_frame = steps_taken;
+                    ui.runStatus.falling_behind = falling_behind;
+
+                    if (first_step && steps_taken > 0) {
                         double new_time = system->GetChTime();
                         if (std::abs(new_time - current_time) < 1e-12) {
                             seastack::infra::cli::LogWarning("⚠️ Simulation did not progress — check constraints, initial state, or instability");
@@ -1236,16 +1357,39 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     break;
                 }
             }
+
+            ui.runStatus.sim_time = system->GetChTime();
+
+            // Frame limiter: when paced or paused there is no need to render
+            // faster than the display can show; in unlimited mode the wall
+            // budget already bounds the frame time.
+            const bool unlimited = ui.simulationStarted && pacer.IsUnlimited();
+            if (!unlimited) {
+                const double frame_rate = ui.simulationStarted ? kGuiRunningFrameRate : kGuiPausedFrameRate;
+                const double remaining = 1.0 / frame_rate - (wall_seconds() - frame_wall_start);
+                if (remaining > 0.0) {
+                    std::this_thread::sleep_for(std::chrono::duration<double>(remaining));
+                }
             }
+            }
+            active_wall_s = run_clock.ActiveWallTime();
+#ifdef _WIN32
+            timeEndPeriod(1);
+#endif
         }
 
         auto wall_end = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start);
         const double wall_s = std::chrono::duration_cast<std::chrono::duration<double>>(wall_end - wall_start).count();
+        const double setup_wall_s = std::chrono::duration<double>(loop_start - wall_start).count();
+        const double loop_wall_s = std::chrono::duration<double>(wall_end - loop_start).count();
+        active_wall_s = std::min(active_wall_s, loop_wall_s);
+        const double paused_wall_s = std::max(0.0, loop_wall_s - active_wall_s);
 
         // Finalize HDF5 output with runtime metadata
         if (exporter) {
             exporter->SetRunMetadata(std::string(""), std::string(""), wall_s, step_count, loop_dt, system->GetChTime());
+            exporter->SetRunTiming(setup_wall_s, active_wall_s, paused_wall_s, !nogui);
             exporter->Finalize();
         }
 
@@ -1287,10 +1431,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 
         if (show_system_banner) {
             const double sim_elapsed = system->GetChTime() - initial_time;
-            const double rtf = (wall_s > 1e-9) ? (sim_elapsed / wall_s) : -1.0;
+            // Simulation speed uses compute time, so GUI pauses and setup do not dilute it.
+            const double rtf = (active_wall_s > 1e-9) ? (sim_elapsed / active_wall_s) : -1.0;
             seastack::infra::cli::ShowSimulationResults(system->GetChTime(), step_count, wall_s, rtf,
                                                         result.primary_artifact_path, result.artifact_note,
-                                                        config.cli_log_file_path);
+                                                        config.cli_log_file_path, active_wall_s);
         }
 
         // Populate result

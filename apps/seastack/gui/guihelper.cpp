@@ -19,6 +19,10 @@ std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn)
 
 UI::UI() : pSystem(nullptr) {}
 
+void UI::SetViewerOptions(const ViewerOptions& /*options*/) {
+    // Default (headless) UI has no viewer.
+}
+
 void UI::Init(::chrono::ChSystem* system, const char* title) {
     pSystem = system;
 }
@@ -57,6 +61,10 @@ GUI::GUI() {
 #else
     pImpl = std::make_shared<seastack::viz::GUIImpl>();
 #endif
+}
+
+void GUI::SetViewerOptions(const ViewerOptions& options) {
+    pImpl->SetViewerOptions(options);
 }
 
 void GUI::Init(::chrono::ChSystem* system, const char* title) {

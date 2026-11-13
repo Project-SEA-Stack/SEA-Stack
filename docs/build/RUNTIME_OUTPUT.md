@@ -23,6 +23,20 @@ Top-level groups (high level):
 - `/meta` — run metadata (`system`, `config`, `run`)
 - `/diagnostics` — optional diagnostics (e.g. radiation)
 
+### `/meta/run` timing attributes
+
+All times are wall-clock seconds.
+
+| Attribute | Meaning |
+| --- | --- |
+| `wall_time_s` | Total elapsed time for the run, from start-up to the end of the time loop. Includes setup, GUI pauses and idle time after `end_time`. |
+| `setup_wall_time_s` | Time before the time loop starts (model load, hydro set-up, viewer start-up). |
+| `active_wall_time_s` | Time spent stepping. Use this for compute speed: simulated time / `active_wall_time_s`. |
+| `paused_wall_time_s` | Time inside the time loop that was not stepping: GUI paused, waiting for Play, or idle after `end_time`. About zero for headless runs. |
+| `mode` | `interactive` (GUI) or `headless` (`--nogui`). |
+
+Headless `active_wall_time_s` includes HDF5 recording done during stepping. The console "Simulation speed" uses `active_wall_time_s`.
+
 Units, sign conventions, and dataset names are defined in code; treat the exporter implementation as the source of truth when extending the schema.
 
 ## BEMIO / HydroIO inputs

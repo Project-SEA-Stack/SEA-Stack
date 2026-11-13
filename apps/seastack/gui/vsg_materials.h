@@ -15,11 +15,14 @@ namespace seastack::viz {
 /// @return A ChVisualMaterial configured with painted metal appearance.
 ::chrono::ChVisualMaterial MakePaintedMetalBase();
 
-/// Creates a painted-metal variant with subtle brightness variation for body distinction.
-/// The variation is deterministic based on the body index, cycling through a fixed range.
-/// @param index Body index used for deterministic color variation.
-/// @return A ChVisualMaterial with slight color variation from the base.
-::chrono::ChVisualMaterial MakePaintedMetalVariant(int index);
+/// Painted-metal material from the studio body palette; body `index` gets
+/// palette entry index % palette size (8 distinct colours).
+::chrono::ChVisualMaterial MakeBodyPaletteMaterial(int index);
+
+/// True if `c` is a colour Chrono assigns when the model gives none (white,
+/// or a ChBodyGeometry per-primitive default). Used to tell user-set model
+/// colours apart from defaults.
+bool IsChronoDefaultColor(const ::chrono::ChColor& c);
 
 /// Creates the water surface material (translucent ocean blue).
 /// @return A ChVisualMaterial configured for water appearance with transparency.
@@ -32,7 +35,10 @@ namespace seastack::viz {
 /// translucent pipeline receives a complete material.
 /// @param body The body whose visual shapes will receive the material.
 /// @param mat The material to apply.
-void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVisualMaterial& mat);
+/// @param keep_model_colors If true, opaque shapes whose colour was set in the
+///        model (not a Chrono default) keep that colour.
+void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVisualMaterial& mat,
+                                    bool keep_model_colors = false);
 
 }  // namespace seastack::viz
 

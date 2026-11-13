@@ -14,6 +14,7 @@ if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
         gui/vsg_materials.cpp
         gui/vsg_lighting.cpp
         gui/vsg_gui_component.cpp
+        gui/vsg_theme.cpp
         gui/vsg_radiation_surface.cpp
     )
 endif()
@@ -44,7 +45,13 @@ target_link_libraries(seastack_app_lib
     PUBLIC
         SEAStack::ChronoAdapter
         Chrono::Chrono_parsers
+        SEAStack::VizCore
 )
+
+# Windows: 1 ms timer resolution for GUI frame pacing (timeBeginPeriod).
+if(WIN32)
+    target_link_libraries(seastack_app_lib PRIVATE winmm)
+endif()
 
 if(SEASTACK_ENABLE_EXTERNAL AND TARGET seastack_external)
     target_link_libraries(seastack_app_lib PUBLIC SEAStack::External)

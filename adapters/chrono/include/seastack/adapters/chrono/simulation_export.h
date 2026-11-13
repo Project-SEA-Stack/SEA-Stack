@@ -70,6 +70,11 @@ class SimulationExporter {
       std::string run_started_at_utc;  // set by runner
       std::string run_finished_at_utc; // set by runner
       double run_wall_time_s = 0.0;    // set by runner (seconds)
+      // Wall-time breakdown (seconds); negative = not recorded.
+      double run_setup_wall_time_s = -1.0;   // start of run to start of time loop
+      double run_active_wall_time_s = -1.0;  // time loop spent stepping
+      double run_paused_wall_time_s = -1.0;  // time loop paused/idle (GUI only)
+      std::string run_mode;                  // "interactive" | "headless"
 
       // Scenario info (filled from already-parsed config)
       std::string scenario_type;          // still | regular | irregular | no_wave
@@ -183,6 +188,18 @@ class SimulationExporter {
                         int steps,
                         double dt_s,
                         double time_final_s);
+
+    /**
+     * @brief Record the wall-time breakdown under /meta/run (SIM-161).
+     *
+     * `wall_time_s` from SetRunMetadata stays the total elapsed time; these
+     * split it so that pauses and setup do not distort compute-speed figures.
+     * @param setup_s Wall time before the time loop (seconds)
+     * @param active_s Wall time spent stepping (seconds)
+     * @param paused_s Wall time paused or idle inside the time loop (seconds)
+     * @param interactive True for GUI runs, false for headless runs
+     */
+    void SetRunTiming(double setup_s, double active_s, double paused_s, bool interactive);
 
     /**
      * @brief Record per-component hydrodynamic force breakdown for one timestep.

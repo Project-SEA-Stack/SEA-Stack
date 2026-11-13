@@ -9,6 +9,10 @@
 #include <chrono_vsg/ChGuiComponentVSG.h>
 #include <chrono_vsg/ChVisualSystemVSG.h>
 
+#include <seastack/viz_core/scene_framing.h>
+#include <seastack/viz_core/simulation_pacer.h>
+#include <seastack/viz_core/visual_theme.h>
+
 namespace seastack::viz {
 
 class MooringLinesViz;  // forward declaration
@@ -51,33 +55,53 @@ struct ViewerSettings {
 
     // --- Mooring Colour Mapping ---
     bool show_mooring_colors = true;       ///< Colour lines by tension magnitude
-    bool mooring_range_locked = false;     ///< Freeze the adaptive min/max range
+
+    // --- Theme ---
+    VisualTheme theme = VisualTheme::kDark;
+    bool theme_changed = true;  ///< Scene theme needs (re)applying by GUIImplVSG
+
+    // --- Camera ---
+    // Requests set by the GUI and consumed by GUIImplVSG on the next frame.
+    bool camera_view_requested = false;    ///< Move to camera_view, framing the model
+    CameraView camera_view = CameraView::kIsometric;
+    bool camera_fit_requested = false;     ///< Re-frame the model, keeping the view direction
 };
 
 /// ImGui component for SEA-Stack visualization overlay.
-/// Displays a play/pause button and viewer settings panel.
+/// Displays the simulation toolbar (play/pause, playback speed, run status)
+/// and the viewer settings panel.
 class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
   public:
     /// Construct the GUI component.
-    /// @param vsys Pointer to the VSG visual system (for potential future use).
+    /// @param vsys Pointer to the VSG visual system (for frame-rate display).
     /// @param button_pressed Reference to the simulation running state (toggled by button).
+    /// @param playback_speed Requested playback speed [-]; <= 0 means unlimited.
+    /// @param run_status Run progress written by the simulation loop.
     /// @param settings Pointer to viewer settings (owned by GUIImplVSG).
     /// @param mooring_viz Pointer to the mooring renderer (for reading the
     ///                    adaptive scalar range for the colour bar).
     SeastackGuiComponent(::chrono::vsg3d::ChVisualSystemVSG* vsys, bool& button_pressed,
-                            ViewerSettings* settings = nullptr,
-                            MooringLinesViz* mooring_viz = nullptr);
+                         double& playback_speed, const RunStatus& run_status,
+                         ViewerSettings* settings = nullptr,
+                         MooringLinesViz* mooring_viz = nullptr);
 
     /// Render the ImGui overlay.
     /// Called each frame by the VSG rendering loop.
     void render(vsg::CommandBuffer& cb) override;
 
   private:
+    void RenderToolbar();
     void RenderMooringPanel();
     void RenderColorBar();
 
     ::chrono::vsg3d::ChVisualSystemVSG* vsys_;
     bool& pressed_;
+    double& playback_speed_;
+    double last_finite_speed_ = 1.0;  ///< Speed restored when "Max" is switched off [-]
+    bool imgui_theme_applied_ = false;
+    bool fixed_range_error_ = false;  ///< Last fixed mooring range entry was rejected
+    VisualTheme imgui_theme_ = VisualTheme::kDark;  ///< Theme of the current ImGui style
+    const RunStatus& run_status_;
     ViewerSettings* settings_;
     MooringLinesViz* mooring_viz_;
 };

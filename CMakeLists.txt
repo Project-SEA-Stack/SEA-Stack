@@ -446,6 +446,7 @@ add_subdirectory(libs/hydro)
 add_subdirectory(libs/infrastructure)
 add_subdirectory(libs/pto)
 add_subdirectory(libs/control)
+add_subdirectory(libs/viz_core)
 
 if(SEASTACK_ENABLE_EXTERNAL)
     add_subdirectory(libs/external)

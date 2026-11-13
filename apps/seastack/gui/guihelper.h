@@ -1,6 +1,8 @@
 #pragma once
 
 #include <seastack/core/mooring_viz_data.h>
+#include <seastack/viz_core/simulation_pacer.h>
+#include <seastack/viz_core/visual_theme.h>
 
 #include <memory>
 
@@ -12,6 +14,17 @@ namespace seastack::hydro { class WaveBase; }
 
 namespace seastack::viz {
 
+/// Viewer options fixed at start-up (from simulation.visualization YAML).
+/// Visual only; never affect the simulation.
+struct ViewerOptions {
+    VisualTheme theme = VisualTheme::kDark;  ///< Initial theme (switchable in the GUI)
+    bool use_model_colors = false;           ///< Keep colours set in the model YAML
+    /// Fixed mooring tension colour range [N]; otherwise the range auto-tracks.
+    bool has_mooring_tension_range = false;
+    float mooring_tension_min = 0.0f;
+    float mooring_tension_max = 0.0f;
+};
+
 /// SEA-Stack User Interface.
 class UI {
   public:
@@ -20,6 +33,9 @@ class UI {
 
     UI(const UI&)            = delete;
     UI& operator=(const UI&) = delete;
+
+    /// Set start-up viewer options. Call before Init(). No effect in headless UI.
+    virtual void SetViewerOptions(const ViewerOptions& options);
 
     /**@brief Initialize the system
      *
@@ -87,6 +103,13 @@ class UI {
 
     bool simulationStarted = false;  // VSG viewer provides Start button
 
+    /// Requested playback speed [simulated s per wall s], set from the GUI.
+    /// <= 0 means unlimited (step as fast as possible). Never changes dt.
+    double playbackSpeed = 1.0;
+
+    /// Run progress written by the simulation loop, displayed by the GUI.
+    RunStatus runStatus;
+
   protected:
     ::chrono::ChSystem* pSystem;  // Do not manage the memory
 };
@@ -102,6 +125,7 @@ class GUI : public UI {
     GUI(const GUI&)            = delete;
     GUI& operator=(const GUI&) = delete;
 
+    void SetViewerOptions(const ViewerOptions& options) override;
     void Init(::chrono::ChSystem*, const char* title) override;
     void SetCamera(double x, double y, double z, double dirx, double diry, double dirz) override;
     bool IsRunning(double timestep) override;

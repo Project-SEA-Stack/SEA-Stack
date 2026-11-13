@@ -15,11 +15,8 @@ inline constexpr float kPaintedMetalB = 0.12f;
 
 inline constexpr float kSpecular = 0.25f;
 inline constexpr float kSpecularExponent = 64.0f;
-inline constexpr float kRoughness = 0.45f;
-inline constexpr float kMetallic = 0.05f;
-inline constexpr float kColorVariationMin = 0.92f;
-inline constexpr float kColorVariationMax = 1.08f;
-inline constexpr int kColorVariationCycle = 8;
+inline constexpr float kRoughness = 0.55f;  // satin painted steel
+inline constexpr float kMetallic = 0.0f;    // paint is a dielectric
 
 // Water Surface
 inline constexpr float kWaterR = 0.01f;
@@ -40,9 +37,10 @@ inline constexpr double kWaterGridSize = 100.0;
 inline constexpr int kWaterGridResolution = 100;
 inline constexpr double kWaterGridSpacing = kWaterGridSize / (kWaterGridResolution - 1);
 
-// Camera
-inline constexpr double kCameraDistance = 60.0;
-inline constexpr double kCameraHeight = 40.0;
+// Window and camera
+inline constexpr int kWindowWidth = 1280;
+inline constexpr int kWindowHeight = 720;
+inline constexpr double kCameraFovDeg = 40.0;  ///< Vertical field of view [deg]
 
 // Lighting (Key + Fill)
 inline constexpr float kKeyIntensity = 1.0f;
@@ -51,6 +49,11 @@ inline constexpr double kKeyElevation = M_PI / 5.0;
 inline constexpr float kFillIntensity = 0.35f;
 inline constexpr double kFillAzimuth = kKeyAzimuth + M_PI;
 inline constexpr double kFillElevation = M_PI / 8.0;
+inline constexpr float kRimIntensity = 0.30f;
+inline constexpr double kRimAzimuth = kKeyAzimuth + 0.6 * M_PI;
+inline constexpr double kRimElevation = 0.3 * M_PI;  // 54 deg
+inline constexpr const char* kFillLightName = "seastack fill light";
+inline constexpr const char* kRimLightName = "seastack rim light";
 
 // Wireframe
 inline constexpr bool kEnableWireframe = false;

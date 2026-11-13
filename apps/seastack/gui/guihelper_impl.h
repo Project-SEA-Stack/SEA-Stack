@@ -16,7 +16,8 @@
 #include <chrono/assets/ChVisualSystem.h>
 
 #ifdef SEASTACK_HAVE_VSG
-    #include "chrono_vsg/ChVisualSystemVSG.h"
+    #include "vsg_visual_system.h"
+    #include <seastack/viz_core/scene_framing.h>
 #endif
 
 namespace chrono {
@@ -33,6 +34,7 @@ class GUIImpl {
     GUIImpl(const GUIImpl&)            = delete;
     GUIImpl& operator=(const GUIImpl&) = delete;
 
+    virtual void SetViewerOptions(const ViewerOptions& /*options*/) {}
     virtual void Init(UI& ui, ::chrono::ChSystem*, const char* title) {
         seastack::infra::cli::LogWarning(
             "Warning: GUI deactivated. SEA-Stack was built without run-time visualization support.");
@@ -62,6 +64,7 @@ class GUIImplVSG : public GUIImpl {
     GUIImplVSG(const GUIImplVSG&)            = delete;
     GUIImplVSG& operator=(const GUIImplVSG&) = delete;
 
+    virtual void SetViewerOptions(const ViewerOptions& options) override { options_ = options; }
     virtual void Init(UI& ui, ::chrono::ChSystem*, const char* title) override;
     virtual void SetCamera(double x, double y, double z, double dirx, double diry, double dirz) override;
     virtual bool IsRunning(double timestep) override;
@@ -80,7 +83,18 @@ class GUIImplVSG : public GUIImpl {
     /// Iterates over all moving bodies and updates their radiation state.
     void UpdateRadiationSourceBody(double t);
 
-    std::shared_ptr<::chrono::vsg3d::ChVisualSystemVSG> pVis;
+    /// Apply pending camera requests from the GUI (standard views, fit).
+    void HandleCameraRequests();
+
+    /// Update clip planes for the current camera distance and water extent.
+    void UpdateClipPlanes();
+
+    std::shared_ptr<SeastackVisualSystemVSG> pVis;
+    ViewerOptions options_;
+
+    /// World-frame bounds of all body visual shapes at Init() [m]; drives
+    /// the default camera, water extent, clip planes and mooring marker sizes.
+    Bounds3 model_bounds_;
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     ::chrono::ChSystem* system_ = nullptr;
     std::unique_ptr<AnimatedWaterSurface> animated_water_;

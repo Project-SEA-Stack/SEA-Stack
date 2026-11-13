@@ -13,6 +13,7 @@
 #include "vsg_materials.h"
 #include "vsg_mooring_lines.h"
 #include "vsg_radiation_surface.h"
+#include "vsg_theme.h"
 #include "vsg_water_surface.h"
 
 using namespace seastack::hydro;
@@ -21,18 +22,102 @@ using namespace seastack::hydro;
 #include <memory>
 #include <stdexcept>
 
+#include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/core/ChTypes.h>
+
+#include <seastack/viz_core/mesh_normals.h>
+
+#include <array>
+#include <vector>
 
 namespace seastack::viz {
 
 using namespace vsg_config;
+
+namespace {
+
+bool IsWaterSurfaceBody(const ::chrono::ChBody& body) {
+    return body.GetName() == "water_surface" || body.GetName() == "animated_water_surface";
+}
+
+/// World-frame bounds of all body visual shapes [m] (water surfaces excluded).
+/// Bodies without visual shapes contribute their reference-frame origin.
+Bounds3 ComputeModelBounds(const ::chrono::ChSystem& system) {
+    Bounds3 bounds;
+    for (const auto& body : system.GetBodies()) {
+        if (!body || IsWaterSurfaceBody(*body)) {
+            continue;
+        }
+        const ::chrono::ChVector3d p = body->GetPos();
+        bounds.Extend(Vec3{p.x(), p.y(), p.z()});
+        if (auto model = body->GetVisualModel()) {
+            const ::chrono::ChAABB local = model->GetBoundingBox();
+            if (!local.IsInverted()) {
+                const ::chrono::ChAABB world = local.Transform(body->GetVisualModelFrame());
+                bounds.Extend(Vec3{world.min.x(), world.min.y(), world.min.z()});
+                bounds.Extend(Vec3{world.max.x(), world.max.y(), world.max.z()});
+            }
+        }
+    }
+    return bounds;
+}
+
+/// Crease angle [deg] for display normals: smoother below, sharp edge above.
+constexpr double kCreaseAngleDeg = 40.0;
+
+/// Give triangle-mesh visual shapes crease-angle smooth normals when the mesh
+/// has none (e.g. coarse BEM panel meshes, which otherwise shade faceted).
+/// Display only: vertex positions are untouched. Returns meshes smoothed.
+int SmoothBodyMeshNormals(::chrono::ChBody& body) {
+    auto model = body.GetVisualModel();
+    if (!model) {
+        return 0;
+    }
+    int smoothed = 0;
+    for (const auto& instance : model->GetShapeInstances()) {
+        auto tri = std::dynamic_pointer_cast<::chrono::ChVisualShapeTriangleMesh>(instance.shape);
+        if (!tri || !tri->GetMesh()) {
+            continue;
+        }
+        auto mesh = tri->GetMesh();
+        const auto& faces = mesh->GetIndicesVertexes();
+        if (faces.empty() || mesh->GetIndicesNormals().size() == faces.size()) {
+            continue;  // keep authored normals
+        }
+        std::vector<std::array<double, 3>> verts;
+        verts.reserve(mesh->GetCoordsVertices().size());
+        for (const auto& v : mesh->GetCoordsVertices()) {
+            verts.push_back({v.x(), v.y(), v.z()});
+        }
+        std::vector<std::array<int, 3>> tris;
+        tris.reserve(faces.size());
+        for (const auto& f : faces) {
+            tris.push_back({f.x(), f.y(), f.z()});
+        }
+        const CornerNormals normals = ComputeCreaseNormals(verts, tris, kCreaseAngleDeg);
+        auto& out_n = mesh->GetCoordsNormals();
+        auto& out_ni = mesh->GetIndicesNormals();
+        out_n.clear();
+        out_ni.clear();
+        for (const auto& n : normals.normals) {
+            out_n.emplace_back(n[0], n[1], n[2]);
+        }
+        for (const auto& fi : normals.face_normal_indices) {
+            out_ni.emplace_back(fi[0], fi[1], fi[2]);
+        }
+        ++smoothed;
+    }
+    return smoothed;
+}
+
+}  // namespace
 
 // =============================================================================
 // GUIImplVSG Implementation
 // =============================================================================
 
 GUIImplVSG::GUIImplVSG()
-    : pVis(::chrono_types::make_shared<::chrono::vsg3d::ChVisualSystemVSG>()),
+    : pVis(::chrono_types::make_shared<SeastackVisualSystemVSG>()),
       animated_water_(std::make_unique<AnimatedWaterSurface>()),
       viewer_settings_(std::make_unique<ViewerSettings>()) {}
 
@@ -49,7 +134,7 @@ GUIImplVSG::~GUIImplVSG() = default;
 //   5. AddGuiComponent — registers ImGui overlay
 //   6. pVis->Initialize() — creates Vulkan device, swap chain, compiles
 //      shaders, builds scene graph.
-//   7. AddFillLight — requires scene graph from step 6
+//   7. AddStudioLights, CaptureSkyNode — require scene graph from step 6
 // ─────────────────────────────────────────────────────────────────────────────
 void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     system_ = system;
@@ -58,18 +143,37 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     pVis->AttachSystem(system);
 
     pVis->SetWindowTitle(title);
-    pVis->SetWindowSize(1280, 720);
+    pVis->SetWindowSize(kWindowWidth, kWindowHeight);
     pVis->SetWindowPosition(100, 100);
 
-    const ::chrono::ChVector3d eye(0.0, -kCameraDistance, kCameraHeight);
-    const ::chrono::ChVector3d target(0.0, 0.0, -10.0);
-    pVis->AddCamera(eye, target);
+    // Default camera: isometric view framing the whole model, so lab-scale and
+    // full-scale models both fill the view. SetCamera() overrides this.
+    model_bounds_ = system ? ComputeModelBounds(*system) : Bounds3{};
+    if (model_bounds_.IsValid()) {
+        const Vec3 s = model_bounds_.Size();
+        std::cout << "[Camera] Model bounds: " << s[0] << " x " << s[1] << " x " << s[2] << " m" << std::endl;
+    }
+    const CameraPose pose = FrameBounds(model_bounds_, CameraView::kIsometric, kCameraFovDeg,
+                                        static_cast<double>(kWindowWidth) / kWindowHeight);
+    pVis->AddCamera(::chrono::ChVector3d(pose.eye[0], pose.eye[1], pose.eye[2]),
+                    ::chrono::ChVector3d(pose.target[0], pose.target[1], pose.target[2]));
     pVis->SetCameraVertical(::chrono::CameraVerticalDir::Z);
-    pVis->SetCameraAngleDeg(40.0);
+    pVis->SetCameraAngleDeg(kCameraFovDeg);
+    // Chrono's panel duplicates the playback HUD and its wall clock includes
+    // pauses; hidden by default, re-enabled from Display > Chrono debug panel.
+    pVis->SetBaseGuiVisibility(false);
 
     pVis->SetLightIntensity(kKeyIntensity);
     pVis->SetLightDirection(kKeyAzimuth, kKeyElevation);
+    // Shadows stay off: Chrono VSG's shadow pipeline crashes when nodes (our
+    // water surface and mooring lines) are added after Initialize().
+    pVis->EnableShadows(false);
+    if (viewer_settings_) {
+        viewer_settings_->theme = options_.theme;
+        viewer_settings_->theme_changed = true;
+    }
 
+    // The skybox is always loaded; the theme shows or hides it at runtime.
     std::cerr << "[VSG] Stage 2: EnableSkyTexture" << std::endl;
     try {
         pVis->EnableSkyTexture(::chrono::SkyMode::BOX);
@@ -83,10 +187,10 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     if (system) {
         int body_index = 0;
         for (auto& body : system->GetBodies()) {
-            if (body && body->GetName() != "water_surface" &&
-                body->GetName() != "animated_water_surface") {
-                const auto material = MakePaintedMetalVariant(body_index);
-                ApplyMaterialToAllVisualShapes(*body, material);
+            if (body && !IsWaterSurfaceBody(*body)) {
+                SmoothBodyMeshNormals(*body);
+                const auto material = MakeBodyPaletteMaterial(body_index);
+                ApplyMaterialToAllVisualShapes(*body, material, options_.use_model_colors);
                 ++body_index;
 
                 if (kEnableWireframe) {
@@ -103,8 +207,8 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
         mooring_viz_ = std::make_unique<MooringLinesViz>();
 
     pVis->AddGuiComponent(std::make_shared<SeastackGuiComponent>(
-        pVis.get(), ui.simulationStarted, viewer_settings_.get(),
-        mooring_viz_.get()));
+        pVis.get(), ui.simulationStarted, ui.playbackSpeed, ui.runStatus,
+        viewer_settings_.get(), mooring_viz_.get()));
 
     std::cerr << "[VSG] Stage 3: pVis->Initialize() (Vulkan device + scene compile)" << std::endl;
     pVis->Initialize();
@@ -120,13 +224,54 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
             "Try running with --nogui.");
     }
 
-    std::cerr << "[VSG] Stage 4: AddFillLight + scene ready" << std::endl;
-    AddFillLight(pVis.get());
+    std::cerr << "[VSG] Stage 4: studio lights + scene ready" << std::endl;
+    AddStudioLights(pVis.get());
+    pVis->CaptureSkyNode();
+    UpdateClipPlanes();
 }
 
 void GUIImplVSG::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {
-    pVis->SetCameraPosition({x, y, z});
-    pVis->SetCameraTarget({dirx, diry, dirz});
+    // (dirx, diry, dirz) is the target point [m], not a direction.
+    CameraPose pose;
+    pose.eye = {x, y, z};
+    pose.target = {dirx, diry, dirz};
+    const double dx = x - dirx, dy = y - diry;
+    if (dx * dx + dy * dy < 1e-12) {
+        pose.up = {0.0, 1.0, 0.0};  // looking straight down or up
+    }
+    pVis->SetCameraPose(pose);
+    UpdateClipPlanes();
+}
+
+void GUIImplVSG::UpdateClipPlanes() {
+    const auto eye = pVis->GetCameraPosition();
+    const auto target = pVis->GetCameraTarget();
+    const double view_distance =
+        std::max((eye - target).Length(),
+                 FramingDistance(model_bounds_.Radius(), kCameraFovDeg, pVis->GetViewportAspect()));
+    double water_extent = 0.0;
+    if (viewer_settings_) {
+        water_extent = std::max(viewer_settings_->grid_width, viewer_settings_->grid_length);
+    }
+    pVis->SetClipPlanes(ComputeClipPlanes(view_distance, water_extent));
+}
+
+void GUIImplVSG::HandleCameraRequests() {
+    if (!viewer_settings_) {
+        return;
+    }
+    constexpr double kViewTransition = 0.5;  // [s] animated move between views
+    const double aspect = pVis->GetViewportAspect();
+    if (viewer_settings_->camera_view_requested) {
+        viewer_settings_->camera_view_requested = false;
+        viewer_settings_->camera_fit_requested = false;
+        pVis->SetCameraPose(FrameBounds(model_bounds_, viewer_settings_->camera_view, kCameraFovDeg, aspect),
+                            kViewTransition);
+    } else if (viewer_settings_->camera_fit_requested) {
+        viewer_settings_->camera_fit_requested = false;
+        pVis->SetCameraPose(FrameBounds(model_bounds_, pVis->GetViewDirection(), kCameraFovDeg, aspect),
+                            kViewTransition);
+    }
 }
 
 void GUIImplVSG::SetWaveModel(std::shared_ptr<seastack::hydro::WaveBase> wave) {
@@ -188,35 +333,25 @@ void GUIImplVSG::EnsureWaterSurface() {
         std::cout << "[WaterSurface] EnsureWaterSurface: has_waves=" << has_waves << std::endl;
     }
 
-    // Auto-compute grid extent from body bounding box when no manual extent
-    // has been set via SetWaterGridExtent(). This ensures the free surface
-    // covers the full model regardless of whether the simulation was set up
-    // via YAML or the C++ API.
+    // Auto-size the water patch from the model bounds and the wavelength when
+    // no manual extent has been set via SetWaterGridExtent(), so lab-scale and
+    // full-scale models both get a sensible patch.
     if (viewer_settings_ &&
-        viewer_settings_->grid_width <= 0.0 && viewer_settings_->grid_length <= 0.0) {
-        double xmin = +1e20, xmax = -1e20;
-        double ymin = +1e20, ymax = -1e20;
-        for (const auto& body : system_->GetBodies()) {
-            auto pos = body->GetPos();
-            xmin = std::min(xmin, pos.x());
-            xmax = std::max(xmax, pos.x());
-            ymin = std::min(ymin, pos.y());
-            ymax = std::max(ymax, pos.y());
+        viewer_settings_->grid_width <= 0.0 && viewer_settings_->grid_length <= 0.0 &&
+        model_bounds_.IsValid()) {
+        double wavelength = 0.0;
+        if (wave_model_ && wave_model_->GetWaveMode() != WaveMode::kNoWave) {
+            wavelength = DeepWaterWavelength(wave_model_->GetCharacteristicPeriod(), wave_model_->GetGravity());
         }
-        if (xmax > xmin) {
-            double span_x = xmax - xmin;
-            double span_y = ymax - ymin;
-            double width  = std::max(kWaterGridSize, span_x * 1.5);
-            double length = std::max(kWaterGridSize, span_y * 1.5);
-            viewer_settings_->grid_width    = width;
-            viewer_settings_->grid_length   = length;
-            viewer_settings_->grid_center_x = (xmin + xmax) / 2.0;
-            viewer_settings_->grid_center_y = (ymin + ymax) / 2.0;
-            std::cout << "[WaterSurface] Auto-sized grid: "
-                      << width << " x " << length << " m, center: ("
-                      << viewer_settings_->grid_center_x << ", "
-                      << viewer_settings_->grid_center_y << ")" << std::endl;
-        }
+        const WaterExtent w = ComputeWaterExtent(model_bounds_, wavelength);
+        viewer_settings_->grid_width    = w.width;
+        viewer_settings_->grid_length   = w.length;
+        viewer_settings_->grid_center_x = w.center_x;
+        viewer_settings_->grid_center_y = w.center_y;
+        std::cout << "[WaterSurface] Auto-sized grid: "
+                  << w.width << " x " << w.length << " m, center: ("
+                  << w.center_x << ", " << w.center_y << ")" << std::endl;
+        UpdateClipPlanes();
     }
 
     // Always create animated water surface (supports waves + radiation viz).
@@ -265,15 +400,23 @@ bool GUIImplVSG::IsRunning(double timestep) {
             if (!mooring_viz_)
                 mooring_viz_ = std::make_unique<MooringLinesViz>();
             if (!mooring_viz_->IsInitializedFor(pVis.get())) {
+                // Model-scaled defaults; explicit YAML radii (>= 0) override them.
+                const MooringVizRadii defaults = DefaultMooringVizRadii(ModelLengthScale(model_bounds_));
+                mooring_viz_->SetVisualizationRadii(defaults.line, defaults.endpoint, defaults.node_marker);
                 mooring_viz_->SetVisualizationRadii(mooring_viz_line_radius_request_,
                                                    mooring_viz_endpoint_radius_request_,
                                                    mooring_viz_node_marker_radius_request_);
                 mooring_viz_->Initialize(pVis.get(), line_data, mooring_scene_group_);
+                if (options_.has_mooring_tension_range) {
+                    auto& range = mooring_viz_->TensionRange();
+                    if (range.SetFixedRange(options_.mooring_tension_min, options_.mooring_tension_max)) {
+                        range.SetMode(ColorRangeMode::kFixed);
+                    }
+                }
             }
 
-            const bool color_on  = viewer_settings_ && viewer_settings_->show_mooring_colors;
-            const bool range_lock = viewer_settings_ && viewer_settings_->mooring_range_locked;
-            mooring_viz_->Update(line_data, color_on, range_lock);
+            const bool color_on = viewer_settings_ && viewer_settings_->show_mooring_colors;
+            mooring_viz_->Update(line_data, color_on);
         }
     }
 
@@ -306,6 +449,13 @@ bool GUIImplVSG::IsRunning(double timestep) {
         // Update() handles null wave_model_ gracefully (keeps surface flat).
         // Pass viewer_settings_ for scale multiplier and throttle.
         animated_water_->Update(wave_model_, t, viewer_settings_.get());
+    }
+
+    HandleCameraRequests();
+
+    if (viewer_settings_ && viewer_settings_->theme_changed) {
+        pVis->ApplySceneTheme(GetSceneTheme(viewer_settings_->theme), kFillLightName, kRimLightName);
+        viewer_settings_->theme_changed = false;
     }
 
     pVis->BeginScene();

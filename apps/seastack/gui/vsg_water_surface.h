@@ -1,8 +1,10 @@
 // SEA-Stack VSG Water Surface Visualization
 #pragma once
 
+#include <chrono>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <seastack/hydro/waves/wave_base.h>
 
@@ -67,6 +69,7 @@ class AnimatedWaterSurface {
     vsg::ref_ptr<vsg::vec3Array> vsg_vertices_;
     vsg::ref_ptr<vsg::vec3Array> vsg_normals_;
     vsg::ref_ptr<vsg::vec4Array> vsg_colors_;  ///< Per-vertex colors for height shading
+    std::vector<vsg::vec3> grid_normals_;      ///< Scratch: accumulated normal per grid vertex
     vsg::ref_ptr<vsg::Node> vsg_node_;
     vsg::ref_ptr<vsg::Group> scene_;
     ::chrono::vsg3d::ChVisualSystemVSG* bound_vis_ = nullptr;
@@ -75,7 +78,8 @@ class AnimatedWaterSurface {
     bool initialized_ = false;
     bool visible_ = true;
     mutable int frame_count_ = 0;
-    double last_update_time_ = -1.0;
+    double last_update_time_ = -1.0;  ///< Simulated time of the last surface update [s]
+    std::chrono::steady_clock::time_point last_update_wall_{};
 
     RadiationSurfaceViz radiation_viz_;
 

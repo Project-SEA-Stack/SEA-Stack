@@ -3,6 +3,7 @@
 #pragma once
 
 #include <seastack/core/mooring_viz_data.h>
+#include <seastack/viz_core/color_range.h>
 
 #include <chrono_vsg/ChVisualSystemVSG.h>
 
@@ -43,19 +44,20 @@ class MooringLinesViz {
 
     /// Reposition tube vertices and (optionally) recolour by tension.
     /// @param color_enabled  When false, colours are reset to the default cable
-    ///                       tan and the adaptive range is left untouched.
-    /// @param range_locked   When true the adaptive min/max is frozen.
-    void Update(const std::vector<MooringLineVizData>& lines,
-                bool color_enabled = true, bool range_locked = false);
+    ///                       tan and the colour range is left untouched.
+    void Update(const std::vector<MooringLineVizData>& lines, bool color_enabled = true);
 
     bool IsInitialized() const { return initialized_; }
     bool IsInitializedFor(::chrono::vsg3d::ChVisualSystemVSG* vis) const {
         return initialized_ && bound_vis_ == vis;
     }
 
-    /// Current adaptive tension range [N] (for the GUI colour bar).
-    float TensionMin() const { return tension_min_; }
-    float TensionMax() const { return tension_max_; }
+    /// Current tension colour range [N] (for the GUI colour bar).
+    float TensionMin() const { return tension_range_.Min(); }
+    float TensionMax() const { return tension_range_.Max(); }
+
+    /// Tension colour range [N]: mode (auto/locked/fixed) and fixed limits.
+    ColorRange& TensionRange() { return tension_range_; }
 
     /// Evaluate the Turbo colour map at normalised parameter @p t in [0, 1].
     /// Exposed as a public static so the GUI colour bar can reuse the same
@@ -71,7 +73,7 @@ class MooringLinesViz {
                                double node_marker_radius_m);
 
   private:
-    static constexpr int kSides = 8;
+    static constexpr int kSides = 16;  ///< Tube cross-section facets
     static constexpr double kDefaultTubeRadius = 0.15;
     static constexpr double kDefaultEndpointRadius = 0.5;
     static constexpr double kDefaultNodeMarkerRadius = 0.20;
@@ -79,9 +81,6 @@ class MooringLinesViz {
     double tube_radius_ = kDefaultTubeRadius;
     double endpoint_radius_ = kDefaultEndpointRadius;
     double node_marker_radius_ = kDefaultNodeMarkerRadius;
-    static constexpr float kRangeDecayAlpha = 0.00008f;
-    static constexpr float kRangePadding    = 0.10f;
-    static constexpr int   kRangeHoldFrames = 180;
 
     /// A PBR sphere used to mark an endpoint or intermediate node.
     struct PointMarker {
@@ -120,10 +119,7 @@ class MooringLinesViz {
     ::chrono::vsg3d::ChVisualSystemVSG* bound_vis_ = nullptr;
     bool initialized_ = false;
 
-    float tension_min_ = 0.0f;
-    float tension_max_ = 1.0f;
-    bool range_initialized_ = false;
-    int hold_frames_remaining_ = 0;
+    ColorRange tension_range_;
 };
 
 }  // namespace seastack::viz

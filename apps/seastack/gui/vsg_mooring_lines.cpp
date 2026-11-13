@@ -185,48 +185,25 @@ void MooringLinesViz::Initialize(
 }
 
 void MooringLinesViz::Update(const std::vector<MooringLineVizData>& lines,
-                             bool color_enabled, bool range_locked) {
+                             bool color_enabled) {
     if (!initialized_) return;
     const size_t count = std::min(lines.size(), line_meshes_.size());
 
-    // Adaptive range: min fixed at 0 (tension magnitude is non-negative),
-    // max uses high-water-mark behaviour -- snaps to new peaks instantly but
-    // decays very slowly so the colour scale stays stable.
-    if (color_enabled && !range_locked) {
+    if (color_enabled) {
         float frame_max = 0.0f;
         for (size_t li = 0; li < count; ++li) {
             for (double t : lines[li].node_tensions) {
                 frame_max = std::max(frame_max, static_cast<float>(t));
             }
         }
-
-        const float padded_max = frame_max * (1.0f + kRangePadding);
-
-        if (!range_initialized_) {
-            tension_max_ = std::max(padded_max, 1.0f);
-            range_initialized_ = true;
-            hold_frames_remaining_ = kRangeHoldFrames;
-        } else if (padded_max > tension_max_) {
-            tension_max_ = padded_max;
-            hold_frames_remaining_ = kRangeHoldFrames;
-        } else if (hold_frames_remaining_ > 0) {
-            --hold_frames_remaining_;
-        } else {
-            tension_max_ += kRangeDecayAlpha * (padded_max - tension_max_);
-        }
-
-        tension_min_ = 0.0f;
-
-        if (tension_max_ < 1e-6f) {
-            tension_max_ = 1.0f;
-        }
+        tension_range_.Update(frame_max);
     }
 
     for (size_t li = 0; li < count; ++li) {
         if (lines[li].node_positions.size() < 2) continue;
         if (!line_meshes_[li].vertices) continue;
         UpdateTubeMesh(lines[li], line_meshes_[li],
-                       color_enabled, tension_min_, tension_max_);
+                       color_enabled, tension_range_.Min(), tension_range_.Max());
     }
 }
 

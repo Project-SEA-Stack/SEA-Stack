@@ -10,15 +10,17 @@
 
 namespace seastack::viz {
 
-/// Adds a fill light to the VSG scene for improved shape readability.
-/// The fill light provides soft illumination from the opposite side of the key light,
-/// reducing harsh shadows and lifting the dark side of objects.
+/// Adds the fill and rim lights of the studio rig to the VSG scene (the key
+/// light is Chrono's own "sun light"). The fill comes from opposite the key
+/// and lifts the dark side; the rim comes from behind and above and
+/// separates silhouettes from the background. Lights are named
+/// (vsg_config::kFillLightName, kRimLightName) so themes can adjust them.
 ///
 /// @note Must be called AFTER ChVisualSystemVSG::Initialize() since the scene
 ///       is created during initialization.
 ///
 /// @param vis Pointer to the initialized VSG visual system. Does nothing if null.
-void AddFillLight(::chrono::vsg3d::ChVisualSystemVSG* vis);
+void AddStudioLights(::chrono::vsg3d::ChVisualSystemVSG* vis);
 
 }  // namespace seastack::viz
 

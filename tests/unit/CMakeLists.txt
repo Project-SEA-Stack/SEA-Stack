@@ -118,6 +118,23 @@ build_unit_test(test_excitation_ramp_visualization)
 target_link_libraries(test_excitation_ramp_visualization PRIVATE SEAStack::Hydro)
 set_tests_properties(test_excitation_ramp_visualization PROPERTIES LABELS "unit;chrono-free")
 
+# GUI simulation pacing and run clock (Chrono-free, VSG-free)
+build_unit_test(test_simulation_pacer)
+target_link_libraries(test_simulation_pacer PRIVATE SEAStack::VizCore)
+set_tests_properties(test_simulation_pacer PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_scene_framing)
+target_link_libraries(test_scene_framing PRIVATE SEAStack::VizCore)
+set_tests_properties(test_scene_framing PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_mesh_normals)
+target_link_libraries(test_mesh_normals PRIVATE SEAStack::VizCore)
+set_tests_properties(test_mesh_normals PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_color_range)
+target_link_libraries(test_color_range PRIVATE SEAStack::VizCore)
+set_tests_properties(test_color_range PROPERTIES LABELS "unit;chrono-free")
+
 # PTO tests (Chrono-free, HDF5-free)
 build_unit_test(test_linear_pto)
 target_link_libraries(test_linear_pto PRIVATE SEAStack::PTO)

@@ -648,14 +648,24 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
         return;
     }
 
-    // Throttle updates based on update_hz setting.
-    if (settings && settings->update_hz > 0) {
-        double min_interval = 1.0 / settings->update_hz;
-        if (last_update_time_ >= 0.0 && (t - last_update_time_) < min_interval) {
+    // Nothing to do if simulated time has not moved (e.g. while paused).
+    if (last_update_time_ >= 0.0 && t == last_update_time_) {
+        return;
+    }
+
+    // Throttle updates to update_hz of *wall-clock* time. Throttling on
+    // simulated time would make the surface choppy in slow-motion playback.
+    const auto wall_now = std::chrono::steady_clock::now();
+    if (settings && settings->update_hz > 0 && last_update_time_ >= 0.0) {
+        const double min_interval = 1.0 / settings->update_hz;
+        const double since_last =
+            std::chrono::duration<double>(wall_now - last_update_wall_).count();
+        if (since_last < min_interval) {
             return;  // Skip this update (throttled).
         }
     }
     last_update_time_ = t;
+    last_update_wall_ = wall_now;
 
     // Get visual scale from settings (default 1.0).
     float visual_scale = (settings) ? settings->wave_visual_scale : 1.0f;
@@ -810,50 +820,40 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
         }
     }
 
-    // Recompute surface normals for correct lighting.
-    // Each triangle gets a flat normal computed from cross product of edges.
-    for (size_t tri = 0; tri < faces.size(); ++tri) {
-        size_t i0 = tri * 3;
-        size_t i1 = tri * 3 + 1;
-        size_t i2 = tri * 3 + 2;
-
-        if (i2 >= vsg_vertices_->size()) {
-            continue;
+    // Recompute smooth surface normals for lighting. The VSG buffers hold three
+    // separate vertices per triangle (vertex tri*3+k is grid vertex
+    // faces[tri][k]), so accumulate area-weighted face normals per grid
+    // vertex, then copy the normalised result back to every duplicate.
+    const size_t num_tris = std::min(faces.size(), vsg_vertices_->size() / 3);
+    grid_normals_.assign(mesh_->m_vertices.size(), vsg::vec3(0.0f, 0.0f, 0.0f));
+    for (size_t tri = 0; tri < num_tris; ++tri) {
+        const auto& v0 = (*vsg_vertices_)[tri * 3];
+        const auto& v1 = (*vsg_vertices_)[tri * 3 + 1];
+        const auto& v2 = (*vsg_vertices_)[tri * 3 + 2];
+        const vsg::vec3 edge1(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
+        const vsg::vec3 edge2(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
+        // Unnormalised cross product: length = 2 x triangle area (area weighting).
+        const vsg::vec3 face_normal(edge1.y * edge2.z - edge1.z * edge2.y,
+                                    edge1.z * edge2.x - edge1.x * edge2.z,
+                                    edge1.x * edge2.y - edge1.y * edge2.x);
+        for (int k = 0; k < 3; ++k) {
+            const auto g = static_cast<size_t>(faces[tri][k]);
+            if (g < grid_normals_.size()) {
+                grid_normals_[g] += face_normal;
+            }
         }
-
-        const auto& v0 = (*vsg_vertices_)[i0];
-        const auto& v1 = (*vsg_vertices_)[i1];
-        const auto& v2 = (*vsg_vertices_)[i2];
-
-        // Edge vectors from v0.
-        vsg::vec3 edge1(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
-        vsg::vec3 edge2(v2.x - v0.x, v2.y - v0.y, v2.z - v0.z);
-
-        // Normal = edge1 × edge2 (cross product).
-        vsg::vec3 normal(
-            edge1.y * edge2.z - edge1.z * edge2.y,
-            edge1.z * edge2.x - edge1.x * edge2.z,
-            edge1.x * edge2.y - edge1.y * edge2.x);
-
-        // Normalize to unit length.
-        float len = std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
-        if (len > 1e-6f) {
-            normal.x /= len;
-            normal.y /= len;
-            normal.z /= len;
-        } else {
-            normal = vsg::vec3(0.0f, 0.0f, 1.0f);  // Default to up if degenerate
-        }
-
-        // Assign same normal to all 3 vertices of this triangle.
-        if (i0 < vsg_normals_->size()) {
-            (*vsg_normals_)[i0] = normal;
-        }
-        if (i1 < vsg_normals_->size()) {
-            (*vsg_normals_)[i1] = normal;
-        }
-        if (i2 < vsg_normals_->size()) {
-            (*vsg_normals_)[i2] = normal;
+    }
+    for (size_t tri = 0; tri < num_tris; ++tri) {
+        for (int k = 0; k < 3; ++k) {
+            const size_t idx = tri * 3 + static_cast<size_t>(k);
+            const auto g = static_cast<size_t>(faces[tri][k]);
+            if (idx >= vsg_normals_->size() || g >= grid_normals_.size()) {
+                continue;
+            }
+            vsg::vec3 normal = grid_normals_[g];
+            const float len = std::sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+            normal = (len > 1e-12f) ? normal / len : vsg::vec3(0.0f, 0.0f, 1.0f);
+            (*vsg_normals_)[idx] = normal;
         }
     }
 
