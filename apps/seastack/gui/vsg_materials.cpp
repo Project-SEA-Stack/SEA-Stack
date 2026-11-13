@@ -14,6 +14,20 @@ namespace seastack::viz {
 
 using namespace vsg_config;
 
+namespace {
+
+/// sRGB colour (as authored in YAML or a colour picker) to linear. Chrono
+/// passes diffuse colours to a linear-space shader unchanged, so unconverted
+/// colours display washed out.
+::chrono::ChColor SrgbToLinear(const ::chrono::ChColor& c) {
+    auto to_linear = [](float v) {
+        return (v <= 0.04045f) ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+    };
+    return ::chrono::ChColor(to_linear(c.R), to_linear(c.G), to_linear(c.B));
+}
+
+}  // namespace
+
 ::chrono::ChVisualMaterial MakePaintedMetalBase() {
     ::chrono::ChVisualMaterial mat;
 
@@ -28,28 +42,24 @@ using namespace vsg_config;
 }
 
 ::chrono::ChVisualMaterial MakeBodyPaletteMaterial(int index) {
-    // Distinct, slightly desaturated industrial colours so neighbouring bodies
-    // (e.g. float and spar) are easy to tell apart on dark and light backgrounds.
+    // Marine high-visibility paints alternating with neutral structural
+    // greys, so adjacent bodies (e.g. float and spar) stay distinct and read
+    // like real offshore hardware on dark and light backgrounds.
     static constexpr float kPalette[][3] = {
-        {0.92f, 0.72f, 0.12f},  // safety yellow
-        {0.60f, 0.63f, 0.68f},  // steel grey
-        {0.90f, 0.45f, 0.15f},  // signal orange
-        {0.16f, 0.58f, 0.62f},  // teal
-        {0.86f, 0.86f, 0.83f},  // off-white
-        {0.25f, 0.42f, 0.75f},  // cobalt
-        {0.55f, 0.60f, 0.25f},  // olive
-        {0.70f, 0.30f, 0.25f},  // brick
+        {0.95f, 0.75f, 0.10f},  // safety yellow
+        {0.33f, 0.36f, 0.40f},  // gunmetal
+        {0.80f, 0.16f, 0.12f},  // signal red
+        {0.60f, 0.64f, 0.69f},  // steel grey
+        {0.95f, 0.42f, 0.10f},  // international orange
+        {0.20f, 0.24f, 0.30f},  // dark slate
+        {0.86f, 0.87f, 0.88f},  // satin white
+        {0.17f, 0.22f, 0.33f},  // navy
     };
     constexpr int kCount = static_cast<int>(sizeof(kPalette) / sizeof(kPalette[0]));
     const auto& rgb = kPalette[((index % kCount) + kCount) % kCount];
 
-    // The palette is authored in sRGB; Chrono passes diffuse colours to a
-    // linear-space shader unchanged, so convert or they display washed out.
-    auto to_linear = [](float c) {
-        return (c <= 0.04045f) ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
-    };
     ::chrono::ChVisualMaterial mat = MakePaintedMetalBase();
-    mat.SetDiffuseColor(::chrono::ChColor(to_linear(rgb[0]), to_linear(rgb[1]), to_linear(rgb[2])));
+    mat.SetDiffuseColor(SrgbToLinear(::chrono::ChColor(rgb[0], rgb[1], rgb[2])));
     return mat;
 }
 
@@ -119,7 +129,7 @@ void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVi
         }
         if (has_translucent) {
             auto merged = ::chrono_types::make_shared<::chrono::ChVisualMaterial>(mat);
-            merged->SetDiffuseColor(preserved_diffuse);
+            merged->SetDiffuseColor(SrgbToLinear(preserved_diffuse));
             merged->SetOpacity(preserved_opacity);
             for (unsigned int m = 0; m < num_materials; ++m) {
                 shape->SetMaterial(m, merged);
@@ -133,7 +143,7 @@ void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVi
             const auto& first = shape->GetMaterial(0);
             if (first && !IsChronoDefaultColor(first->GetDiffuseColor())) {
                 auto merged = ::chrono_types::make_shared<::chrono::ChVisualMaterial>(mat);
-                merged->SetDiffuseColor(first->GetDiffuseColor());
+                merged->SetDiffuseColor(SrgbToLinear(first->GetDiffuseColor()));
                 for (unsigned int m = 0; m < num_materials; ++m) {
                     shape->SetMaterial(m, merged);
                 }

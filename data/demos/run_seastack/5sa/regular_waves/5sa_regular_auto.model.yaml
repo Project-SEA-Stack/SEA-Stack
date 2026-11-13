@@ -16,7 +16,7 @@ model:
       orientation: [0, 0, 0]
     visualization:
       model_file: ../assets/geometry/segment_1.obj
-      color: [0.15, 0.35, 0.7]
+      color: [0.80, 0.16, 0.12]
   - name: body2
     location: [54.0, 0.0, -0.259199]
     mass: 270000.0
@@ -29,7 +29,7 @@ model:
       orientation: [0, 0, 0]
     visualization:
       model_file: ../assets/geometry/segment_2.obj
-      color: [0.15, 0.39999999999999997, 0.7]
+      color: [0.62, 0.11, 0.09]
   - name: body3
     location: [90.0, 0.0, -0.259199]
     mass: 270000.0
@@ -42,7 +42,7 @@ model:
       orientation: [0, 0, 0]
     visualization:
       model_file: ../assets/geometry/segment_3.obj
-      color: [0.15, 0.44999999999999996, 0.7]
+      color: [0.80, 0.16, 0.12]
   - name: body4
     location: [126.0, 0.0, -0.259199]
     mass: 270000.0
@@ -55,7 +55,7 @@ model:
       orientation: [0, 0, 0]
     visualization:
       model_file: ../assets/geometry/segment_4.obj
-      color: [0.15, 0.5, 0.7]
+      color: [0.62, 0.11, 0.09]
   - name: body5
     location: [162.0, 0.0, -0.259199]
     mass: 270000.0
@@ -68,7 +68,7 @@ model:
       orientation: [0, 0, 0]
     visualization:
       model_file: ../assets/geometry/segment_5.obj
-      color: [0.15, 0.55, 0.7]
+      color: [0.80, 0.16, 0.12]
   - name: ground
     location: [90.0, 0.0, -10.0]
     mass: 1

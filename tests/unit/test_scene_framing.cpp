@@ -103,6 +103,16 @@ int main() {
         const WaterExtent w = ComputeWaterExtent(offset, 0.0);
         TEST_NEAR(w.center_x, 105.0, 1e-12, "patch centred on model (x)");
         TEST_NEAR(w.center_y, 55.0, 1e-12, "patch centred on model (y)");
+
+        // Still water: at least kStillWaterPlanFactor mean plan sizes.
+        const Bounds3 sphere = Box({-5, -5, -6}, {5, 5, 4});
+        TEST_NEAR(ComputeWaterExtent(sphere, 0.0).width, kStillWaterPlanFactor * 10.0, 1e-12,
+                  "still water: 10 m sphere gets a 50 m patch");
+        TEST_NEAR(ComputeWaterExtent(sphere, 20.0).width, 30.0, 1e-12,
+                  "with waves the still-water minimum does not apply");
+        const Bounds3 slender = Box({0, -1.5, -2}, {180, 1.5, 2});
+        TEST_NEAR(ComputeWaterExtent(slender, 0.0).width, kWaterModelFactor * 180.0, 1e-9,
+                  "slender model in still water: length term still covers the device");
     }
 
     // Clip planes scale with the view.
@@ -120,6 +130,10 @@ int main() {
         TEST_NEAR(r.line, 0.15, 1e-12, "20 m model line radius");
         TEST_NEAR(r.endpoint, 0.5, 1e-12, "20 m model endpoint radius");
         TEST_NEAR(r.node_marker, 0.2, 1e-12, "20 m model node radius");
+        TEST_NEAR(MeanPlanLength(Box({0, -1.5, -2}, {180, 1.5, 2})), std::sqrt(180.0 * 3.0), 1e-9,
+                  "slender model: geometric mean of plan sides");
+        TEST_NEAR(MeanPlanLength(Box({-15, -15, -30}, {15, 15, 5})), 30.0, 1e-9,
+                  "square plan: same as ModelLengthScale");
         const MooringVizRadii lab = DefaultMooringVizRadii(0.2);
         TEST_NEAR(lab.line, 0.0015, 1e-12, "lab-scale line radius scales down");
     }

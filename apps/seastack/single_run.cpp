@@ -731,7 +731,8 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         if (pui && !nogui) {
             // Start-up viewer options from simulation.visualization (all optional):
             //   theme: dark | light       initial theme (switchable in the GUI)
-            //   body_colors: palette | model   keep colours set in the model YAML
+            //   body_colors: model | palette   model (default) keeps colours set in the
+            //                                  model YAML; palette repaints every body
             //   mooring_tension_range: [min, max]   fixed tension colour range [N]
             // The Chrono key enable_shadows is ignored: Chrono VSG shadows crash
             // when SEA-Stack adds its water and mooring meshes after Initialize().
@@ -752,7 +753,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         viewer_options.use_model_colors = (colors == "model");
                         if (colors != "model" && colors != "palette") {
                             seastack::infra::cli::LogWarning("Unknown visualization.body_colors '" + colors +
-                                                             "' (expected palette or model); using palette");
+                                                             "' (expected model or palette); using model");
                         }
                     }
                     if (vis["mooring_tension_range"]) {

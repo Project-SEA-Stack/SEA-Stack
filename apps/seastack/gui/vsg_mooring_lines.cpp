@@ -308,7 +308,7 @@ void MooringLinesViz::BuildTubeMesh(const MooringLineVizData& line_data,
         static_cast<int>(line_data.end_point_type));
 
     // Small intermediate-node markers to visualise segment boundaries.
-    if (num_nodes > 2) {
+    if (num_nodes > 2 && node_marker_radius_ > 0.0) {
         lm.node_markers.reserve(num_nodes - 2);
         for (size_t ni = 1; ni + 1 < num_nodes; ++ni) {
             lm.node_markers.push_back(CreateSphereMarker(
@@ -513,7 +513,7 @@ void DrawMooringLines(MooringLinesViz* viz, OverlayBuilder* builder, vsg::ref_pt
     const auto line_data = ToMooringVizData(scene, frame);
     if (!viz->IsInitializedFor(builder)) {
         // Model-scaled defaults; explicit YAML radii (>= 0) override them.
-        const MooringVizRadii defaults = DefaultMooringVizRadii(ModelLengthScale(model_bounds));
+        const MooringVizRadii defaults = DefaultMooringVizRadii(MeanPlanLength(model_bounds));
         viz->SetVisualizationRadii(defaults.line, defaults.endpoint, defaults.node_marker);
         viz->SetVisualizationRadii(options.line_radius_m, options.endpoint_radius_m, options.node_marker_radius_m);
         viz->Initialize(builder, line_data, parent_group);

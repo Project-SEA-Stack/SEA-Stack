@@ -80,7 +80,7 @@ def build_yaml():
         },
         "visualization": {
             "model_file": f"../assets/geometry/segment_{i+1}.obj",
-            "color": [0.15, 0.35 + 0.05*i, 0.7],
+            "color": [0.80, 0.16, 0.12] if i % 2 == 0 else [0.62, 0.11, 0.09],  # signal red / dark red
         }}      
 
         bodies.append(body)              

@@ -25,6 +25,17 @@ namespace seastack::viz {
 
 using namespace vsg_config;
 
+namespace {
+
+/// Wireframe line half-width [m] as a fraction of the grid cell spacing, so the
+/// grid reads the same on a 25 m patch and a 450 m patch.
+double WireframeHalfWidth(double spacing_x, double spacing_y) {
+    constexpr double kFractionOfCell = 0.03;
+    return kFractionOfCell * std::min(spacing_x, spacing_y);
+}
+
+}  // namespace
+
 // Visitor to find vertex (N=0) or normal (N=1) arrays in VSG scene graph.
 template <int N>
 class FindVec3BufferData : public vsg::Visitor {
@@ -442,7 +453,7 @@ void AnimatedWaterSurface::InitializeWireframe() {
     const double half_size_y = grid_size_y / 2.0;
     const double spacing_x = grid_size_x / (n - 1);
     const double spacing_y = grid_size_y / (n - 1);
-    const double line_half_width = 0.05;
+    const double line_half_width = WireframeHalfWidth(spacing_x, spacing_y);
 
     std::vector<Vec3>& verts = wireframe_mesh.vertices;
     std::vector<std::array<int, 3>>& faces = wireframe_mesh.faces;
@@ -562,7 +573,7 @@ void AnimatedWaterSurface::UpdateWireframe() {
     const double half_size_y = grid_size_y / 2.0;
     const double spacing_x = grid_size_x / (n - 1);
     const double spacing_y = grid_size_y / (n - 1);
-    const double line_half_width = 0.05;
+    const double line_half_width = WireframeHalfWidth(spacing_x, spacing_y);
     const float z_offset = 0.02f;
 
     size_t soup_idx = 0;

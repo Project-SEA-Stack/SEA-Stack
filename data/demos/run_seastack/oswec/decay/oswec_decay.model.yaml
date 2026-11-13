@@ -22,7 +22,7 @@ model:
         products: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/flap.obj
-        color: [0.3, 0.1, 0.1]
+        color: [0.95, 0.75, 0.10]
 
     - name: body2  # Base
       location: [0, 0, -10.15]
@@ -36,7 +36,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/base.obj
-        color: [0.3, 0.1, 0.6]
+        color: [0.33, 0.36, 0.40]
 
     - name: ground
       location: [0, 0, 0]

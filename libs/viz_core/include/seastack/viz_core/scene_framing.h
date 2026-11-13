@@ -63,6 +63,18 @@ inline double ModelLengthScale(const Bounds3& b) {
     return std::max({s[0], s[1], kMinModelLength});
 }
 
+/// Mean plan-view model size [m]: the geometric mean of the plan sides, so a
+/// long slender model (e.g. a 180 m x 3 m attenuator) is not sized from its
+/// length alone. Used for mooring radii and the still-water patch. Equals
+/// ModelLengthScale for a square plan.
+inline double MeanPlanLength(const Bounds3& b) {
+    if (!b.IsValid()) {
+        return kMinModelLength;
+    }
+    const Vec3 s = b.Size();
+    return std::sqrt(std::max(s[0], kMinModelLength) * std::max(s[1], kMinModelLength));
+}
+
 /// Deep-water linear wavelength L = g T^2 / (2 pi) [m] for period T [s].
 /// Used only to size the visual water patch; returns 0 for T <= 0.
 inline double DeepWaterWavelength(double period_s, double gravity = 9.81) {
@@ -179,15 +191,22 @@ struct WaterExtent {
 };
 
 /// Water patch side as multiples of the model length and of the wavelength.
-inline constexpr double kWaterModelFactor = 2.5;
+inline constexpr double kWaterModelFactor = 1.75;
 inline constexpr double kWaterWavelengthFactor = 1.5;
+/// Still-water minimum side as a multiple of MeanPlanLength, so a small body
+/// with no wavelength to size from still sits on a sizeable patch.
+inline constexpr double kStillWaterPlanFactor = 5.0;
 
-/// Square water patch large enough to show the model with some sea around it
-/// and at least kWaterWavelengthFactor wavelengths (if a wavelength is given).
+/// Square water patch that covers the model with some sea around it and at
+/// least kWaterWavelengthFactor wavelengths. With no wavelength (still water,
+/// wavelength_m <= 0) the side is at least kStillWaterPlanFactor mean plan sizes.
 inline WaterExtent ComputeWaterExtent(const Bounds3& bounds, double wavelength_m) {
     WaterExtent w;
-    const double side = std::max(kWaterModelFactor * ModelLengthScale(bounds),
-                                 kWaterWavelengthFactor * std::max(wavelength_m, 0.0));
+    double side = std::max(kWaterModelFactor * ModelLengthScale(bounds),
+                           kWaterWavelengthFactor * std::max(wavelength_m, 0.0));
+    if (!(wavelength_m > 0.0)) {
+        side = std::max(side, kStillWaterPlanFactor * MeanPlanLength(bounds));
+    }
     w.width = side;
     w.length = side;
     if (bounds.IsValid()) {
@@ -205,9 +224,10 @@ struct MooringVizRadii {
     double node_marker = 0.2;
 };
 
-/// Default mooring marker radii proportional to the model length; chosen so a
-/// 20 m device (RM3 float) keeps the previous fixed defaults
-/// (0.15 / 0.5 / 0.2 m).
+/// Default mooring radii proportional to the model length (see
+/// MeanPlanLength); a 20 m device gets 0.15 m lines, 0.5 m endpoints and
+/// 0.2 m node markers. Node markers show MoorDyn's discretisation, not
+/// hardware; a radius of 0 hides them.
 inline MooringVizRadii DefaultMooringVizRadii(double model_length_m) {
     const double L = std::max(model_length_m, kMinModelLength);
     MooringVizRadii r;

@@ -22,7 +22,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/center.obj
-        color: [0.25, 0.35, 0.55]
+        color: [0.95, 0.42, 0.10]
         # Body ref at CoG (z=-1.75); shift mesh +Z by -kCenterCogZ like trimaran_hulls.h AddVisualShape.
         shape_location: [0.0, 0.0, 1.75]
 
@@ -39,7 +39,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/outrigger.obj
-        color: [0.3, 0.45, 0.6]
+        color: [0.95, 0.42, 0.10]
         shape_location: [0.0, 0.0, 0.75]
 
     # Port outrigger (H5 body3) at y = +15 m.
@@ -55,7 +55,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/outrigger.obj
-        color: [0.35, 0.5, 0.65]
+        color: [0.95, 0.42, 0.10]
         shape_location: [0.0, 0.0, 0.75]
 
     # Rigid cross-arm starboard (no hydrodynamics); box L x 0.35 x 0.35, rho = 600 kg/m^3.
@@ -73,7 +73,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/arm_rigid.obj
-        color: [0.45, 0.38, 0.22]
+        color: [0.33, 0.36, 0.40]
 
     # Rigid cross-arm port (same convention as arm_stbd).
     - name: arm_port
@@ -89,7 +89,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/arm_rigid.obj
-        color: [0.45, 0.38, 0.22]
+        color: [0.33, 0.36, 0.40]
 
   joints:
     # World +X revolute at center deck (ChFramed with QuatFromAngleY(pi/2) in C++ demo).
