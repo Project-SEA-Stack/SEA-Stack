@@ -112,6 +112,21 @@ class SeastackImGuiEvents : public vsg::Inherit<vsgImGui::SendEventsToImGui, Sea
     bool imgui_owns_drag_ = false;  ///< Current press went to ImGui (not the camera)
 };
 
+/// Escape closes the window, except while an ImGui text field is being edited or
+/// a popup is open: there Escape cancels the edit or closes the popup.
+class SeastackCloseHandler : public vsg::Inherit<vsg::CloseHandler, SeastackCloseHandler> {
+  public:
+    explicit SeastackCloseHandler(vsg::Viewer* viewer) : Inherit(viewer) {}
+    void apply(vsg::KeyPressEvent& key_press) override {
+        if (ImGui::GetCurrentContext() != nullptr &&
+            (ImGui::GetIO().WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId))) {
+            return;
+        }
+        vsg::CloseHandler::apply(key_press);
+    }
+    using vsg::CloseHandler::apply;
+};
+
 /// Pipeline states for SEA-Stack meshes: both faces drawn (BEM panel meshes
 /// may be open or wound inwards), optional alpha blending.
 struct SetPipelineStates : public vsg::Visitor {
@@ -312,7 +327,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
 
     // ImGui gets events first, so dragging a slider does not move the camera.
     viewer_->addEventHandler(SeastackImGuiEvents::create());
-    viewer_->addEventHandler(vsg::CloseHandler::create(viewer_));
+    viewer_->addEventHandler(SeastackCloseHandler::create(viewer_));
     trackball_ = SeastackTrackball::create(camera_);
     viewer_->addEventHandler(trackball_);
 

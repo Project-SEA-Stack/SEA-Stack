@@ -25,8 +25,11 @@
 
 #include <chrono/core/ChDataPath.h>
 
+#include <seastack/adapters/chrono/runtime_controls.h>
+
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -307,6 +310,103 @@ void GUIImplSeastack::HandleScreenshot() {
     }
 }
 
+void GUIImplSeastack::SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
+                                         const std::string& schedule_path, double time_step) {
+    runtime_controls_ = controls;
+    schedule_path_ = schedule_path;
+    time_step_ = time_step;
+}
+
+void GUIImplSeastack::SyncParameters() {
+    ParametersPanelState& panel = viewer_settings_->parameters;
+    panel.available = (runtime_controls_ != nullptr) && !replay_;
+    if (!panel.available) {
+        return;
+    }
+    seastack::chrono::RuntimeControls& controls = *runtime_controls_;
+
+    // Requests from the last GUI frame.
+    for (const auto& [id, value] : panel.requests) {
+        std::string error;
+        if (!controls.Request(id, value, &error)) {
+            panel.status = "Not applied: " + error;
+        } else {
+            panel.status.clear();
+        }
+    }
+    panel.requests.clear();
+    if (panel.export_requested) {
+        panel.export_requested = false;
+        try {
+            seastack::chrono::WriteRuntimeSchedule(schedule_path_, controls.events(), time_step_,
+                                                   "Exported from the GUI during the run");
+            panel.status = "Wrote " + std::filesystem::path(schedule_path_).filename().string();
+        } catch (const std::exception& e) {
+            panel.status = std::string("Export failed: ") + e.what();
+        }
+    }
+
+    panel.schedule_path = schedule_path_;
+    panel.run_finished = ui_->runStatus.finished;
+    panel.rows.clear();
+    for (const auto& p : controls.parameters()) {
+        ParameterRow row;
+        row.id = p.id;
+        row.element = p.element;
+        row.link_name = p.link_name;
+        row.field = p.field;
+        row.link = (p.element == "tsda" ? "TSDA " : "RSDA ") + p.link_name;
+        row.label = p.label;
+        row.units = p.units;
+        row.source = p.source;
+        row.owner = p.owner;
+        row.value = p.value;
+        row.default_value = p.default_value;
+        row.min_value = p.min_value;
+        row.pending = p.pending;
+        row.pending_value = p.pending_value;
+        panel.rows.push_back(std::move(row));
+    }
+    // One line per change; a group edit (same step, field and value on several
+    // links) is shown as one line.
+    const auto& events = controls.events();
+    if (events.size() == shown_event_count_) {
+        return;
+    }
+    shown_event_count_ = events.size();
+    panel.event_lines.clear();
+    for (size_t i = 0; i < events.size();) {
+        const auto& e = events[i];
+        const seastack::chrono::RuntimeParameter* p = controls.Find(e.command.parameter);
+        size_t n = 1;
+        bool same_previous = true;
+        while (p != nullptr && i + n < events.size()) {
+            const auto& next = events[i + n];
+            const seastack::chrono::RuntimeParameter* q = controls.Find(next.command.parameter);
+            if (q == nullptr || next.command.step != e.command.step || next.command.value != e.command.value ||
+                q->element != p->element || q->field != p->field) {
+                break;
+            }
+            same_previous = same_previous && (next.previous_value == e.previous_value);
+            ++n;
+        }
+        std::string name = e.command.parameter;
+        if (p != nullptr) {
+            name = (n == 1 ? p->link_name : std::to_string(n) + (p->element == "tsda" ? " TSDAs" : " RSDAs")) +
+                   " " + p->label;
+        }
+        char previous[32] = "mixed";
+        if (same_previous) {
+            std::snprintf(previous, sizeof(previous), "%.6g", e.previous_value);
+        }
+        char line[256];
+        std::snprintf(line, sizeof(line), "t = %.2f s  %s: %s -> %.6g %s", e.command.time, name.c_str(), previous,
+                      e.command.value, p ? p->units.c_str() : "");
+        panel.event_lines.emplace_back(line);
+        i += n;
+    }
+}
+
 void GUIImplSeastack::RecordFrame(const VizFrame& live) {
     // Memory budget for the timeline; at about 3 kB per frame (10 bodies,
     // 4 lines x 40 nodes) this keeps roughly 85k frames.
@@ -431,6 +531,7 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     viewer_->SetFrame(frame);
     viewer_->SetShowBodyFrames(viewer_settings_->show_body_frames);
     HandleScreenshot();
+    SyncParameters();
     UpdateMooring(frame);
     UpdateWater(frame);
     UpdateSceneViewport();

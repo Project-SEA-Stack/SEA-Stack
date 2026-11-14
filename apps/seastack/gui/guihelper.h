@@ -12,7 +12,10 @@ class ChSystem;
 }
 
 namespace seastack::hydro { class WaveBase; }
-namespace seastack::chrono { struct ReplayRecording; }
+namespace seastack::chrono {
+struct ReplayRecording;
+class RuntimeControls;
+}  // namespace seastack::chrono
 
 namespace seastack::viz {
 
@@ -113,6 +116,17 @@ class UI {
                                               double endpoint_radius_m,
                                               double node_marker_radius_m);
 
+    /**@brief Show the TSDA/RSDA parameters and accept edits (SEA-Stack viewer).
+     *
+     * Edits are queued in `controls` and applied by the simulation loop at the
+     * next step boundary. `schedule_path` is where "Export schedule" writes
+     * the applied changes (empty: no output directory, export disabled);
+     * `time_step` [s] is recorded in that file. Call after Init(). The
+     * controls must outlive the GUI loop. No effect in headless UI.
+     */
+    virtual void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
+                                    const std::string& schedule_path, double time_step);
+
     /**@brief return the internal system.
      *
      * Should be called after init.
@@ -159,6 +173,8 @@ class GUI : public UI {
     void SetMooringVisualizationRadii(double line_radius_m,
                                       double endpoint_radius_m,
                                       double node_marker_radius_m) override;
+    void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
+                            const std::string& schedule_path, double time_step) override;
 
   private:
     std::shared_ptr<seastack::viz::GUIImpl> pImpl;

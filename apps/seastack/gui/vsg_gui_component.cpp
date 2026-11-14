@@ -25,6 +25,7 @@
 #include <ctime>
 #include <filesystem>
 #include <iterator>
+#include <limits>
 
 namespace seastack::viz {
 
@@ -560,6 +561,9 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
     // ---- Mooring ----
     RenderMooringPanel();
 
+    // ---- Parameters ----
+    RenderParametersPanel();
+
     // ---- Display ----
     if (ImGui::CollapsingHeader("Display")) {
         ImGui::SliderInt("Update Hz", &settings_->update_hz, 10, 60, "%d Hz");
@@ -657,6 +661,359 @@ void SeastackGuiComponent::RenderViewToolbar() {
     }
 
     ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+
+void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
+                                                 const std::vector<const ParameterRow*>& members) {
+    ParametersPanelState& panel = settings_->parameters;
+    const ParameterRow& first = *members.front();
+    auto current = [](const ParameterRow& r) { return r.pending ? r.pending_value : r.value; };
+
+    std::vector<const ParameterRow*> editable;
+    for (const ParameterRow* r : members) {
+        if (r->owner.empty()) editable.push_back(r);
+    }
+    const std::vector<const ParameterRow*>& shown_rows = editable.empty() ? members : editable;
+    const ParameterRow& ref = *shown_rows.front();
+
+    constexpr double kInf = std::numeric_limits<double>::infinity();
+    bool mixed = false;
+    bool changed = false;
+    bool pending = false;
+    double d_lo = kInf, d_hi = -kInf, v_lo = kInf, v_hi = -kInf;  // defaults / current values
+    double pos_lo = kInf, pos_hi = 0.0;                             // positive defaults (else values)
+    for (const ParameterRow* r : shown_rows) {
+        const double v = current(*r);
+        mixed = mixed || (v != current(ref));
+        changed = changed || (r->value != r->default_value);
+        pending = pending || r->pending;
+        d_lo = std::min(d_lo, r->default_value);
+        d_hi = std::max(d_hi, r->default_value);
+        v_lo = std::min(v_lo, v);
+        v_hi = std::max(v_hi, v);
+        if (r->default_value > 0.0) {
+            pos_lo = std::min(pos_lo, r->default_value);
+            pos_hi = std::max(pos_hi, r->default_value);
+        }
+    }
+    if (pos_hi == 0.0) {
+        for (const ParameterRow* r : shown_rows) {
+            if (current(*r) > 0.0) {
+                pos_lo = std::min(pos_lo, current(*r));
+                pos_hi = std::max(pos_hi, current(*r));
+            }
+        }
+    }
+
+    // Slider range. Coefficients: logarithmic, start value /10 to x10. Rest
+    // length: 0 to twice the start value. Rest angle: start value +/- pi rad.
+    // With no positive start value there is no scale, so the field is typed.
+    constexpr double kPi = 3.14159265358979323846;
+    bool slider = true;
+    bool logarithmic = false;
+    double lo = 0.0, hi = 0.0;
+    if (first.field == "rest_angle") {
+        lo = std::min(d_lo - kPi, v_lo);
+        hi = std::max(d_hi + kPi, v_hi);
+    } else if (first.field == "rest_length") {
+        slider = pos_hi > 0.0;
+        hi = std::max(2.0 * pos_hi, v_hi);
+    } else {
+        slider = pos_hi > 0.0;
+        logarithmic = true;
+        lo = pos_lo / 10.0;
+        if (v_lo > 0.0) lo = std::min(lo, v_lo);
+        hi = std::max(10.0 * pos_hi, v_hi);
+    }
+    const double default_lo = lo, default_hi = hi;
+    const bool default_slider = slider;
+    const auto custom_range = param_ranges_.find(key);
+    if (custom_range != param_ranges_.end()) {
+        slider = true;
+        lo = custom_range->second.first;
+        hi = custom_range->second.second;
+    }
+
+    ImGui::PushID(key.c_str());
+    const float x0 = ImGui::GetCursorPosX();
+    const float label_w = ImGui::CalcTextSize("Rest length").x + ImGui::GetStyle().ItemSpacing.x;
+    const float slider_w = 1.3f * ImGui::CalcTextSize("-0.000000e+00").x;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(first.label.c_str());
+    ImGui::SameLine(x0 + label_w);
+
+    const bool editing = (param_edit_key_ == key);
+    double v = editing ? param_edit_value_ : current(ref);
+    ImGui::BeginDisabled(editable.empty() || panel.run_finished);
+    ImGui::SetNextItemWidth(slider_w);
+    bool changed_now = false;
+    if (slider) {
+        const char* format = (mixed && !editing) ? "mixed" : "%.4g";
+        changed_now = ImGui::SliderScalar("##value", ImGuiDataType_Double, &v, &lo, &hi, format,
+                                          logarithmic ? ImGuiSliderFlags_Logarithmic : ImGuiSliderFlags_None);
+    } else {
+        changed_now = ImGui::InputDouble("##value", &v, 0.0, 0.0, "%.6g");
+    }
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+        const double value = (changed_now || !editing) ? v : param_edit_value_;
+        for (const ParameterRow* r : editable) {
+            if (current(*r) != value) panel.requests.emplace_back(r->id, value);
+        }
+        param_edit_key_.clear();
+    } else if (ImGui::IsItemActive()) {
+        param_edit_key_ = key;
+        param_edit_value_ = v;
+    } else if (editing) {
+        param_edit_key_.clear();  // cancelled (Escape)
+    }
+    ImGui::OpenPopupOnItemClick("range", ImGuiPopupFlags_MouseButtonRight);
+    ImGui::EndDisabled();
+
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !editing) {
+        const char* how = slider ? "Drag and release to apply from the next time step\n"
+                                   "(Ctrl+click to type a value; right-click to change the slider range)."
+                                 : "Start value is 0, so there is no scale for a slider:\n"
+                                   "type a value and press Enter. It applies from the next time step.\n"
+                                   "Right-click to set a slider range.";
+        if (editable.empty()) {
+            ImGui::SetTooltip("Set by %s; it cannot be changed here.\nValue at start: %.6g %s", first.owner.c_str(),
+                              first.default_value, first.units.c_str());
+        } else if (panel.run_finished) {
+            ImGui::SetTooltip("The run has ended; changes can no longer take effect.");
+        } else if (members.size() == 1) {
+            ImGui::SetTooltip("%s [%s], from %s. Start value %.6g.\n%s\nEvery change is logged; Export schedule reruns it.%s",
+                              first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how,
+                              std::isfinite(first.min_value) ? "\nMust be >= 0." : "");
+        } else {
+            char owned_note[96] = "";
+            if (editable.size() < members.size()) {
+                std::snprintf(owned_note, sizeof(owned_note), "\n%zu owned links are left unchanged.",
+                              members.size() - editable.size());
+            }
+            ImGui::SetTooltip("%s [%s] of %zu links%s.\n%s\nSets all of them; each link's change is logged.%s",
+                              first.label.c_str(), first.units.c_str(), editable.size(),
+                              mixed ? " (values differ)" : "", how, owned_note);
+        }
+    }
+
+    // Slider range only changes what the slider can reach, never the model.
+    if (ImGui::BeginPopup("range")) {
+        ImGui::Text("Slider range for %s [%s]", first.label.c_str(), first.units.c_str());
+        double r_lo = lo, r_hi = hi;
+        ImGui::SetNextItemWidth(slider_w);
+        const bool lo_edit = ImGui::InputDouble("Min", &r_lo, 0.0, 0.0, "%.6g");
+        ImGui::SetNextItemWidth(slider_w);
+        const bool hi_edit = ImGui::InputDouble("Max", &r_hi, 0.0, 0.0, "%.6g");
+        const double floor = logarithmic ? 0.0 : first.min_value;
+        auto valid = [&](double a, double b) {
+            const bool above_floor = logarithmic ? a > floor : !(std::isfinite(floor) && a < floor);
+            return std::isfinite(a) && std::isfinite(b) && a < b && above_floor;
+        };
+        if ((lo_edit || hi_edit) && valid(r_lo, r_hi)) param_ranges_[key] = {r_lo, r_hi};
+        if (logarithmic) {
+            ImGui::TextDisabled("Logarithmic scale: Min must be > 0.");
+        } else if (std::isfinite(first.min_value)) {
+            ImGui::TextDisabled("Min must be >= %.6g.", first.min_value);
+        }
+        if (ImGui::Button("Max x10") && valid(lo, 10.0 * hi)) param_ranges_[key] = {lo, 10.0 * hi};
+        ImGui::SameLine();
+        if (ImGui::Button(logarithmic ? "Min /10" : "Min - span")) {
+            const double new_lo = logarithmic ? lo / 10.0 : lo - (hi - lo);
+            if (valid(new_lo, hi)) param_ranges_[key] = {new_lo, hi};
+        }
+        if (custom_range != param_ranges_.end()) {
+            if (ImGui::Button("Default range")) param_ranges_.erase(key);
+            if (default_slider) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%.4g to %.4g)", default_lo, default_hi);
+            }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", first.units.c_str());
+    if (!editable.empty() && !panel.run_finished && changed && !pending) {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Reset")) {
+            for (const ParameterRow* r : editable) {
+                if (r->value != r->default_value) panel.requests.emplace_back(r->id, r->default_value);
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            if (members.size() == 1) {
+                ImGui::SetTooltip("Back to the start value %.6g %s (from the next step).", first.default_value,
+                                  first.units.c_str());
+            } else {
+                ImGui::SetTooltip("Back to each link's start value (from the next step).");
+            }
+        }
+    }
+    if (pending) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("next step");
+    }
+    ImGui::PopID();
+}
+
+void SeastackGuiComponent::RenderParametersPanel() {
+    if (!settings_ || !settings_->parameters.available) return;
+    ParametersPanelState& panel = settings_->parameters;
+
+    if (!ImGui::CollapsingHeader("Parameters", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+    if (panel.rows.empty()) {
+        ImGui::TextDisabled("No TSDA or RSDA in the model.");
+        return;
+    }
+
+    // Links in model order, each with its rows (fields in registry order).
+    struct LinkRows {
+        std::string element;
+        std::string name;
+        std::string heading;
+        std::vector<const ParameterRow*> rows;
+    };
+    std::vector<LinkRows> links;
+    for (const ParameterRow& row : panel.rows) {
+        if (links.empty() || links.back().element != row.element || links.back().name != row.link_name) {
+            links.push_back({row.element, row.link_name, row.link, {}});
+        }
+        links.back().rows.push_back(&row);
+    }
+
+    // Sliders for one field across several links: one per field all links have.
+    auto render_group_fields = [&](const std::string& key, const std::vector<const LinkRows*>& members) {
+        for (size_t f = 0; f < members.front()->rows.size(); ++f) {
+            const std::string& field = members.front()->rows[f]->field;
+            std::vector<const ParameterRow*> rows;
+            for (const LinkRows* link : members) {
+                for (const ParameterRow* row : link->rows) {
+                    if (row->field == field) rows.push_back(row);
+                }
+            }
+            if (rows.size() == members.size()) {
+                RenderParameterSlider(key + "." + field, rows);
+            }
+        }
+    };
+    auto render_link = [&](const LinkRows& link) {
+        for (const ParameterRow* row : link.rows) {
+            RenderParameterSlider(row->id, {row});
+        }
+    };
+
+    if (links.size() == 1) {
+        ImGui::TextUnformatted(links.front().heading.c_str());
+        render_link(links.front());
+    } else {
+        for (const char* element : {"tsda", "rsda"}) {
+            std::vector<const LinkRows*> of_element;
+            for (const LinkRows& link : links) {
+                if (link.element == element) of_element.push_back(&link);
+            }
+            if (of_element.empty()) continue;
+            const bool tsda = std::string(element) == "tsda";
+
+            // Links sharing a name prefix ("ram_12" for "ram_12_top", ...) form a group.
+            std::vector<std::pair<std::string, std::vector<const LinkRows*>>> groups;
+            std::vector<const LinkRows*> ungrouped;
+            for (const LinkRows* link : of_element) {
+                const size_t cut = link->name.find_last_of('_');
+                const std::string prefix = (cut == std::string::npos || cut == 0) ? "" : link->name.substr(0, cut);
+                size_t count = 0;
+                for (const LinkRows* other : of_element) {
+                    if (other->name.size() > prefix.size() && other->name.compare(0, prefix.size() + 1, prefix + "_") == 0) {
+                        ++count;
+                    }
+                }
+                if (prefix.empty() || count < 2 || count == of_element.size()) {
+                    ungrouped.push_back(link);
+                    continue;
+                }
+                auto it = std::find_if(groups.begin(), groups.end(), [&](const auto& g) { return g.first == prefix; });
+                if (it == groups.end()) {
+                    groups.push_back({prefix, {}});
+                    it = std::prev(groups.end());
+                }
+                it->second.push_back(link);
+            }
+            std::sort(groups.begin(), groups.end(),
+                      [](const auto& a, const auto& b) { return a.first < b.first; });
+
+            const bool few = of_element.size() <= 3;
+            if (of_element.size() >= 2) {
+                char heading[64];
+                std::snprintf(heading, sizeof(heading), "All %s (%zu)", tsda ? "TSDAs" : "RSDAs", of_element.size());
+                ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+                if (ImGui::TreeNode(heading)) {
+                    render_group_fields(std::string("all.") + element, of_element);
+                    ImGui::TreePop();
+                }
+            }
+            for (const auto& [prefix, members] : groups) {
+                char heading[96];
+                std::snprintf(heading, sizeof(heading), "%s_* (%zu)", prefix.c_str(), members.size());
+                if (ImGui::TreeNode(heading)) {
+                    render_group_fields(std::string("group.") + element + "." + prefix, members);
+                    for (const LinkRows* link : members) {
+                        if (ImGui::TreeNode(link->name.c_str())) {
+                            render_link(*link);
+                            ImGui::TreePop();
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+            for (const LinkRows* link : ungrouped) {
+                ImGui::SetNextItemOpen(few, ImGuiCond_Once);
+                if (ImGui::TreeNode(link->heading.c_str())) {
+                    render_link(*link);
+                    ImGui::TreePop();
+                }
+            }
+        }
+    }
+
+    ImGui::Spacing();
+    if (panel.event_lines.empty()) {
+        ImGui::TextDisabled("No changes yet.");
+    } else {
+        ImGui::Text("Changes (%zu):", panel.event_lines.size());
+        constexpr size_t kMaxShown = 8;
+        const size_t first = panel.event_lines.size() > kMaxShown ? panel.event_lines.size() - kMaxShown : 0;
+        if (first > 0) {
+            ImGui::TextDisabled("  ... %zu earlier", first);
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        for (size_t i = first; i < panel.event_lines.size(); ++i) {
+            ImGui::TextWrapped("%s", panel.event_lines[i].c_str());
+        }
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::BeginDisabled(panel.schedule_path.empty() || panel.event_lines.empty());
+    if (ImGui::Button("Export schedule")) {
+        panel.export_requested = true;
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        if (panel.schedule_path.empty()) {
+            ImGui::SetTooltip("Needs output_directory in the setup YAML.");
+        } else {
+            ImGui::SetTooltip("Write the changes to\n%s\nRerun: run_seastack <case> --nogui --schedule <file>.\n"
+                              "Also written automatically when the run ends.",
+                              panel.schedule_path.c_str());
+        }
+    }
+    if (!panel.status.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", panel.status.c_str());
+        ImGui::PopTextWrapPos();
+    }
 }
 
 // ---------------------------------------------------------------------------

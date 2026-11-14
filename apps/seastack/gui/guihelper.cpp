@@ -75,6 +75,11 @@ void UI::SetMooringVisualizationRadii(double /*line_radius_m*/,
     // Default (headless) UI does not render mooring lines.
 }
 
+void UI::SetRuntimeControls(seastack::chrono::RuntimeControls* /*controls*/,
+                            const std::string& /*schedule_path*/, double /*time_step*/) {
+    // Default (headless) UI has no parameter panel.
+}
+
 // -----------------------------------------------------------------------------
 
 GUI::GUI(ViewerBackend backend) : backend_(backend) {
@@ -161,4 +166,9 @@ void GUI::SetMooringVisualizationRadii(double line_radius_m,
                                       double endpoint_radius_m,
                                       double node_marker_radius_m) {
     pImpl->SetMooringVisualizationRadii(line_radius_m, endpoint_radius_m, node_marker_radius_m);
+}
+
+void GUI::SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
+                             const std::string& schedule_path, double time_step) {
+    pImpl->SetRuntimeControls(controls, schedule_path, time_step);
 }

@@ -59,6 +59,8 @@ class GUIImpl {
     virtual void SetMooringVisualizationRadii(double /*line_radius_m*/,
                                               double /*endpoint_radius_m*/,
                                               double /*node_marker_radius_m*/) {}
+    virtual void SetRuntimeControls(seastack::chrono::RuntimeControls* /*controls*/,
+                                    const std::string& /*schedule_path*/, double /*time_step*/) {}
 };
 
 #ifdef SEASTACK_HAVE_VSG
@@ -143,8 +145,14 @@ class GUIImplSeastack : public GUIImpl {
     void SetMooringLineProvider(MooringVizProvider provider) override;
     void SetMooringVisualizationRadii(double line_radius_m, double endpoint_radius_m,
                                       double node_marker_radius_m) override;
+    void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
+                            const std::string& schedule_path, double time_step) override;
 
   private:
+    /// Copy parameters and applied changes to the GUI panel and pass its edit
+    /// and export requests to the runtime controls.
+    void SyncParameters();
+
     /// Viewer, GUI and camera set-up shared by Init() and InitReplay().
     void InitViewer(UI& ui, const char* title);
     /// The scene drawn: from the live system, or from the replayed file.
@@ -200,6 +208,10 @@ class GUIImplSeastack : public GUIImpl {
     double mooring_line_radius_m_ = -1.0;         ///< YAML override [m]; < 0 = model-scaled default
     double mooring_endpoint_radius_m_ = -1.0;     ///< YAML override [m]; < 0 = model-scaled default
     double mooring_node_marker_radius_m_ = -1.0;  ///< YAML override [m]; < 0 = model-scaled default
+    seastack::chrono::RuntimeControls* runtime_controls_ = nullptr;  ///< Not owned; null = no panel
+    std::string schedule_path_;  ///< Export target; empty = no output directory
+    double time_step_ = 0.0;     ///< Run time step [s], written to the schedule
+    size_t shown_event_count_ = 0;  ///< Events already turned into panel.event_lines
 };
 #endif
 

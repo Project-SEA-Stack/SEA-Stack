@@ -14,7 +14,10 @@
 #include <seastack/viz_core/visual_theme.h>
 
 #include <cstddef>
+#include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace seastack::viz {
 
@@ -52,6 +55,41 @@ struct TimelineState {
     int step_request = 0;         ///< -1 / +1 = show the previous / next recorded frame
     bool resume_on_live = false;  ///< Restart stepping when returning to live
     bool smooth_slow_motion = true;  ///< Interpolate the live view when steps are slower than frames
+};
+
+/// One TSDA/RSDA parameter as shown in the Parameters panel.
+struct ParameterRow {
+    std::string id;        ///< Runtime parameter id, e.g. "tsda.PTO.damping_coefficient"
+    std::string element;   ///< "tsda" or "rsda"
+    std::string link_name; ///< Link name in the model, e.g. "PTO"
+    std::string field;     ///< e.g. "damping_coefficient", "rest_length", "rest_angle"
+    std::string link;      ///< Group heading, e.g. "TSDA PTO"
+    std::string label;     ///< e.g. "Damping"
+    std::string units;     ///< SI units, e.g. "N*s/m"
+    std::string source;    ///< "model YAML" or "default"
+    std::string owner;     ///< Empty: editable. Otherwise who sets it (field disabled).
+    double value = 0.0;          ///< In effect now
+    double default_value = 0.0;  ///< At the start of the run
+    double min_value = 0.0;      ///< Lowest accepted value
+    bool pending = false;        ///< An edit waits for the next step
+    double pending_value = 0.0;
+};
+
+/// Parameters panel: live TSDA/RSDA parameters and the changes applied so far
+/// (SEA-Stack viewer, live runs). Edits change the simulation from the next
+/// step on; every change is logged and can be exported as a schedule.
+struct ParametersPanelState {
+    // --- Written by the viewer every frame ---
+    bool available = false;
+    std::vector<ParameterRow> rows;
+    std::vector<std::string> event_lines;  ///< Applied changes, oldest first
+    std::string schedule_path;             ///< Export target; empty = no output directory
+    bool run_finished = false;             ///< Edits can no longer take effect
+
+    // --- Written by the GUI, consumed by the viewer ---
+    std::vector<std::pair<std::string, double>> requests;  ///< (id, value) for the next step
+    bool export_requested = false;
+    std::string status;  ///< Last rejected edit or export result; empty = none
 };
 
 /// Runtime-adjustable water visualization settings.
@@ -115,6 +153,9 @@ struct ViewerSettings {
 
     // --- Timeline (SEA-Stack viewer) ---
     TimelineState timeline;
+
+    // --- Runtime parameters (SEA-Stack viewer) ---
+    ParametersPanelState parameters;
 };
 
 /// Unused file path `<directory>/screenshot_YYYYMMDD_HHMMSS[_n].png`;
@@ -172,6 +213,11 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     void RenderInspector(const ImVec2& pos, const ImVec2& size);
     void RenderViewToolbar();
     void RenderMooringPanel();
+    /// TSDA/RSDA parameters: edit, reset, owner, and the log of applied changes.
+    void RenderParametersPanel();
+    /// One slider that sets `field` on every editable member (one row per member).
+    /// The value is requested when the slider is released (or a typed value entered).
+    void RenderParameterSlider(const std::string& key, const std::vector<const ParameterRow*>& members);
     void RenderColorBar();
 
     ::chrono::vsg3d::ChVisualSystemVSG* vsys_;
@@ -191,6 +237,11 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     bool imgui_theme_applied_ = false;
     float ui_scale_ = 1.0f;  ///< Display scale applied to panel sizes [-]
     bool fixed_range_error_ = false;  ///< Last fixed mooring range entry was rejected
+    /// Parameter slider being dragged (or typed into) and its value; applied on release.
+    std::string param_edit_key_;
+    double param_edit_value_ = 0.0;
+    /// Slider ranges set by the user (right-click), keyed by slider; {min, max} in parameter units.
+    std::map<std::string, std::pair<double, double>> param_ranges_;
     VisualTheme imgui_theme_ = VisualTheme::kDark;  ///< Theme of the current ImGui style
     const RunStatus& run_status_;
     ViewerSettings* settings_;
