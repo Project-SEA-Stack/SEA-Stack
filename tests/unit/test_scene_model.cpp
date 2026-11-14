@@ -56,6 +56,12 @@ int main() {
         TEST_NEAR(a[0], b[0], 1e-12, "compose matches nested transform: x");
         TEST_NEAR(a[1], b[1], 1e-12, "compose matches nested transform: y");
         TEST_NEAR(world.rotation[0], std::cos(0.5 * kPi), 1e-12, "compose: two 90 deg turns = 180 deg");
+
+        const Pose round_trip = Compose(Inverse(body), Compose(body, shape));
+        TEST_NEAR(round_trip.position[0], shape.position[0], 1e-12, "inverse undoes compose: position");
+        TEST_NEAR(round_trip.rotation[3], shape.rotation[3], 1e-12, "inverse undoes compose: rotation");
+        const Vec3 back = Transform(Inverse(body), Transform(body, {1.0, 2.0, 3.0}));
+        TEST_NEAR(back[1], 2.0, 1e-12, "inverse maps a point back");
     }
 
     // --- Consistency check ---

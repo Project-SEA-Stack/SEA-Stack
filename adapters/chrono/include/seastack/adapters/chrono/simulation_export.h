@@ -18,6 +18,7 @@
 #include <string>
 
 namespace seastack::hydro { struct KernelFitDiagnostics; }
+namespace seastack::viz { struct MooringLineVizData; }
 
 namespace chrono { class ChSystem; class ChBody; class ChLink; }
 namespace seastack::hydro_io { class H5Writer; }
@@ -170,7 +171,36 @@ class SimulationExporter {
                               const std::vector<double>& free_surface_time,
                               const std::vector<double>& free_surface_eta);
 
-    
+    /**
+     * @brief Write linear wave components under /inputs/simulation/waves/components.
+     *
+     * Arrays are 1D, same length N. Elevation convention:
+     *   eta_i = A * cos(k (x cos θ + y sin θ) − ω t + φ)
+     */
+    void WriteWaveComponents(const std::vector<double>& omega_rad_s,
+                             const std::vector<double>& k_rad_m,
+                             const std::vector<double>& amplitude_m,
+                             const std::vector<double>& phase_rad,
+                             const std::vector<double>& direction_rad);
+
+    /**
+     * @brief Write the visual scene for offline replay under /visualization.
+     *
+     * Self-contained: every supported body visual shape (box, sphere,
+     * cylinder, triangle mesh with its vertices), colours, the visual-frame
+     * offset from each body's centre-of-mass frame, the input pose at the
+     * current (start) time, MoorDyn topology and TSDA cable glyphs. Cable
+     * endpoints are then recorded with each output sample. Visual only;
+     * results are unchanged. Call after WriteModel() and before stepping.
+     * @param wave_ramp_duration_s Excitation ramp of the wave field [s] (0 = none),
+     *        so a replay shows the same ramped water surface.
+     * @param water_depth_m Water depth [m]; <= 0 = deep water.
+     * @param gravity_m_s2 Gravitational acceleration used by the wave field [m/s^2].
+     * @param viewer_colors True if a GUI viewer already painted the bodies (its
+     *        palette, linear colours); false for model colours as authored (headless).
+     */
+    void WriteVisualization(::chrono::ChSystem* system, double wave_ramp_duration_s, double water_depth_m,
+                            double gravity_m_s2, bool viewer_colors);
 
     // Runtime metadata (written into /meta/run at Finalize)
     /**
@@ -209,6 +239,22 @@ class SimulationExporter {
      */
     void RecordHydroForces(
         const std::vector<seastack::hydro::ComponentForceRecord>& records);
+
+    /**
+     * @brief Record MoorDyn line node positions / tensions for offline viz.
+     *
+     * Call once per simulation step after RecordStep. Geometry samples are
+     * appended only when the preceding RecordStep passed the decimation gate
+     * (animation rate). Per-line peak tension is updated every call so short
+     * snatch peaks are not missed between output frames.
+     */
+    void RecordMooringLines(
+        const std::vector<seastack::viz::MooringLineVizData>& lines);
+
+    /// True if the most recent RecordStep() wrote a time sample (not skipped
+    /// by decimation). Used by callers that sample auxiliary channels in sync
+    /// with the animation geometry rate.
+    bool LastStepWasRecorded() const;
 
     /**
      * @brief Write radiation kernel fit diagnostics to HDF5.

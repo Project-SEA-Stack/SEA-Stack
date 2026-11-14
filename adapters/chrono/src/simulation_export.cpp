@@ -5,7 +5,9 @@
 
 #include <seastack/adapters/chrono/simulation_export.h>
 #include <seastack/adapters/chrono/model_yaml_link_coeffs.h>
+#include <seastack/adapters/chrono/viz_extractor.h>
 #include <seastack/core/force_component.h>
+#include <seastack/core/mooring_viz_data.h>
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/radiation_types.h>
 #include <seastack/version.h>
@@ -187,8 +189,30 @@ struct SimulationExporter::Impl {
     std::vector<std::vector<double>> hydro_sum_moment;
     std::vector<std::string> hydro_body_names;
 
+    // ── Mooring line buffers (geometry at output rate; peaks every step) ──
+    struct MooringLineBuffers {
+        unsigned int num_nodes = 0;
+        std::vector<double> node_positions;   // N_frames * num_nodes * 3
+        std::vector<double> node_tensions;    // N_frames * num_nodes
+        std::vector<double> line_max_tension; // N_frames
+        double peak_tension_N = 0.0;          // max over all steps
+        double peak_tension_time_s = 0.0;
+    };
+    std::vector<MooringLineBuffers> mooring_lines;
+    bool mooring_initialized = false;
+    bool last_step_was_recorded = false;
+    /// MoorDyn endpoint types per line (start, end), for /visualization.
+    std::vector<std::array<int, 2>> mooring_end_types;
+
+    // ── Visualization (offline replay): scene source and cable endpoints ──
+    std::unique_ptr<VizExtractor> viz_extractor;
+    std::vector<std::vector<double>> cable_point1;   // [cable] -> N x 3 [m]
+    std::vector<std::vector<double>> cable_point2;   // [cable] -> N x 3 [m]
+    std::vector<std::vector<double>> cable_tension;  // [cable] -> N [N]
+
     ExportConfig export_config;
     double prev_time = 0.0;  // for energy trapezoidal integration under decimation
+    double last_sim_time = 0.0;  // updated every RecordStep (pre-decimation)
     int total_steps_seen = 0; // counts ALL steps (pre-decimation) for energy integ.
     int steps_seen = 0;       // counts recorded (post-decimation) steps
     H5Verbosity verbosity = H5Verbosity::Quiet;
@@ -428,7 +452,7 @@ void SimulationExporter::WriteSimulationInfo(::chrono::ChSystem* system,
     }
     // meta
     auto g_meta = impl_->g_meta;
-    g_meta.WriteAttribute("schema_version", std::string("1.0"));
+    g_meta.WriteAttribute("schema_version", std::string("1.1"));  // 1.1: /visualization, /results/mooring
     // Export level and output metadata
     {
         const char* level_str = "standard";
@@ -525,6 +549,189 @@ void SimulationExporter::WriteIrregularInputs(const std::vector<double>& frequen
         g.WriteAttribute("free_surface_eta.units", std::string("m"));
         g.WriteAttribute("free_surface_eta.location", std::string("x=0,y=0,z=0 (assumed)"));
     }
+}
+
+void SimulationExporter::WriteWaveComponents(const std::vector<double>& omega_rad_s,
+                                             const std::vector<double>& k_rad_m,
+                                             const std::vector<double>& amplitude_m,
+                                             const std::vector<double>& phase_rad,
+                                             const std::vector<double>& direction_rad) {
+    if (omega_rad_s.empty()) {
+        return;
+    }
+    auto g = impl_->writer.RequireGroup("/inputs/simulation/waves/components");
+    const hsize_t n = static_cast<hsize_t>(omega_rad_s.size());
+    std::array<hsize_t, 1> d1 = {n};
+    g.WriteDataset("omega", omega_rad_s, d1);
+    g.WriteAttribute("omega.units", std::string("rad/s"));
+    if (k_rad_m.size() == omega_rad_s.size()) {
+        g.WriteDataset("k", k_rad_m, d1);
+        g.WriteAttribute("k.units", std::string("rad/m"));
+    }
+    if (amplitude_m.size() == omega_rad_s.size()) {
+        g.WriteDataset("amplitude", amplitude_m, d1);
+        g.WriteAttribute("amplitude.units", std::string("m"));
+    }
+    if (phase_rad.size() == omega_rad_s.size()) {
+        g.WriteDataset("phase", phase_rad, d1);
+        g.WriteAttribute("phase.units", std::string("rad"));
+    }
+    if (direction_rad.size() == omega_rad_s.size()) {
+        g.WriteDataset("direction", direction_rad, d1);
+        g.WriteAttribute("direction.units", std::string("rad"));
+        g.WriteAttribute("direction.convention", std::string("0=+X, pi/2=+Y"));
+    }
+    g.WriteAttribute("eta_convention",
+                     std::string("A*cos(k*(x*cos(theta)+y*sin(theta))-omega*t+phase)"));
+}
+
+namespace {
+
+void WriteVec(hydro_io::H5Writer::Group& g, const std::string& name, const double* v, size_t n) {
+    g.WriteDataset(name, std::vector<double>(v, v + n), std::array<hsize_t, 1>{static_cast<hsize_t>(n)});
+}
+
+void WritePose(hydro_io::H5Writer::Group& g, const std::string& prefix, const viz::Pose& pose) {
+    WriteVec(g, prefix + "_position", pose.position.data(), 3);
+    WriteVec(g, prefix + "_orientation", pose.rotation.data(), 4);
+}
+
+const char* ShapeKindName(viz::ShapeKind kind) {
+    switch (kind) {
+        case viz::ShapeKind::kBox: return "box";
+        case viz::ShapeKind::kSphere: return "sphere";
+        case viz::ShapeKind::kCylinder: return "cylinder";
+        case viz::ShapeKind::kMesh: return "mesh";
+    }
+    return "box";
+}
+
+std::string IndexedName(const char* prefix, size_t index) {
+    return prefix + std::to_string(index);
+}
+
+}  // namespace
+
+void SimulationExporter::WriteVisualization(::chrono::ChSystem* system, double wave_ramp_duration_s,
+                                            double water_depth_m, double gravity_m_s2, bool viewer_colors) {
+    if (system == nullptr) {
+        throw std::invalid_argument("WriteVisualization: system must not be null");
+    }
+    impl_->viz_extractor = std::make_unique<VizExtractor>(system);
+    const viz::SceneDescription& scene = impl_->viz_extractor->Scene();
+    const viz::VizFrame input = impl_->viz_extractor->Capture(0);
+
+    auto g_viz = impl_->writer.RequireGroup("/visualization");
+    g_viz.WriteAttribute("schema_version", std::string("1"));
+    g_viz.WriteAttribute("description",
+        std::string("Visual scene for offline replay (run_seastack --replay). Visual only. Body poses are "
+                    "read from results_group (centre-of-mass frame) and mapped to the visual frame with "
+                    "visual_frame_in_com_*; MoorDyn lines from /results/mooring."));
+    g_viz.WriteAttribute("frame", std::string("world, Z up"));
+    g_viz.WriteAttribute("units", std::string("m, s, rad; colours linear RGBA in [0, 1]"));
+    g_viz.WriteAttribute("orientation_order", std::string("wxyz"));
+    g_viz.WriteAttribute("time_ref", std::string("/results/time/time"));
+    g_viz.WriteAttribute("input_time", input.time);
+    g_viz.WriteAttribute("input_time_description",
+        std::string("Time of the input pose (input_pose_*), before the first step. /results starts after "
+                    "the first step (see SIM-160)."));
+    g_viz.WriteAttribute("gravity", gravity_m_s2);
+    g_viz.WriteAttribute("water_depth", water_depth_m);
+    g_viz.WriteAttribute("wave_ramp_duration", wave_ramp_duration_s);
+    g_viz.WriteAttribute("colors", std::string(viewer_colors ? "viewer" : "model"));
+    g_viz.WriteAttribute("colors_description",
+        std::string("viewer: painted by the GUI palette, linear RGB; model: as authored in the model "
+                    "(Chrono defaults where none was set), before any viewer palette."));
+    if (scene.model_bounds.IsValid()) {
+        WriteVec(g_viz, "model_bounds_min", scene.model_bounds.min.data(), 3);
+        WriteVec(g_viz, "model_bounds_max", scene.model_bounds.max.data(), 3);
+    }
+
+    // Scene bodies are the system bodies minus water-surface helpers, in order.
+    auto g_bodies = g_viz.CreateGroup("bodies");
+    g_bodies.WriteAttribute("count", static_cast<double>(scene.bodies.size()));
+    size_t k = 0;
+    const auto& chrono_bodies = system->GetBodies();
+    for (size_t i = 0; i < chrono_bodies.size() && k < scene.bodies.size(); ++i) {
+        const auto& body = chrono_bodies[i];
+        if (!body || IsWaterSurfaceBody(*body)) {
+            continue;
+        }
+        const viz::BodyDescription& desc = scene.bodies[k];
+        auto g_body = g_bodies.CreateGroup(IndexedName("body_", k));
+        g_body.WriteAttribute("name", desc.name);
+        g_body.WriteAttribute("fixed", desc.fixed ? 1.0 : 0.0);
+        if (i < impl_->bodies.size()) {
+            g_body.WriteAttribute("results_group", "/results/model/bodies/" + impl_->bodies[i].name);
+        }
+        viz::Pose com;
+        com.position = {body->GetPos().x(), body->GetPos().y(), body->GetPos().z()};
+        const auto q = body->GetRot();
+        com.rotation = {q.e0(), q.e1(), q.e2(), q.e3()};
+        WritePose(g_body, "visual_frame_in_com", viz::Compose(viz::Inverse(com), input.bodies[k].pose));
+        WritePose(g_body, "input_pose", input.bodies[k].pose);
+        WriteVec(g_body, "input_com_position", input.bodies[k].com_position.data(), 3);
+
+        auto g_shapes = g_body.CreateGroup("shapes");
+        g_shapes.WriteAttribute("count", static_cast<double>(desc.shapes.size()));
+        for (size_t j = 0; j < desc.shapes.size(); ++j) {
+            const viz::VisualShape& shape = desc.shapes[j];
+            auto g_shape = g_shapes.CreateGroup(IndexedName("shape_", j));
+            g_shape.WriteAttribute("kind", std::string(ShapeKindName(shape.kind)));
+            g_shape.WriteAttribute("size_description",
+                std::string("box: full lengths x y z; sphere: radius; cylinder: radius, length along z"));
+            WritePose(g_shape, "local", shape.local);
+            WriteVec(g_shape, "size", shape.size.data(), 3);
+            const std::vector<double> color(shape.color.begin(), shape.color.end());
+            WriteVec(g_shape, "color", color.data(), color.size());
+            g_shape.WriteAttribute("roughness", shape.roughness);
+            g_shape.WriteAttribute("metallic", shape.metallic);
+            if (shape.kind == viz::ShapeKind::kMesh && shape.mesh) {
+                const viz::TriangleMesh& mesh = *shape.mesh;
+                std::vector<double> vertices;
+                vertices.reserve(3 * mesh.vertices.size());
+                for (const viz::Vec3& v : mesh.vertices) {
+                    vertices.insert(vertices.end(), {v[0], v[1], v[2]});
+                }
+                std::vector<double> faces;
+                faces.reserve(3 * mesh.faces.size());
+                for (const auto& f : mesh.faces) {
+                    faces.insert(faces.end(), {double(f[0]), double(f[1]), double(f[2])});
+                }
+                g_shape.WriteDataset("vertices", vertices,
+                                     std::array<hsize_t, 2>{static_cast<hsize_t>(mesh.vertices.size()), 3});
+                g_shape.WriteDataset("faces", faces,
+                                     std::array<hsize_t, 2>{static_cast<hsize_t>(mesh.faces.size()), 3});
+                g_shape.WriteAttribute("faces_description",
+                                       std::string("vertex indices, counter-clockwise = outward"));
+                if (mesh.corner_normals.size() == 3 * mesh.faces.size()) {
+                    std::vector<double> normals;
+                    normals.reserve(3 * mesh.corner_normals.size());
+                    for (const viz::Vec3& n : mesh.corner_normals) {
+                        normals.insert(normals.end(), {n[0], n[1], n[2]});
+                    }
+                    g_shape.WriteDataset("corner_normals", normals,
+                                         std::array<hsize_t, 2>{static_cast<hsize_t>(mesh.corner_normals.size()), 3});
+                }
+            }
+        }
+        ++k;
+    }
+
+    // TSDA glyphs; endpoints are recorded with each output sample.
+    auto g_cables = g_viz.CreateGroup("cables");
+    g_cables.WriteAttribute("count", static_cast<double>(scene.cable_lines.size()));
+    for (size_t c = 0; c < scene.cable_lines.size(); ++c) {
+        const viz::CableLineDescription& cable = scene.cable_lines[c];
+        auto g_cable = g_cables.CreateGroup(IndexedName("cable_", c));
+        g_cable.WriteAttribute("kind", std::string(cable.kind == viz::CableKind::kSpring ? "spring" : "segment"));
+        g_cable.WriteAttribute("spring_radius", cable.spring_radius);
+        g_cable.WriteAttribute("spring_resolution", static_cast<double>(cable.spring_resolution));
+        g_cable.WriteAttribute("spring_turns", cable.spring_turns);
+    }
+    impl_->cable_point1.assign(scene.cable_lines.size(), {});
+    impl_->cable_point2.assign(scene.cable_lines.size(), {});
+    impl_->cable_tension.assign(scene.cable_lines.size(), {});
 }
 
 
@@ -895,6 +1102,7 @@ void SimulationExporter::RecordStep(::chrono::ChSystem* system) {
     }
 
     const double current_time = system->GetChTime();
+    impl_->last_sim_time = current_time;
     const auto level = impl_->export_config.level;
     const bool is_compact = (level == ExportLevel::kCompact);
     const int decimation = impl_->export_config.decimation;
@@ -929,14 +1137,27 @@ void SimulationExporter::RecordStep(::chrono::ChSystem* system) {
     }
     impl_->prev_time = current_time;
     impl_->total_steps_seen++;
+    impl_->last_step_was_recorded = false;
 
     // ── Decimation gate ─────────────────────────────────────────────────────
     if (decimation > 1 && ((impl_->total_steps_seen - 1) % decimation != 0)) {
         return;
     }
 
+    impl_->last_step_was_recorded = true;
     impl_->time.push_back(current_time);
     impl_->steps_seen++;
+
+    // ── TSDA glyph endpoints for offline replay (see WriteVisualization) ────
+    if (impl_->viz_extractor && !impl_->cable_tension.empty()) {
+        const viz::VizFrame frame = impl_->viz_extractor->Capture(impl_->total_steps_seen);
+        for (size_t c = 0; c < frame.cable_lines.size() && c < impl_->cable_tension.size(); ++c) {
+            const viz::CableLineState& s = frame.cable_lines[c];
+            impl_->cable_point1[c].insert(impl_->cable_point1[c].end(), s.point1.begin(), s.point1.end());
+            impl_->cable_point2[c].insert(impl_->cable_point2[c].end(), s.point2.begin(), s.point2.end());
+            impl_->cable_tension[c].push_back(s.tension);
+        }
+    }
 
     // ── Body kinematics (level-gated recording) ─────────────────────────────
     auto chrono_bodies = system->GetBodies();
@@ -1146,6 +1367,60 @@ void SimulationExporter::RecordHydroForces(
         }
         impl_->hydro_sum_force[bi].insert(impl_->hydro_sum_force[bi].end(), {fx, fy, fz});
         impl_->hydro_sum_moment[bi].insert(impl_->hydro_sum_moment[bi].end(), {mx, my, mz});
+    }
+}
+
+bool SimulationExporter::LastStepWasRecorded() const {
+    return impl_->last_step_was_recorded;
+}
+
+void SimulationExporter::RecordMooringLines(
+    const std::vector<seastack::viz::MooringLineVizData>& lines) {
+    if (lines.empty()) {
+        return;
+    }
+
+    const double peak_t = impl_->last_sim_time;
+
+    if (!impl_->mooring_initialized) {
+        impl_->mooring_lines.resize(lines.size());
+        impl_->mooring_end_types.resize(lines.size());
+        for (size_t li = 0; li < lines.size(); ++li) {
+            impl_->mooring_lines[li].num_nodes =
+                static_cast<unsigned int>(lines[li].node_positions.size());
+            impl_->mooring_end_types[li] = {static_cast<int>(lines[li].start_point_type),
+                                            static_cast<int>(lines[li].end_point_type)};
+        }
+        impl_->mooring_initialized = true;
+    }
+
+    for (size_t li = 0; li < lines.size() && li < impl_->mooring_lines.size(); ++li) {
+        auto& buf = impl_->mooring_lines[li];
+        const auto& src = lines[li];
+        const double tmax = src.line_max_tension;
+        if (tmax > buf.peak_tension_N) {
+            buf.peak_tension_N = tmax;
+            buf.peak_tension_time_s = peak_t;
+        }
+
+        if (!impl_->last_step_was_recorded) {
+            continue;
+        }
+
+        const size_t n = buf.num_nodes;
+        for (size_t ni = 0; ni < n; ++ni) {
+            if (ni < src.node_positions.size()) {
+                buf.node_positions.insert(buf.node_positions.end(),
+                                          {src.node_positions[ni][0], src.node_positions[ni][1],
+                                           src.node_positions[ni][2]});
+            } else {
+                buf.node_positions.insert(buf.node_positions.end(), {0.0, 0.0, 0.0});
+            }
+            const double ten =
+                (ni < src.node_tensions.size()) ? src.node_tensions[ni] : 0.0;
+            buf.node_tensions.push_back(ten);
+        }
+        buf.line_max_tension.push_back(tmax);
     }
 }
 
@@ -1386,6 +1661,69 @@ void SimulationExporter::Finalize() {
         }
     }
 
+    // ── Mooring line geometry + peak tension stats ───────────────────────────
+    if (!impl_->mooring_lines.empty()) {
+        auto g_moor = impl_->writer.RequireGroup("/results/mooring");
+        g_moor.WriteAttribute("time_ref", std::string("/results/time/time"));
+        g_moor.WriteAttribute("description",
+            std::string("MoorDyn line node positions/tensions at the animation "
+                        "output rate; peak_tension_* are full-rate extrema."));
+        for (size_t li = 0; li < impl_->mooring_lines.size(); ++li) {
+            auto& buf = impl_->mooring_lines[li];
+            auto g_line = g_moor.CreateGroup("line_" + std::to_string(li + 1));
+            g_line.WriteAttribute("num_nodes", static_cast<double>(buf.num_nodes));
+            g_line.WriteAttribute("peak_tension_N", buf.peak_tension_N);
+            g_line.WriteAttribute("peak_tension_time_s", buf.peak_tension_time_s);
+            g_line.WriteAttribute("units_tension", std::string("N"));
+            g_line.WriteAttribute("units_position", std::string("m"));
+            g_line.WriteAttribute("frame", std::string("world"));
+
+            const hsize_t N = static_cast<hsize_t>(buf.line_max_tension.size());
+            const hsize_t Nn = static_cast<hsize_t>(buf.num_nodes);
+            if (N > 0 && Nn > 0 && !buf.node_positions.empty()) {
+                std::array<hsize_t, 3> d3 = {N, Nn, 3};
+                std::array<hsize_t, 2> d2 = {N, Nn};
+                std::array<hsize_t, 1> d1 = {N};
+                write2d(g_line, "node_tensions", buf.node_tensions, d2);
+                write1d(g_line, "line_max_tension", buf.line_max_tension, d1);
+                // 3D dataset via flattened write as [N*Nn, 3] then document shape
+                std::array<hsize_t, 2> d2_flat = {N * Nn, 3};
+                write2d(g_line, "node_positions", buf.node_positions, d2_flat);
+                g_line.WriteAttribute("node_positions_shape",
+                                      std::string("N_frames x num_nodes x 3 (row-major frames,nodes)"));
+                (void)d3;
+            }
+        }
+    }
+
+    // ── Visualization: mooring end markers and TSDA glyph endpoints ─────────
+    if (impl_->viz_extractor) {
+        if (!impl_->mooring_end_types.empty()) {
+            auto g_lines = impl_->writer.RequireGroup("/visualization/mooring_lines");
+            g_lines.WriteAttribute("description",
+                std::string("End-point types of /results/mooring/line_<i+1>: -1 coupled (fairlead), "
+                            "0 free, 1 fixed (anchor); MoorDyn convention."));
+            for (size_t li = 0; li < impl_->mooring_end_types.size(); ++li) {
+                auto g_line = g_lines.CreateGroup("line_" + std::to_string(li + 1));
+                g_line.WriteAttribute("start_point_type", static_cast<double>(impl_->mooring_end_types[li][0]));
+                g_line.WriteAttribute("end_point_type", static_cast<double>(impl_->mooring_end_types[li][1]));
+            }
+        }
+        for (size_t c = 0; c < impl_->cable_tension.size(); ++c) {
+            const hsize_t N = static_cast<hsize_t>(impl_->cable_tension[c].size());
+            if (N == 0) {
+                continue;
+            }
+            auto g_cable = impl_->writer.RequireGroup("/visualization/cables/cable_" + std::to_string(c));
+            write2d(g_cable, "point1", impl_->cable_point1[c], {N, 3});
+            write2d(g_cable, "point2", impl_->cable_point2[c], {N, 3});
+            write1d(g_cable, "tension", impl_->cable_tension[c], {N});
+            g_cable.WriteAttribute("time_ref", std::string("/results/time/time"));
+            g_cable.WriteAttribute("units", std::string("m (points), N (tension)"));
+            g_cable.WriteAttribute("frame", std::string("world"));
+        }
+    }
+
     // ── meta/run runtime details ────────────────────────────────────────────
     {
         auto g_run = impl_->writer.RequireGroup("/meta/run");
@@ -1617,6 +1955,19 @@ void SimulationExporter::SetRunTiming(double, double, double, bool) {}
 void SimulationExporter::RecordHydroForces(const std::vector<seastack::hydro::ComponentForceRecord>&) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }
+void SimulationExporter::WriteWaveComponents(const std::vector<double>&, const std::vector<double>&,
+                                             const std::vector<double>&, const std::vector<double>&,
+                                             const std::vector<double>&) {
+    throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
+}
+void SimulationExporter::WriteVisualization(::chrono::ChSystem*, double, double, double, bool) {
+    throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
+}
+void SimulationExporter::RecordMooringLines(
+    const std::vector<seastack::viz::MooringLineVizData>&) {
+    throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
+}
+bool SimulationExporter::LastStepWasRecorded() const { return false; }
 void SimulationExporter::WriteRadiationDiagnostics(const std::vector<seastack::hydro::KernelFitDiagnostics>&) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }

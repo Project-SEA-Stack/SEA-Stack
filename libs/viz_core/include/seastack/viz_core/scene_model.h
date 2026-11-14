@@ -62,6 +62,16 @@ inline Pose Compose(const Pose& parent, const Pose& child) {
     return out;
 }
 
+/// Inverse pose: maps parent coordinates back to local (Compose(Inverse(p), p) = identity).
+inline Pose Inverse(const Pose& pose) {
+    const Quat& q = pose.rotation;
+    Pose out;
+    out.rotation = {q[0], -q[1], -q[2], -q[3]};
+    const Vec3 r = Rotate(out.rotation, pose.position);
+    out.position = {-r[0], -r[1], -r[2]};
+    return out;
+}
+
 /// Triangle mesh in shape-local coordinates [m]. Shared between shapes and
 /// frames; never modified after the scene is built.
 struct TriangleMesh {
@@ -87,6 +97,43 @@ struct VisualShape {
     float roughness = 0.55f;
     float metallic = 0.0f;
 };
+
+/// Extend bounds (in the body frame) by one shape placed at shape.local [m].
+inline void ExtendBounds(const VisualShape& shape, Bounds3* bounds) {
+    std::vector<Vec3> corners;
+    switch (shape.kind) {
+        case ShapeKind::kBox: {
+            const Vec3 h{0.5 * shape.size[0], 0.5 * shape.size[1], 0.5 * shape.size[2]};
+            for (int i = 0; i < 8; ++i) {
+                corners.push_back({(i & 1) ? h[0] : -h[0], (i & 2) ? h[1] : -h[1], (i & 4) ? h[2] : -h[2]});
+            }
+            break;
+        }
+        case ShapeKind::kSphere: {
+            const double r = shape.size[0];
+            for (int i = 0; i < 8; ++i) {
+                corners.push_back({(i & 1) ? r : -r, (i & 2) ? r : -r, (i & 4) ? r : -r});
+            }
+            break;
+        }
+        case ShapeKind::kCylinder: {
+            const double r = shape.size[0];
+            const double h = 0.5 * shape.size[1];
+            for (int i = 0; i < 8; ++i) {
+                corners.push_back({(i & 1) ? r : -r, (i & 2) ? r : -r, (i & 4) ? h : -h});
+            }
+            break;
+        }
+        case ShapeKind::kMesh:
+            if (shape.mesh) {
+                corners = shape.mesh->vertices;
+            }
+            break;
+    }
+    for (const auto& p : corners) {
+        bounds->Extend(Transform(shape.local, p));
+    }
+}
 
 struct BodyDescription {
     std::string name;

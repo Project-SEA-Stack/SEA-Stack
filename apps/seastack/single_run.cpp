@@ -1006,6 +1006,27 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     }
                 }
 
+                // Visual scene and wave components for `run_seastack --replay`.
+                {
+                    const auto wave_ptr = hydro_forces ? hydro_forces->GetWave() : nullptr;
+                    const auto* comps = wave_ptr ? wave_ptr->GetWaveComponents() : nullptr;
+                    if (comps != nullptr && !comps->empty()) {
+                        std::vector<double> om, kk, am, ph, dir;
+                        for (const auto& c : *comps) {
+                            om.push_back(c.omega);
+                            kk.push_back(c.k);
+                            am.push_back(c.amplitude);
+                            ph.push_back(c.phase);
+                            dir.push_back(c.direction);
+                        }
+                        exporter->WriteWaveComponents(om, kk, am, ph, dir);
+                    }
+                    const double gravity = wave_ptr ? wave_ptr->GetGravity()
+                                                    : system->GetGravitationalAcceleration().Length();
+                    exporter->WriteVisualization(system.get(), wave_ptr ? wave_ptr->GetRampDuration() : 0.0,
+                                                 wave_ptr ? wave_ptr->GetWaterDepth() : 0.0, gravity,
+                                                 gui_init_ok);
+                }
             }
 #if defined(SEASTACK_HAVE_HYDRO_IO)
             catch (const H5::Exception& e) {
@@ -1100,6 +1121,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     if (exporter) {
                         if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
                         exporter->RecordStep(system.get());
+#ifdef SEASTACK_HAVE_MOORDYN
+                        if (hydro_forces) {
+                            exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
+                        }
+#endif
                         if (export_detailed_hydro) {
                             exporter->RecordHydroForces(hydro_forces->GetLastComponentForces());
                         }
@@ -1272,6 +1298,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         steps_taken++;
                         if (exporter) {
                             exporter->RecordStep(system.get());
+#ifdef SEASTACK_HAVE_MOORDYN
+                            if (hydro_forces) {
+                                exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
+                            }
+#endif
                             if (export_detailed_hydro) {
                                 exporter->RecordHydroForces(hydro_forces->GetLastComponentForces());
                             }

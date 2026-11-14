@@ -76,43 +76,6 @@ std::shared_ptr<const viz::TriangleMesh> ConvertMesh(::chrono::ChVisualShapeTria
     return mesh;
 }
 
-/// Local bounds of one shape in the body frame [m].
-void ExtendBounds(const viz::VisualShape& shape, viz::Bounds3* bounds) {
-    std::vector<viz::Vec3> corners;
-    switch (shape.kind) {
-        case viz::ShapeKind::kBox: {
-            const viz::Vec3 h{0.5 * shape.size[0], 0.5 * shape.size[1], 0.5 * shape.size[2]};
-            for (int i = 0; i < 8; ++i) {
-                corners.push_back({(i & 1) ? h[0] : -h[0], (i & 2) ? h[1] : -h[1], (i & 4) ? h[2] : -h[2]});
-            }
-            break;
-        }
-        case viz::ShapeKind::kSphere: {
-            const double r = shape.size[0];
-            for (int i = 0; i < 8; ++i) {
-                corners.push_back({(i & 1) ? r : -r, (i & 2) ? r : -r, (i & 4) ? r : -r});
-            }
-            break;
-        }
-        case viz::ShapeKind::kCylinder: {
-            const double r = shape.size[0];
-            const double h = 0.5 * shape.size[1];
-            for (int i = 0; i < 8; ++i) {
-                corners.push_back({(i & 1) ? r : -r, (i & 2) ? r : -r, (i & 4) ? h : -h});
-            }
-            break;
-        }
-        case viz::ShapeKind::kMesh:
-            if (shape.mesh) {
-                corners = shape.mesh->vertices;
-            }
-            break;
-    }
-    for (const auto& p : corners) {
-        bounds->Extend(viz::Transform(shape.local, p));
-    }
-}
-
 viz::BodyDescription DescribeBody(const ::chrono::ChBody& body) {
     viz::BodyDescription desc;
     desc.name = body.GetName();
@@ -146,7 +109,7 @@ viz::BodyDescription DescribeBody(const ::chrono::ChBody& body) {
             continue;  // unsupported shape type (e.g. model file, line, point cloud)
         }
         CopyAppearance(*instance.shape, &shape);
-        ExtendBounds(shape, &desc.local_bounds);
+        viz::ExtendBounds(shape, &desc.local_bounds);
         desc.shapes.push_back(std::move(shape));
     }
     return desc;
