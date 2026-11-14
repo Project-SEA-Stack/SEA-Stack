@@ -304,6 +304,7 @@ RuntimeControls::RuntimeControls(::chrono::ChSystem* system) {
             p.owner = owner;
             parameters_.push_back(std::move(p));
             link_of_parameter_.push_back(links_.size());
+            apply_of_parameter_.emplace_back();
         };
         // A spring term means the model gave a free length / angle.
         const bool rest_in_model = spring_in_model || state->law == LinkState::Law::kBuiltIn ||
@@ -327,6 +328,18 @@ void RuntimeControls::SetOwner(const std::string& parameter_id, const std::strin
     if (auto* p = FindMutable(parameter_id)) {
         p->owner = owner;
     }
+}
+
+void RuntimeControls::AddParameter(RuntimeParameter parameter, ApplyFunction apply) {
+    if (!apply) {
+        throw std::invalid_argument("RuntimeControls::AddParameter: '" + parameter.id + "' needs an apply function");
+    }
+    if (Find(parameter.id) != nullptr) {
+        throw std::invalid_argument("RuntimeControls::AddParameter: '" + parameter.id + "' is already registered");
+    }
+    parameters_.push_back(std::move(parameter));
+    link_of_parameter_.push_back(kNoLink);
+    apply_of_parameter_.push_back(std::move(apply));
 }
 
 const RuntimeParameter* RuntimeControls::Find(const std::string& parameter_id) const {
@@ -428,15 +441,21 @@ void RuntimeControls::Apply(const RuntimeCommand& command, const std::string& or
     if (p == nullptr) {
         return;  // validated when queued
     }
-    LinkState& link = *links_[link_of_parameter_[static_cast<size_t>(p - parameters_.data())]];
-    if (p->field == "spring_coefficient") {
-        link.SetSpringDamping(true, command.value);
-    } else if (p->field == "damping_coefficient") {
-        link.SetSpringDamping(false, command.value);
-    } else if (p->field == "rest_length") {
-        link.tsda->SetRestLength(command.value);
-    } else if (p->field == "rest_angle") {
-        link.rsda->SetRestAngle(command.value);
+    const size_t index = static_cast<size_t>(p - parameters_.data());
+    double effective_time = command.time;
+    if (link_of_parameter_[index] == kNoLink) {
+        effective_time = apply_of_parameter_[index](command.value, command.time);
+    } else {
+        LinkState& link = *links_[link_of_parameter_[index]];
+        if (p->field == "spring_coefficient") {
+            link.SetSpringDamping(true, command.value);
+        } else if (p->field == "damping_coefficient") {
+            link.SetSpringDamping(false, command.value);
+        } else if (p->field == "rest_length") {
+            link.tsda->SetRestLength(command.value);
+        } else if (p->field == "rest_angle") {
+            link.rsda->SetRestAngle(command.value);
+        }
     }
 
     RuntimeEvent event;
@@ -446,6 +465,7 @@ void RuntimeControls::Apply(const RuntimeCommand& command, const std::string& or
     events_.push_back(event);
 
     p->value = command.value;
+    p->effective_time = effective_time;
     if (origin == "gui") {
         p->pending = false;
     }

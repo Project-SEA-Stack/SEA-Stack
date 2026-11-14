@@ -167,7 +167,10 @@ void NonlinearFroudeKrylovComponent::Compute(const SystemState& state, double ti
         last_linear_fk_.assign(num_system_bodies, Eigen::Matrix<double, 6, 1>::Zero());
     }
 
-    const double ramp = wave_ ? RampFactor(time) : 0.0;
+    double ramp = wave_ ? RampFactor(time) : 0.0;
+    if (wave_ && wave_->GetAmplitudeEnvelope()->HasChanges()) {
+        ramp *= wave_->GetAmplitudeEnvelope()->Value(time);  // live wave-height changes
+    }
     const bool wavy = ramp > 0.0;
 
     for (auto& body : bodies_) {

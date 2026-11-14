@@ -693,7 +693,7 @@ HydroModel HydroModelBuilder::Build() {
                 components.push_back(
                     std::make_unique<ExcitationComponent>(
                         std::move(wcd), std::move(tf.re), std::move(tf.im),
-                        num_bodies, ramp));
+                        num_bodies, ramp, wave->GetAmplitudeEnvelope()));
             } else {
                 std::ostringstream oss;
                 oss << "HydroModelBuilder::Build(): frequency-domain excitation requires "

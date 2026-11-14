@@ -88,13 +88,11 @@ Eigen::Vector3d EtaTableWaveField::GetAcceleration(
 }
 
 double EtaTableWaveField::GetExcitationRampForVisualization(double time) const {
-    if (ramp_duration_ <= 0.0 || time >= ramp_duration_) {
-        return 1.0;
+    double ramp = 1.0;
+    if (ramp_duration_ > 0.0 && time < ramp_duration_) {
+        ramp = (time <= 0.0) ? 0.0 : time / ramp_duration_;
     }
-    if (time <= 0.0) {
-        return 0.0;
-    }
-    return time / ramp_duration_;
+    return ramp * amplitude_envelope_->Value(time);
 }
 
 }  // namespace seastack::hydro

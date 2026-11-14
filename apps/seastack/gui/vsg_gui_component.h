@@ -60,10 +60,10 @@ struct TimelineState {
 /// One TSDA/RSDA parameter as shown in the Parameters panel.
 struct ParameterRow {
     std::string id;        ///< Runtime parameter id, e.g. "tsda.PTO.damping_coefficient"
-    std::string element;   ///< "tsda" or "rsda"
-    std::string link_name; ///< Link name in the model, e.g. "PTO"
-    std::string field;     ///< e.g. "damping_coefficient", "rest_length", "rest_angle"
-    std::string link;      ///< Group heading, e.g. "TSDA PTO"
+    std::string element;   ///< "tsda", "rsda" or "waves"
+    std::string link_name; ///< Link name in the model, e.g. "PTO"; empty for waves
+    std::string field;     ///< e.g. "damping_coefficient", "rest_length", "rest_angle", "height"
+    std::string link;      ///< Group heading, e.g. "TSDA PTO" or "Waves"
     std::string label;     ///< e.g. "Damping"
     std::string units;     ///< SI units, e.g. "N*s/m"
     std::string source;    ///< "model YAML" or "default"
@@ -73,6 +73,7 @@ struct ParameterRow {
     double min_value = 0.0;      ///< Lowest accepted value
     bool pending = false;        ///< An edit waits for the next step
     double pending_value = 0.0;
+    double effective_time = 0.0;  ///< Sim time [s] the last change is fully in effect (wave ramps)
 };
 
 /// Parameters panel: live TSDA/RSDA parameters and the changes applied so far
@@ -85,6 +86,7 @@ struct ParametersPanelState {
     std::vector<std::string> event_lines;  ///< Applied changes, oldest first
     std::string schedule_path;             ///< Export target; empty = no output directory
     bool run_finished = false;             ///< Edits can no longer take effect
+    double sim_time = 0.0;                 ///< Live simulation time [s]
 
     // --- Written by the GUI, consumed by the viewer ---
     std::vector<std::pair<std::string, double>> requests;  ///< (id, value) for the next step

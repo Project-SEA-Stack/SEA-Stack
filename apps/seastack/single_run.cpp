@@ -1068,6 +1068,44 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             }
         }
 #endif
+        // Live wave height. The wave's amplitude envelope e(t) scales every
+        // component in all excitation paths (FD, IRF, NLFK) and the drawn sea.
+        // A change ramps in over two dominant wave periods (10 s if unknown) so
+        // the excitation does not jump.
+        if (hydro_forces && hydro_forces->GetWave() &&
+            hydro_forces->GetWave()->GetWaveMode() != WaveMode::kNoWave) {
+            const std::shared_ptr<WaveBase> wave = hydro_forces->GetWave();
+            const auto& ws = hydro_data.waves;
+            seastack::chrono::RuntimeParameter p;
+            p.element = "waves";
+            p.min_value = 0.0;
+            if (ws.partitions.empty() && ws.eta_file.empty() && ws.height > 0.0) {
+                // One sea state: H (regular) or Hs (spectral), both proportional to e.
+                const bool regular = wave->GetWaveMode() == WaveMode::kRegular;
+                p.id = "waves.height";
+                p.field = "height";
+                p.label = regular ? "H" : "Hs";
+                p.units = "m";
+                p.default_value = ws.height;
+                p.source = "hydro YAML";
+            } else {
+                // Several partitions or an imported record: no single height to show.
+                p.id = "waves.height_scale";
+                p.field = "height_scale";
+                p.label = "Scale";
+                p.units = "-";
+                p.default_value = 1.0;
+                p.source = "1 = sea state of the hydro YAML";
+            }
+            p.value = p.default_value;
+            const double reference = p.default_value;
+            const double period = wave->GetCharacteristicPeriod();
+            const double transition = period > 0.0 ? 2.0 * period : 10.0;
+            const std::shared_ptr<seastack::hydro::AmplitudeEnvelope> envelope = wave->GetAmplitudeEnvelope();
+            runtime_controls.AddParameter(p, [envelope, reference, transition](double value, double time) {
+                return envelope->RampTo(time, value / reference, transition);
+            });
+        }
         if (exporter) {
             seastack::chrono::SimulationExporter* exp = exporter.get();
             runtime_controls.SetChangeCallback([exp](const seastack::chrono::RuntimeParameter& p) {

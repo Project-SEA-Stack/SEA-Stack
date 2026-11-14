@@ -407,7 +407,7 @@ double LinearDirectionalWaveField::ExcitationRampFactor(double t) const {
 }
 
 double LinearDirectionalWaveField::GetExcitationRampForVisualization(double time) const {
-    return ExcitationRampFactor(time);
+    return ExcitationRampFactor(time) * amplitude_envelope_->Value(time);
 }
 
 }  // namespace seastack::hydro

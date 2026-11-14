@@ -348,6 +348,7 @@ void GUIImplSeastack::SyncParameters() {
 
     panel.schedule_path = schedule_path_;
     panel.run_finished = ui_->runStatus.finished;
+    panel.sim_time = ui_->runStatus.sim_time;
     panel.rows.clear();
     for (const auto& p : controls.parameters()) {
         ParameterRow row;
@@ -355,7 +356,12 @@ void GUIImplSeastack::SyncParameters() {
         row.element = p.element;
         row.link_name = p.link_name;
         row.field = p.field;
-        row.link = (p.element == "tsda" ? "TSDA " : "RSDA ") + p.link_name;
+        if (p.element == "tsda" || p.element == "rsda") {
+            row.link = (p.element == "tsda" ? "TSDA " : "RSDA ") + p.link_name;
+        } else {
+            row.link = p.element == "waves" ? "Waves" : p.element;
+        }
+        row.effective_time = p.effective_time;
         row.label = p.label;
         row.units = p.units;
         row.source = p.source;
@@ -391,7 +397,9 @@ void GUIImplSeastack::SyncParameters() {
             ++n;
         }
         std::string name = e.command.parameter;
-        if (p != nullptr) {
+        if (p != nullptr && p->link_name.empty()) {
+            name = (p->element == "waves" ? "Waves" : p->element) + " " + p->label;
+        } else if (p != nullptr) {
             name = (n == 1 ? p->link_name : std::to_string(n) + (p->element == "tsda" ? " TSDAs" : " RSDAs")) +
                    " " + p->label;
         }

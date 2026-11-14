@@ -257,6 +257,13 @@ void ExcitationIrfComponent::Compute(
     } else {
         ComputeSlowPath(time, eta_at_tau);
     }
+    // Live wave-height changes: each past sample carries the envelope of its time.
+    const AmplitudeEnvelope& envelope = *waves_->GetAmplitudeEnvelope();
+    if (envelope.HasChanges()) {
+        for (Eigen::Index s = 0; s < n_steps; ++s) {
+            eta_at_tau[s] *= envelope.Value(time - birf0.time_vec[s]);
+        }
+    }
 
     // Excitation in each body's heading frame, rotated to world (heading_frame.h).
     for (int b = 0; b < num_bodies_; ++b) {

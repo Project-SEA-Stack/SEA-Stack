@@ -20,12 +20,14 @@ ExcitationComponent::ExcitationComponent(
     std::vector<Eigen::MatrixXd> excitation_re,
     std::vector<Eigen::MatrixXd> excitation_im,
     int num_bodies,
-    double ramp_duration)
+    double ramp_duration,
+    std::shared_ptr<const AmplitudeEnvelope> envelope)
     : wave_data_(std::move(wave_data)),
       excitation_re_(std::move(excitation_re)),
       excitation_im_(std::move(excitation_im)),
       num_bodies_(num_bodies),
-      ramp_duration_(ramp_duration) {
+      ramp_duration_(ramp_duration),
+      envelope_(std::move(envelope)) {
     if (num_bodies_ <= 0) {
         throw std::invalid_argument(
             "ExcitationComponent: num_bodies must be > 0 (got " + std::to_string(num_bodies_) + ")");
@@ -76,6 +78,9 @@ void ExcitationComponent::ComputeFromTFData(const SystemState& state, double tim
     if (ramp_duration_ > 0.0 && time < ramp_duration_) {
         ramp = (time <= 0.0) ? 0.0
              : 0.5 * (1.0 - std::cos(M_PI * time / ramp_duration_));
+    }
+    if (envelope_ && envelope_->HasChanges()) {
+        ramp *= envelope_->Value(time);
     }
 
     for (int b = 0; b < num_bodies_; ++b) {

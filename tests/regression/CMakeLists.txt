@@ -453,6 +453,29 @@ if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
             ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
     endif()
 
+    # Live wave height through --schedule (PR-5): same-height schedule is
+    # bit-identical, halved height halves the steady response (FD and IRF),
+    # NLFK reruns, /events.
+    add_test(
+        NAME test_runtime_waves
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_runtime_waves.py"
+            --exe $<TARGET_FILE:run_seastack>
+    )
+    set_tests_properties(test_runtime_waves PROPERTIES
+        LABELS "regression;chrono;rm3;sphere;execute"
+        COST 10
+        SKIP_RETURN_CODE ${SEASTACK_SKIP_MISSING_PYTHON_DEPS}
+    )
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.22")
+        set_tests_properties(test_runtime_waves PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${Python3_ROOT_DIR};PATH=path_list_prepend:${Python3_ROOT_DIR}/Library/bin;PATH=path_list_prepend:${Python3_ROOT_DIR}/DLLs")
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        set_tests_properties(test_runtime_waves PROPERTIES
+            ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+    endif()
+
     # External controller (preview) through run_seastack: YAML mistakes, bad
     # step() returns, process failures, print forwarding and cost per tick.
     # Standard-library Python only.

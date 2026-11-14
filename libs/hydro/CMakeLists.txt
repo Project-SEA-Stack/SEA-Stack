@@ -6,6 +6,7 @@ add_library(seastack_hydro STATIC
     src/hydro_data.cpp
     src/core/hydro_forces.cpp
     src/waves/wave_base.cpp
+    src/waves/amplitude_envelope.cpp
     src/waves/component_sampler.cpp
     src/waves/linear_wave_kinematics.cpp
     src/waves/linear_directional_wave_field.cpp

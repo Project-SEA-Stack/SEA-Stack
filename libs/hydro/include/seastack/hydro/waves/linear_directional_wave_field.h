@@ -80,7 +80,8 @@ class LinearDirectionalWaveField : public WaveBase {
     void SetRampDuration(double seconds) override { ramp_duration_ = seconds; }
     double GetRampDuration() const override { return ramp_duration_; }
 
-    /// Cosine envelope matching ExcitationComponent (frequency-domain excitation ramp).
+    /// Cosine envelope matching ExcitationComponent (frequency-domain excitation ramp),
+    /// times the amplitude envelope e(t).
     double GetExcitationRampForVisualization(double time) const override;
 
     // ── Spectral accessors (for diagnostics / HDF5 export) ──────────

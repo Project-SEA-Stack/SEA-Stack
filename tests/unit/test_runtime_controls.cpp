@@ -341,6 +341,65 @@ int main() {
         std::filesystem::remove(path);
     }
 
+    // ---- 5. Registered non-link parameters (e.g. wave height) ----
+    {
+        auto rig = MakeRig(std::make_shared<cu::LinearDamperForce>(40.0), nullptr);
+        RuntimeControls controls(rig.system.get());
+        seastack::chrono::RuntimeParameter p;
+        p.id = "waves.height";
+        p.element = "waves";
+        p.field = "height";
+        p.label = "H";
+        p.units = "m";
+        p.default_value = p.value = 2.0;
+        p.min_value = 0.0;
+        p.source = "hydro YAML";
+        std::vector<std::pair<double, double>> applied;  // (value, time)
+        controls.AddParameter(p, [&](double value, double time) {
+            applied.emplace_back(value, time);
+            return time + 16.0;  // a ramped change
+        });
+        bool threw = false;
+        try {
+            controls.AddParameter(p, [](double, double time) { return time; });
+        } catch (const std::invalid_argument&) {
+            threw = true;
+        }
+        TEST_ASSERT(threw, "duplicate id rejected");
+
+        std::string error;
+        TEST_ASSERT(!controls.Request("waves.height", -1.0, &error), "negative height rejected");
+        TEST_ASSERT(controls.Request("waves.height", 1.0, &error), "height request accepted");
+        controls.ApplyDue(7, 0.007);
+        TEST_ASSERT(applied.size() == 1 && applied[0].first == 1.0 && applied[0].second == 0.007,
+                    "apply function called at the boundary with value and time");
+        const auto* h = controls.Find("waves.height");
+        TEST_ASSERT(h && h->value == 1.0 && h->default_value == 2.0, "registry shows the new value");
+        TEST_NEAR(h ? h->effective_time : 0.0, 16.007, 1e-12, "effective time from the apply function");
+        const auto& e = controls.events().back();
+        TEST_ASSERT(e.command.parameter == "waves.height" && e.previous_value == 2.0 && e.command.step == 7,
+                    "change logged like a link parameter");
+
+        controls.Request("tsda.hanger.damping_coefficient", 80.0, &error);
+        controls.ApplyDue(8, 0.008);
+        const auto* c = controls.Find("tsda.hanger.damping_coefficient");
+        TEST_NEAR(c ? c->effective_time : 0.0, 0.008, 1e-15, "link changes are in effect at once");
+
+        RuntimeControls rerun(rig.system.get());
+        std::vector<double> rerun_values;
+        rerun.AddParameter(p, [&](double value, double time) {
+            rerun_values.push_back(value);
+            return time;
+        });
+        seastack::chrono::RuntimeSchedule schedule;
+        schedule.time_step = kDt;
+        schedule.commands.push_back(controls.events().front().command);
+        rerun.LoadSchedule(schedule, 0.0, kDt);
+        for (long long s = 0; s < 10; ++s) rerun.ApplyDue(s, s * kDt);
+        TEST_ASSERT(rerun_values.size() == 1 && rerun_values[0] == 1.0 && rerun.events()[0].command.step == 7,
+                    "schedule replays a registered parameter at the same step");
+    }
+
     test_results.Summary();
     return test_results.failed > 0 ? 1 : 0;
 }

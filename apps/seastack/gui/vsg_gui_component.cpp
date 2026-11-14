@@ -717,6 +717,9 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
     if (first.field == "rest_angle") {
         lo = std::min(d_lo - kPi, v_lo);
         hi = std::max(d_hi + kPi, v_hi);
+    } else if (first.field == "height" || first.field == "height_scale") {
+        slider = pos_hi > 0.0;  // calm (0) to three times the start height
+        hi = std::max(3.0 * pos_hi, v_hi);
     } else if (first.field == "rest_length") {
         slider = pos_hi > 0.0;
         hi = std::max(2.0 * pos_hi, v_hi);
@@ -782,6 +785,12 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
                               first.default_value, first.units.c_str());
         } else if (panel.run_finished) {
             ImGui::SetTooltip("The run has ended; changes can no longer take effect.");
+        } else if (members.size() == 1 && first.element == "waves") {
+            ImGui::SetTooltip("Wave %s [%s], from %s. Start value %.6g.\n%s\n"
+                              "Scales every wave component (excitation and the drawn sea).\n"
+                              "A change ramps in over two wave periods; 0 = calm.\n"
+                              "Every change is logged; Export schedule reruns it.",
+                              first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how);
         } else if (members.size() == 1) {
             ImGui::SetTooltip("%s [%s], from %s. Start value %.6g.\n%s\nEvery change is logged; Export schedule reruns it.%s",
                               first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how,
@@ -855,6 +864,13 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
     if (pending) {
         ImGui::SameLine();
         ImGui::TextDisabled("next step");
+    } else if (!panel.run_finished && ref.effective_time > panel.sim_time) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("ramping, %.0f s", std::ceil(ref.effective_time - panel.sim_time));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Still ramping to %.6g %s; fully in effect at t = %.1f s.", ref.value,
+                              ref.units.c_str(), ref.effective_time);
+        }
     }
     ImGui::PopID();
 }
@@ -866,8 +882,17 @@ void SeastackGuiComponent::RenderParametersPanel() {
     if (!ImGui::CollapsingHeader("Parameters", ImGuiTreeNodeFlags_DefaultOpen)) return;
 
     if (panel.rows.empty()) {
-        ImGui::TextDisabled("No TSDA or RSDA in the model.");
+        ImGui::TextDisabled("No waves, TSDA or RSDA to adjust in this model.");
         return;
+    }
+
+    // Wave rows first: they affect every body.
+    bool any_wave = false;
+    for (const ParameterRow& row : panel.rows) {
+        if (row.element != "waves") continue;
+        if (!any_wave) ImGui::TextUnformatted("Waves");
+        any_wave = true;
+        RenderParameterSlider(row.id, {&row});
     }
 
     // Links in model order, each with its rows (fields in registry order).
@@ -879,6 +904,7 @@ void SeastackGuiComponent::RenderParametersPanel() {
     };
     std::vector<LinkRows> links;
     for (const ParameterRow& row : panel.rows) {
+        if (row.element != "tsda" && row.element != "rsda") continue;
         if (links.empty() || links.back().element != row.element || links.back().name != row.link_name) {
             links.push_back({row.element, row.link_name, row.link, {}});
         }
@@ -906,7 +932,10 @@ void SeastackGuiComponent::RenderParametersPanel() {
         }
     };
 
-    if (links.size() == 1) {
+    if (any_wave && !links.empty()) ImGui::Spacing();
+    if (links.empty()) {
+        // Waves only.
+    } else if (links.size() == 1) {
         ImGui::TextUnformatted(links.front().heading.c_str());
         render_link(links.front());
     } else {

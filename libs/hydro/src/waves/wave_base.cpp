@@ -57,8 +57,8 @@ WaveBase::ComputeElevationTimeSeries(double t_start, double t_end, double dt) co
     return {times, elevations};
 }
 
-double WaveBase::GetExcitationRampForVisualization(double /*time*/) const {
-    return 1.0;
+double WaveBase::GetExcitationRampForVisualization(double time) const {
+    return amplitude_envelope_->Value(time);
 }
 
 }  // namespace seastack::hydro

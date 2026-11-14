@@ -1,7 +1,8 @@
 /**
  * @file runtime_controls.h
  * @brief Runtime parameter registry, command bus and event log for TSDA/RSDA
- *        spring-dampers (GUI edits and scripted schedules).
+ *        spring-dampers and other registered parameters such as the wave
+ *        height (GUI edits and scripted schedules).
  *
  * Every ChLinkTSDA / ChLinkRSDA in the system gets three parameters:
  *   tsda.<link>.spring_coefficient   [N/m]          rsda.<link>.spring_coefficient   [N*m/rad]
@@ -43,12 +44,12 @@ class ChLinkRSDA;
 
 namespace seastack::chrono {
 
-/// One runtime-adjustable link parameter.
+/// One runtime-adjustable parameter: a link field, or one added with AddParameter.
 struct RuntimeParameter {
-    std::string id;           ///< "tsda.<link>.<field>" or "rsda.<link>.<field>"
-    std::string element;      ///< "tsda" or "rsda"
-    std::string link_name;    ///< Chrono link name
-    std::string field;        ///< spring_coefficient, damping_coefficient, rest_length, rest_angle
+    std::string id;           ///< "tsda.<link>.<field>", "rsda.<link>.<field>", or e.g. "waves.height"
+    std::string element;      ///< "tsda", "rsda", or e.g. "waves"
+    std::string link_name;    ///< Chrono link name; empty for non-link parameters
+    std::string field;        ///< spring_coefficient, damping_coefficient, rest_length, rest_angle, height, ...
     std::string label;        ///< Short label for the GUI, e.g. "Damping"
     std::string units;        ///< SI units, e.g. "N*s/m"
     double default_value = 0.0;  ///< Value at the start of the run
@@ -58,6 +59,10 @@ struct RuntimeParameter {
     std::string owner;           ///< Empty: editable here. Otherwise who sets it.
     bool pending = false;        ///< A request waits for the next step boundary
     double pending_value = 0.0;  ///< Value of that request
+    /// Simulation time [s] from which the last change is fully in effect.
+    /// Link fields change at once; a wave-height change ramps in, so this is
+    /// later than the step boundary while the transition runs.
+    double effective_time = 0.0;
 };
 
 /// A parameter change at a step boundary.
@@ -107,6 +112,16 @@ class RuntimeControls {
     /// drives a rest length). Unknown ids are ignored.
     void SetOwner(const std::string& parameter_id, const std::string& owner);
 
+    /// Applies a value at a step boundary at `time` [s] and returns the time
+    /// from which it is fully in effect (`time` for an instant change).
+    using ApplyFunction = std::function<double(double value, double time)>;
+
+    /// Register a parameter that is not a link field (e.g. the wave height).
+    /// `parameter.value` must equal `parameter.default_value`. Requests,
+    /// schedules and the event log treat it like the link parameters.
+    /// @throws std::invalid_argument if the id is taken or `apply` is empty.
+    void AddParameter(RuntimeParameter parameter, ApplyFunction apply);
+
     const std::vector<RuntimeParameter>& parameters() const { return parameters_; }
     const RuntimeParameter* Find(const std::string& parameter_id) const;
 
@@ -145,7 +160,9 @@ class RuntimeControls {
 
     std::vector<RuntimeParameter> parameters_;
     std::vector<std::unique_ptr<LinkState>> links_;
-    std::vector<size_t> link_of_parameter_;  ///< Index into links_ for each parameter
+    std::vector<size_t> link_of_parameter_;  ///< Index into links_ for each parameter; kNoLink if none
+    std::vector<ApplyFunction> apply_of_parameter_;  ///< Set for AddParameter parameters
+    static constexpr size_t kNoLink = static_cast<size_t>(-1);
     std::vector<RuntimeCommand> scheduled_;  ///< Sorted by step (stable)
     size_t next_scheduled_ = 0;
     std::vector<RuntimeCommand> requests_;   ///< GUI requests in arrival order

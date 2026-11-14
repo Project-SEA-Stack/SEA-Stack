@@ -382,6 +382,11 @@ build_unit_test(test_excitation_ramp_accumulation)
 target_link_libraries(test_excitation_ramp_accumulation PRIVATE SEAStack::Hydro)
 set_tests_properties(test_excitation_ramp_accumulation PROPERTIES LABELS "unit;chrono-free")
 
+# Runtime wave amplitude envelope (live wave height) and FD excitation scaling (Chrono-free)
+build_unit_test(test_amplitude_envelope)
+target_link_libraries(test_amplitude_envelope PRIVATE SEAStack::Hydro)
+set_tests_properties(test_amplitude_envelope PROPERTIES LABELS "unit;chrono-free")
+
 # Excitation TF interpolation on uniform vs non-uniform omega grids (Chrono-free, HDF5-free)
 build_unit_test(test_excitation_nonuniform_grid)
 target_link_libraries(test_excitation_nonuniform_grid PRIVATE SEAStack::Hydro)
