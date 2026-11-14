@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <memory>
+#include <stdexcept>
 
 #include <seastack/config.h>
 #include <gui/guihelper.h>
@@ -18,6 +19,7 @@
 
 #ifdef SEASTACK_HAVE_VSG
     #include "vsg_visual_system.h"
+    #include <seastack/adapters/chrono/visualization_recording.h>
     #include <seastack/adapters/chrono/viz_extractor.h>
     #include <seastack/viz_core/frame_history.h>
     #include <seastack/viz_core/scene_framing.h>
@@ -42,6 +44,10 @@ class GUIImpl {
     virtual void Init(UI& ui, ::chrono::ChSystem*, const char* title) {
         seastack::infra::cli::LogWarning(
             "Warning: GUI deactivated. SEA-Stack was built without run-time visualization support.");
+    }
+    virtual void InitReplay(UI& /*ui*/, std::unique_ptr<seastack::chrono::ReplayRecording> /*recording*/,
+                            const char* /*title*/) {
+        throw std::runtime_error("This viewer cannot replay recorded results.");
     }
     virtual void SetCamera(double /*x*/, double /*y*/, double /*z*/,
                            double /*dirx*/, double /*diry*/, double /*dirz*/) {}
@@ -128,6 +134,8 @@ class GUIImplSeastack : public GUIImpl {
 
     void SetViewerOptions(const ViewerOptions& options) override { options_ = options; }
     void Init(UI& ui, ::chrono::ChSystem* system, const char* title) override;
+    void InitReplay(UI& ui, std::unique_ptr<seastack::chrono::ReplayRecording> recording,
+                    const char* title) override;
     void SetCamera(double x, double y, double z, double dirx, double diry, double dirz) override;
     bool IsRunning(double timestep) override;
     void SetWaveModel(std::shared_ptr<seastack::hydro::WaveBase> wave) override { wave_model_ = std::move(wave); }
@@ -137,6 +145,10 @@ class GUIImplSeastack : public GUIImpl {
                                       double node_marker_radius_m) override;
 
   private:
+    /// Viewer, GUI and camera set-up shared by Init() and InitReplay().
+    void InitViewer(UI& ui, const char* title);
+    /// The scene drawn: from the live system, or from the replayed file.
+    const SceneDescription& Scene() const;
     void HandleCameraRequests();
     void UpdateClipPlanes();
     /// Render the scene only where the GUI panels leave the window free.
@@ -170,7 +182,9 @@ class GUIImplSeastack : public GUIImpl {
     /// The start-up framing used the full window; redo it once the panel layout is known.
     bool reframe_pending_ = false;
     Bounds3 model_bounds_;  ///< World bounds of all body visual shapes at Init() [m]
-    std::unique_ptr<seastack::chrono::VizExtractor> extractor_;
+    std::unique_ptr<seastack::chrono::VizExtractor> extractor_;  ///< Live runs only
+    /// Replay only: scene and input pose from the file (frames go to history_).
+    std::unique_ptr<seastack::chrono::ReplayRecording> replay_;
     std::unique_ptr<SeastackViewer> viewer_;
     std::unique_ptr<ViewerSettings> viewer_settings_;
     std::unique_ptr<SeastackGuiComponent> gui_;

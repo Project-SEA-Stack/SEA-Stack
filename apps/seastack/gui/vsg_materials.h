@@ -9,6 +9,8 @@
 #include <chrono/assets/ChVisualMaterial.h>
 #include <chrono/physics/ChBody.h>
 
+#include <seastack/viz_core/scene_model.h>
+
 namespace seastack::viz {
 
 /// Creates the base painted-metal material (industrial yellow).
@@ -39,6 +41,11 @@ bool IsChronoDefaultColor(const ::chrono::ChColor& c);
 ///        model (not a Chrono default) keep that colour.
 void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVisualMaterial& mat,
                                     bool keep_model_colors = false);
+
+/// Paint a recorded shape with the body palette, as ApplyMaterialToAllVisualShapes
+/// paints a live body. For replays of headless runs, whose recorded colours are
+/// as authored in the model (sRGB, or Chrono defaults).
+void ApplyBodyPalette(int body_index, bool keep_model_colors, VisualShape* shape);
 
 }  // namespace seastack::viz
 

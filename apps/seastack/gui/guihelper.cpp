@@ -5,7 +5,10 @@
 
 #include "guihelper_impl.h"
 
+#include <seastack/adapters/chrono/visualization_recording.h>
+
 #include <algorithm>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -41,6 +44,10 @@ void UI::SetViewerOptions(const ViewerOptions& /*options*/) {
 
 void UI::Init(::chrono::ChSystem* system, const char* title) {
     pSystem = system;
+}
+
+void UI::InitReplay(std::unique_ptr<seastack::chrono::ReplayRecording> /*recording*/, const char* /*title*/) {
+    throw std::runtime_error("Replay needs the GUI (it cannot run with --nogui).");
 }
 
 void UI::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {}
@@ -113,6 +120,21 @@ void GUI::Init(::chrono::ChSystem* system, const char* title) {
     }
 #endif
     pImpl->Init(*this, system, title);
+}
+
+void GUI::InitReplay(std::unique_ptr<seastack::chrono::ReplayRecording> recording, const char* title) {
+    UI::Init(nullptr, title);
+#if defined(SEASTACK_HAVE_VSG)
+    if (backend_ != ViewerBackend::kSeastack) {
+        backend_ = ViewerBackend::kSeastack;  // the Chrono viewer needs a ChSystem
+        pImpl = std::make_shared<seastack::viz::GUIImplSeastack>();
+        pImpl->SetViewerOptions(viewer_options_);
+    }
+    pImpl->InitReplay(*this, std::move(recording), title);
+#else
+    (void)recording;
+    throw std::runtime_error("Replay needs a build with the VSG viewer (SEASTACK_HAVE_VSG).");
+#endif
 }
 
 void GUI::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {

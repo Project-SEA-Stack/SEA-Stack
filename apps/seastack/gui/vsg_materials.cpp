@@ -157,5 +157,20 @@ void ApplyMaterialToAllVisualShapes(::chrono::ChBody& body, const ::chrono::ChVi
     }
 }
 
+void ApplyBodyPalette(int body_index, bool keep_model_colors, VisualShape* shape) {
+    const ::chrono::ChVisualMaterial mat = MakeBodyPaletteMaterial(body_index);
+    const ::chrono::ChColor authored(shape->color[0], shape->color[1], shape->color[2]);
+    const float opacity = shape->color[3];
+    // Same rules as ApplyMaterialToAllVisualShapes: translucent shapes and
+    // (optionally) user-set colours keep their colour, the rest take the palette.
+    ::chrono::ChColor diffuse = mat.GetDiffuseColor();
+    if (opacity < 1.0f || (keep_model_colors && !IsChronoDefaultColor(authored))) {
+        diffuse = SrgbToLinear(authored);
+    }
+    shape->color = {diffuse.R, diffuse.G, diffuse.B, opacity < 1.0f ? opacity : 1.0f};
+    shape->roughness = mat.GetRoughness();
+    shape->metallic = mat.GetMetallic();
+}
+
 }  // namespace seastack::viz
 

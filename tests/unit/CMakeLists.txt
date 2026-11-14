@@ -494,6 +494,11 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
     # ChronoAdapter already PUBLIC-links Hydro, HydroIO (when built), Infra, PTO, Core, Chrono.
     target_link_libraries(test_export_redesign PRIVATE SEAStack::ChronoAdapter)
     set_tests_properties(test_export_redesign PROPERTIES LABELS "unit")
+
+    # Replay data: exporter /visualization + series -> LoadReplayRecording round trip
+    build_unit_test(test_visualization_recording)
+    target_link_libraries(test_visualization_recording PRIVATE SEAStack::ChronoAdapter)
+    set_tests_properties(test_visualization_recording PROPERTIES LABELS "unit;chrono")
 else()
     message(STATUS "Skipping test_export_redesign (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
 endif()

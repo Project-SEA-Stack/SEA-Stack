@@ -5,6 +5,7 @@
 
 #include "run_from_yaml.h"
 #include "campaign_runner.h"
+#include "replay_run.h"
 #include "single_run.h"
 #include "cell_io.h"
 #include "app_init.h"
@@ -48,6 +49,7 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::LogInfo("      --campaign FILE  Generate a power matrix from a campaign YAML");
     seastack::infra::cli::LogInfo("      --nogui          Disable GUI visualization");
     seastack::infra::cli::LogInfo("      --viewer=NAME    GUI renderer: chrono (default) or seastack (experimental)");
+    seastack::infra::cli::LogInfo("      --replay FILE    Replay a results .h5 in the SEA-Stack viewer (no simulation)");
     seastack::infra::cli::LogInfo("      --log            Enable detailed logging to file");
     seastack::infra::cli::LogInfo("      --model_file     Override model YAML file (default: auto-detected)");
     seastack::infra::cli::LogInfo("      --sim_file       Override simulation YAML file (default: auto-detected)");
@@ -66,6 +68,9 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::ShowEmptyLine();
     seastack::infra::cli::LogInfo(std::string("  # Run simulation without GUI (headless mode)"));
     seastack::infra::cli::LogInfo(std::string("  ") + program_name + " ./my_case/ --nogui");
+    seastack::infra::cli::ShowEmptyLine();
+    seastack::infra::cli::LogInfo(std::string("  # Replay a finished run (scrub, any speed; nothing is simulated)"));
+    seastack::infra::cli::LogInfo(std::string("  ") + program_name + " --replay ./my_case/outputs/results.irregular.h5");
     seastack::infra::cli::ShowEmptyLine();
     seastack::infra::cli::LogInfo(std::string("  # Override YAML files"));
     seastack::infra::cli::LogInfo(std::string("  ") + program_name + " ./ --model_file alt.model.yaml --sim_file alt.sim.yaml");
@@ -93,6 +98,8 @@ struct CLIArgs {
     std::string sim_file;
     std::string campaign_file;          // --campaign <file>
     std::string run_cell_file;          // --run-cell <file> (subprocess IPC)
+    std::string replay_file;            // --replay <results.h5>
+
     bool nogui = false;
     bool log = false;
     bool nobanner = false;
@@ -149,6 +156,13 @@ static CLIArgs ParseArguments(int argc, char* argv[]) {
                 args.run_cell_file = argv[++i];
             } else {
                 seastack::infra::cli::LogError("ERROR: --run-cell requires a cell config YAML path");
+                std::exit(1);
+            }
+        } else if (arg == "--replay") {
+            if (i + 1 < argc) {
+                args.replay_file = argv[++i];
+            } else {
+                seastack::infra::cli::LogError("ERROR: --replay requires a results .h5 file path");
                 std::exit(1);
             }
         } else if (arg == "--output-level") {
@@ -321,6 +335,16 @@ int main(int argc, char* argv[]) {
         seastack::app::InitChronoEnvironment();
 
         int ret = seastack::app::RunCampaign(args.campaign_file, args.debug, args.profile, args.quiet);
+        seastack::infra::Shutdown();
+        return ret;
+    }
+
+    // ---- Replay mode: --replay <results.h5> ----
+    if (!args.replay_file.empty()) {
+        if (!args.quiet && !args.nobanner) {
+            seastack::infra::cli::ShowBannerCompact();
+        }
+        const int ret = seastack::app::RunReplay(args.replay_file);
         seastack::infra::Shutdown();
         return ret;
     }

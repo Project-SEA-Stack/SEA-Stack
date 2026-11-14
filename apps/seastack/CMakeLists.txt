@@ -26,6 +26,7 @@ endif()
 add_library(seastack_app_lib STATIC
     run_from_yaml.cpp
     single_run.cpp
+    replay_run.cpp
     campaign_runner.cpp
     cell_io.cpp
     app_init.cpp

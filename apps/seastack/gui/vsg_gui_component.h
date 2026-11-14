@@ -42,6 +42,8 @@ struct TimelineState {
     double memory_mb = 0.0;    ///< Approximate memory held by the recording [MB]
     bool interpolated = false; ///< The frame shown is blended between recorded frames
     bool smooth_slow_motion_active = false;  ///< Live view is interpolated between steps
+    /// Replay only: the input pose (before the first step) is shown, not a result.
+    bool showing_input_pose = false;
 
     // --- Written by the GUI (and by the viewer when playback reaches the end) ---
     bool playback = false;        ///< Show recorded frames instead of the live state

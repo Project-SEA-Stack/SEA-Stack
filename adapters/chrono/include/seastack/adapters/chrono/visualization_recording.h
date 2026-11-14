@@ -1,0 +1,69 @@
+/**
+ * @file visualization_recording.h
+ * @brief Read a SEA-Stack results file back into a visual scene and frames for
+ *        offline replay (run_seastack --replay), with no Chrono system.
+ *
+ * Reads what SimulationExporter::WriteVisualization and the per-step recorders
+ * wrote (HDF5 schema 1.1):
+ *   /visualization                         scene: shapes, input pose, environment
+ *   /results/time/time                     frame times [s]
+ *   /results/model/bodies/<name>           centre-of-mass position and orientation
+ *   /results/mooring/line_<i>              MoorDyn node positions and tensions
+ *   /visualization/cables/cable_<i>        TSDA glyph endpoints
+ *   /inputs/simulation/waves/components    linear wave components (optional)
+ *
+ * Conventions match viz_core: world frame, Z up, SI units, quaternions (w, x, y, z).
+ */
+
+#pragma once
+
+#include <seastack/viz_core/scene_model.h>
+
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace seastack::hydro {
+class WaveBase;
+}
+
+namespace seastack::chrono {
+
+struct ReplayRecording {
+    viz::SceneDescription scene;
+
+    /// Input pose (model file / initial conditions) at input_frame.time, before
+    /// the first integration step. /results starts after the first step (SIM-160).
+    viz::VizFrame input_frame;
+
+    /// Recorded frames in time order (every frame_stride-th output sample).
+    std::vector<viz::VizFrame> frames;
+    int frame_stride = 1;          ///< > 1 when the file was thinned to fit the memory budget
+    size_t samples_in_file = 0;    ///< Output samples in /results/time/time
+
+    /// Wave field rebuilt from the stored components; null when the run had no
+    /// component wave model (still water, or a tabulated elevation record).
+    std::shared_ptr<hydro::WaveBase> wave;
+    std::string wave_note;  ///< Why wave is null, for the user; empty otherwise
+
+    /// True if the shape colours were already painted by a GUI viewer; false if
+    /// they are as authored in the model (headless run) and still need the palette.
+    bool viewer_colors = false;
+
+    std::string schema_version;  ///< /meta schema_version
+};
+
+/// Load a results file for replay.
+///
+/// @param path          HDF5 results file written by run_seastack.
+/// @param budget_bytes  Memory budget for the frames; longer records are thinned
+///                      to every frame_stride-th sample.
+/// @param out           Filled on success.
+/// @param error         Message for the user on failure (e.g. a file written
+///                      before schema 1.1, without /visualization).
+/// @return true on success.
+bool LoadReplayRecording(const std::string& path, size_t budget_bytes, ReplayRecording* out,
+                         std::string* error);
+
+}  // namespace seastack::chrono

@@ -126,7 +126,8 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip(playback                  ? "Play the recording (Space). The simulation stays paused."
+        ImGui::SetTooltip(settings_ && settings_->timeline.replay ? "Play the replay (Space)."
+                          : playback                ? "Play the recording (Space). The simulation stays paused."
                           : run_status_.finished    ? "Reached the configured end time."
                                                     : "Space");
     }
@@ -329,7 +330,7 @@ void SeastackGuiComponent::RenderTimelineRow() {
         tl.playing = false;
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("First recorded frame (Home)");
+        ImGui::SetTooltip(tl.replay ? "Start: input pose before the first step (Home)" : "First recorded frame (Home)");
     }
     ImGui::SameLine();
     if (ImGui::Button("<", button_size)) {
@@ -387,8 +388,9 @@ void SeastackGuiComponent::RenderTimelineRow() {
     ImGui::SameLine();
     ImGui::TextDisabled("%s", info);
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Frames kept for scrubbing (one per rendered frame in which\n"
-                          "time advanced). The oldest are dropped beyond the memory budget.");
+        ImGui::SetTooltip(tl.replay ? "Output samples loaded from the results file."
+                                    : "Frames kept for scrubbing (one per rendered frame in which\n"
+                                      "time advanced). The oldest are dropped beyond the memory budget.");
     }
 }
 
@@ -397,7 +399,10 @@ void SeastackGuiComponent::RenderTimelineBanner() {
     char text[160];
     ImU32 color = IM_COL32(255, 176, 64, 255);
     if (tl.playback) {
-        if (tl.replay) {
+        if (tl.replay && tl.showing_input_pose) {
+            std::snprintf(text, sizeof(text), "REPLAY   t = %.2f s   -   input pose (before the first step)",
+                          tl.playback_time);
+        } else if (tl.replay) {
             std::snprintf(text, sizeof(text), "REPLAY   t = %.2f s%s", tl.playback_time,
                           tl.interpolated ? "   (interpolated)" : "");
         } else {

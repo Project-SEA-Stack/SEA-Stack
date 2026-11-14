@@ -12,6 +12,7 @@ class ChSystem;
 }
 
 namespace seastack::hydro { class WaveBase; }
+namespace seastack::chrono { struct ReplayRecording; }
 
 namespace seastack::viz {
 
@@ -56,6 +57,11 @@ class UI {
      *
      */
     virtual void Init(::chrono::ChSystem*, const char* title);
+
+    /// Initialize for offline replay of a recorded run (no ChSystem; nothing
+    /// is stepped). Always uses the SEA-Stack viewer. Call instead of Init().
+    /// @throws std::runtime_error if this UI cannot show a replay.
+    virtual void InitReplay(std::unique_ptr<seastack::chrono::ReplayRecording> recording, const char* title);
 
     /**@brief Set Camera position and direction
      *
@@ -143,6 +149,7 @@ class GUI : public UI {
 
     void SetViewerOptions(const ViewerOptions& options) override;
     void Init(::chrono::ChSystem*, const char* title) override;
+    void InitReplay(std::unique_ptr<seastack::chrono::ReplayRecording> recording, const char* title) override;
     void SetCamera(double x, double y, double z, double dirx, double diry, double dirz) override;
     bool IsRunning(double timestep) override;
     void SetWaveModel(std::shared_ptr<seastack::hydro::WaveBase> wave) override;

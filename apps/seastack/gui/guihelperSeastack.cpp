@@ -57,7 +57,52 @@ void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title
     }
     extractor_ = std::make_unique<seastack::chrono::VizExtractor>(system, mooring_provider_);
     model_bounds_ = extractor_->Scene().model_bounds;
+    InitViewer(ui, title);
+}
 
+void GUIImplSeastack::InitReplay(UI& ui, std::unique_ptr<seastack::chrono::ReplayRecording> recording,
+                                 const char* title) {
+    if (!recording || recording->frames.empty()) {
+        throw std::runtime_error("Replay: the recording has no frames.");
+    }
+    replay_ = std::move(recording);
+    if (!replay_->viewer_colors) {
+        // Headless runs record the colours as authored; paint them as the GUI would have.
+        for (size_t b = 0; b < replay_->scene.bodies.size(); ++b) {
+            for (VisualShape& shape : replay_->scene.bodies[b].shapes) {
+                ApplyBodyPalette(static_cast<int>(b), options_.use_model_colors, &shape);
+            }
+        }
+    }
+    model_bounds_ = replay_->scene.model_bounds;
+    wave_model_ = replay_->wave;
+
+    history_frame_bytes_ = EstimateFrameBytes(replay_->frames.front());
+    history_ = std::make_unique<FrameHistory>(replay_->frames.size());
+    for (VizFrame& frame : replay_->frames) {
+        history_->Push(std::move(frame));
+    }
+    replay_->frames.clear();
+    replay_->frames.shrink_to_fit();
+
+    TimelineState& tl = viewer_settings_->timeline;
+    tl.available = true;
+    tl.replay = true;
+    tl.playback = true;
+    tl.playing = false;
+    tl.playback_time = replay_->input_frame.time;
+    ui.simulationStarted = false;
+    ui.runStatus.finished = true;
+    ui.runStatus.end_time = history_->Newest().time;
+    InitViewer(ui, title);
+}
+
+const SceneDescription& GUIImplSeastack::Scene() const {
+    return replay_ ? replay_->scene : extractor_->Scene();
+}
+
+void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
+    ui_ = &ui;
     viewer_settings_->theme = options_.theme;
     viewer_settings_->theme_changed = true;
     mooring_viz_ = std::make_unique<MooringLinesViz>();
@@ -75,7 +120,7 @@ void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title
         gui_->Draw();
         DrawBodyLabels();
     };
-    if (!viewer_->Initialize(extractor_->Scene(), options, draw_gui)) {
+    if (!viewer_->Initialize(Scene(), options, draw_gui)) {
         throw std::runtime_error("SEA-Stack viewer initialization failed. Try --viewer=chrono or --nogui.");
     }
     gui_->SetUiScale(viewer_->UiScale());
@@ -152,7 +197,7 @@ void GUIImplSeastack::UpdateMooring(const VizFrame& frame) {
     mooring_options.has_tension_range = options_.has_mooring_tension_range;
     mooring_options.tension_min = options_.mooring_tension_min;
     mooring_options.tension_max = options_.mooring_tension_max;
-    DrawMooringLines(mooring_viz_.get(), viewer_.get(), mooring_group_, extractor_->Scene(), frame, model_bounds_,
+    DrawMooringLines(mooring_viz_.get(), viewer_.get(), mooring_group_, Scene(), frame, model_bounds_,
                      mooring_options, viewer_settings_->show_mooring_colors);
     if (!tsda_segment_viz_) {
         tsda_segment_viz_ = std::make_unique<MooringLinesViz>();
@@ -166,7 +211,7 @@ void GUIImplSeastack::UpdateMooring(const VizFrame& frame) {
     glyphs.barrels = tsda_barrel_viz_.get();
     glyphs.rods = tsda_rod_viz_.get();
     glyphs.springs = tsda_spring_viz_.get();
-    DrawTsdaCables(glyphs, viewer_.get(), mooring_group_, extractor_->Scene(), frame);
+    DrawTsdaCables(glyphs, viewer_.get(), mooring_group_, Scene(), frame);
 }
 
 void GUIImplSeastack::SetMooringLineProvider(MooringVizProvider provider) {
@@ -215,10 +260,10 @@ void GUIImplSeastack::UpdateSceneViewport() {
 }
 
 void GUIImplSeastack::DrawBodyLabels() {
-    if (!viewer_settings_->show_body_labels || !extractor_) {
+    if (!viewer_settings_->show_body_labels || (!extractor_ && !replay_)) {
         return;
     }
-    const SceneDescription& scene = extractor_->Scene();
+    const SceneDescription& scene = Scene();
     if (last_frame_.bodies.size() != scene.bodies.size()) {
         return;
     }
@@ -283,15 +328,18 @@ void GUIImplSeastack::RecordFrame(const VizFrame& live) {
 }
 
 VizFrame GUIImplSeastack::SelectFrame(VizFrame live) {
+    constexpr double kSameTime = 1e-9;  // [s]
     TimelineState& tl = viewer_settings_->timeline;
     const FrameHistory& h = *history_;
     tl.available = true;
-    tl.start_time = h.Oldest().time;
+    // A replay starts at the input pose, before the first recorded step.
+    tl.start_time = replay_ ? std::min(replay_->input_frame.time, h.Oldest().time) : h.Oldest().time;
     tl.end_time = h.Newest().time;
     tl.frame_count = h.Size();
     tl.memory_mb = static_cast<double>(h.Size() * history_frame_bytes_) / (1024.0 * 1024.0);
     tl.interpolated = false;
     tl.smooth_slow_motion_active = false;
+    tl.showing_input_pose = false;
 
     const auto now = std::chrono::steady_clock::now();
     const double wall_dt =
@@ -307,14 +355,19 @@ VizFrame GUIImplSeastack::SelectFrame(VizFrame live) {
         }
         if (tl.step_request != 0) {
             // Previous / next recorded frame strictly before / after the shown time.
-            constexpr double kSameTime = 1e-9;  // [s]
             size_t i = h.NearestIndex(tl.playback_time);
-            if (tl.step_request < 0 && h.At(i).time >= tl.playback_time - kSameTime && i > 0) {
-                --i;
-            } else if (tl.step_request > 0 && h.At(i).time <= tl.playback_time + kSameTime && i + 1 < h.Size()) {
-                ++i;
+            const bool before_i = h.At(i).time >= tl.playback_time - kSameTime;
+            if (tl.step_request < 0 && before_i && i == 0 && tl.start_time < h.At(0).time) {
+                tl.playback_time = tl.start_time;  // back from the first sample to the input pose
+            } else {
+                if (tl.step_request < 0 && before_i && i > 0) {
+                    --i;
+                } else if (tl.step_request > 0 && h.At(i).time <= tl.playback_time + kSameTime &&
+                           i + 1 < h.Size()) {
+                    ++i;
+                }
+                tl.playback_time = h.At(i).time;
             }
-            tl.playback_time = h.At(i).time;
             tl.step_request = 0;
         }
         if (tl.playback_time >= tl.end_time && tl.playing) {
@@ -328,6 +381,12 @@ VizFrame GUIImplSeastack::SelectFrame(VizFrame live) {
         tl.playback_time = std::clamp(tl.playback_time, tl.start_time, tl.end_time);
         ui_->animatingWithoutStepping = tl.playback && tl.playing;
         if (tl.playback) {
+            if (replay_ && tl.playback_time < h.Oldest().time - kSameTime) {
+                // Results start after the first step (SIM-160): show the input
+                // pose as it is, labelled, rather than interpolating into it.
+                tl.showing_input_pose = true;
+                return replay_->input_frame;
+            }
             VizFrame shown;
             tl.interpolated = h.Sample(tl.playback_time, &shown);
             last_live_display_time_ = live.time;
@@ -356,12 +415,18 @@ VizFrame GUIImplSeastack::SelectFrame(VizFrame live) {
 }
 
 bool GUIImplSeastack::IsRunning(double /*timestep*/) {
-    if (!extractor_) {
-        return false;
+    VizFrame live;  // a replay has no live state; it is always in playback
+    if (!replay_) {
+        if (!extractor_) {
+            return false;
+        }
+        live = extractor_->Capture(0);
+        RecordFrame(live);
     }
-    VizFrame live = extractor_->Capture(0);
-    RecordFrame(live);
     last_frame_ = SelectFrame(std::move(live));
+    if (replay_) {
+        ui_->runStatus.sim_time = viewer_settings_->timeline.playback_time;
+    }
     const VizFrame& frame = last_frame_;
     viewer_->SetFrame(frame);
     viewer_->SetShowBodyFrames(viewer_settings_->show_body_frames);
