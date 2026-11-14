@@ -1,12 +1,33 @@
 #pragma once
 
+#include <seastack/viz_core/frame_interpolation.h>
 #include <seastack/viz_core/scene_model.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <utility>
 #include <vector>
 
 namespace seastack::viz {
+
+/// Approximate heap + object size of one recorded frame [bytes].
+inline size_t EstimateFrameBytes(const VizFrame& frame) {
+    size_t bytes = sizeof(VizFrame) + frame.bodies.size() * sizeof(BodyState) +
+                   frame.cable_lines.size() * sizeof(CableLineState);
+    for (const MooringLineState& line : frame.mooring_lines) {
+        bytes += sizeof(MooringLineState) + line.node_positions.size() * sizeof(Vec3) +
+                 line.node_tensions.size() * sizeof(double);
+    }
+    return bytes;
+}
+
+/// Number of frames of `frame_bytes` each that fit in `budget_bytes`,
+/// between 2 and max_frames.
+inline size_t FrameCapacityForBudget(size_t frame_bytes, size_t budget_bytes, size_t max_frames) {
+    const size_t fit = budget_bytes / std::max<size_t>(frame_bytes, 1);
+    return std::clamp<size_t>(fit, 2, std::max<size_t>(max_frames, 2));
+}
 
 /// Bounded ring buffer of recent VizFrames for scrubbing and replay.
 ///
@@ -64,6 +85,22 @@ class FrameHistory {
             }
         }
         return (t - At(lo).time <= At(hi).time - t) ? lo : hi;
+    }
+
+    /// State at time t [s], clamped to the recorded range. Between two
+    /// recorded frames the result is interpolated (visual only); returns true
+    /// in that case and false when t falls on a recorded frame. Requires !Empty().
+    bool Sample(double t, VizFrame* out) const {
+        constexpr double kSameTime = 1e-9;  // [s]
+        const size_t i = NearestIndex(t);
+        const double ti = At(i).time;
+        if (std::abs(t - ti) <= kSameTime || t <= Oldest().time || t >= Newest().time) {
+            *out = At(i);
+            return false;
+        }
+        const size_t lo = (t > ti) ? i : i - 1;
+        *out = InterpolateFrames(At(lo), At(lo + 1), t);
+        return true;
     }
 
   private:

@@ -89,8 +89,8 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
     //   Space = play/pause, [ / ] = half / double speed, \ = back to real time.
     const ImGuiIO& io = ImGui::GetIO();
     if (!io.WantCaptureKeyboard) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Space, false) && !run_status_.finished) {
-            pressed_ = !pressed_;
+        if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
+            TogglePlay();
         }
         if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket, false)) {
             playback_speed_ = ClampSpeed(last_finite_speed_ * 0.5);
@@ -109,18 +109,26 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
     ImGui::Begin("##transport", nullptr,
                  kDockedFlags | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoScrollbar |
                      ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoNav);
-    ImGui::AlignTextToFramePadding();
     const ImGuiStyle& style = ImGui::GetStyle();
     const float group_gap = 3.0f * style.ItemSpacing.x;
+    const bool playback = settings_ && settings_->timeline.available && settings_->timeline.playback;
+    if (settings_ && settings_->timeline.available) {
+        RenderTimelineRow();
+    }
+    ImGui::AlignTextToFramePadding();
 
-    // Play / Pause: the button names the action it performs.
-    ImGui::BeginDisabled(run_status_.finished);
-    if (ImGui::Button(pressed_ ? "Pause" : "Play", ImVec2(70.0f * ui_scale_, 0))) {
-        pressed_ = !pressed_;
+    // Play / Pause: the button names the action it performs. In playback it
+    // plays the recording; the simulation stays paused.
+    const bool running = playback ? settings_->timeline.playing : pressed_;
+    ImGui::BeginDisabled(!playback && run_status_.finished);
+    if (ImGui::Button(running ? "Pause" : "Play", ImVec2(70.0f * ui_scale_, 0))) {
+        TogglePlay();
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip(run_status_.finished ? "Reached the configured end time." : "Space");
+        ImGui::SetTooltip(playback                  ? "Play the recording (Space). The simulation stays paused."
+                          : run_status_.finished    ? "Reached the configured end time."
+                                                    : "Space");
     }
 
     // Speed slider (logarithmic, so 0.1x-1x gets as much travel as 1x-10x).
@@ -202,7 +210,9 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
     } else if (s.achieved_speed > 0.98 * playback_speed_) {
         behind_shown_ = false;
     }
-    if (s.finished) {
+    if (playback) {
+        ImGui::TextColored(kWarn, settings_->timeline.replay ? "Replay" : "Playback");
+    } else if (s.finished) {
         ImGui::TextColored(kWarn, "Finished");
     } else if (!pressed_) {
         ImGui::TextDisabled("Paused");
@@ -250,6 +260,168 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
     ImGui::End();
 }
 
+void SeastackGuiComponent::EnterPlayback(double t) {
+    TimelineState& tl = settings_->timeline;
+    if (!tl.playback) {
+        tl.playback = true;
+        tl.playing = false;
+        tl.resume_on_live = pressed_;
+        pressed_ = false;  // physics stays paused while recorded frames are shown
+    }
+    tl.playback_time = std::clamp(t, tl.start_time, tl.end_time);
+}
+
+void SeastackGuiComponent::GoLive() {
+    TimelineState& tl = settings_->timeline;
+    if (tl.replay || !tl.playback) {
+        return;
+    }
+    tl.playback = false;
+    tl.playing = false;
+    tl.step_request = 0;
+    pressed_ = tl.resume_on_live && !run_status_.finished;
+}
+
+void SeastackGuiComponent::TogglePlay() {
+    if (settings_ && settings_->timeline.available && settings_->timeline.playback) {
+        TimelineState& tl = settings_->timeline;
+        if (!tl.playing && tl.replay && tl.playback_time >= tl.end_time) {
+            tl.playback_time = tl.start_time;  // play the replay again from the start
+        }
+        tl.playing = !tl.playing;
+        return;
+    }
+    if (!run_status_.finished) {
+        pressed_ = !pressed_;
+    }
+}
+
+void SeastackGuiComponent::RenderTimelineRow() {
+    TimelineState& tl = settings_->timeline;
+    const double shown = tl.playback ? tl.playback_time : tl.end_time;
+    const bool has_range = tl.frame_count >= 2 && tl.end_time > tl.start_time;
+
+    // Keys: Home = first frame, End = live (or last frame), , / . = step one frame.
+    if (has_range && !ImGui::GetIO().WantCaptureKeyboard) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) {
+            EnterPlayback(tl.start_time);
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_End, false)) {
+            tl.replay ? EnterPlayback(tl.end_time) : GoLive();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Comma)) {
+            EnterPlayback(shown);
+            tl.playing = false;
+            tl.step_request = -1;
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Period)) {
+            EnterPlayback(shown);
+            tl.playing = false;
+            tl.step_request = 1;
+        }
+    }
+
+    ImGui::AlignTextToFramePadding();
+    const ImVec2 button_size(ImGui::GetFrameHeight() * 1.4f, 0.0f);
+    ImGui::BeginDisabled(!has_range);
+    if (ImGui::Button("|<", button_size)) {
+        EnterPlayback(tl.start_time);
+        tl.playing = false;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("First recorded frame (Home)");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("<", button_size)) {
+        EnterPlayback(shown);
+        tl.playing = false;
+        tl.step_request = -1;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Previous recorded frame ( , )");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(">", button_size)) {
+        EnterPlayback(shown);
+        tl.playing = false;
+        tl.step_request = 1;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Next recorded frame ( . )");
+    }
+
+    char info[96];
+    std::snprintf(info, sizeof(info), "%zu frames  %.0f MB", tl.frame_count, tl.memory_mb);
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float live_w = tl.replay ? 0.0f : ImGui::CalcTextSize("Live").x + 2.0f * style.FramePadding.x +
+                                                style.ItemSpacing.x;
+    const float info_w = ImGui::CalcTextSize(info).x + style.ItemSpacing.x;
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(std::max(80.0f * ui_scale_, ImGui::GetContentRegionAvail().x - live_w - info_w));
+    double slider_time = shown;
+    double lo = tl.start_time;
+    double hi = has_range ? tl.end_time : tl.start_time + 1.0;
+    if (ImGui::SliderScalar("##timeline", ImGuiDataType_Double, &slider_time, &lo, &hi, "t = %.2f s")) {
+        EnterPlayback(slider_time);
+        tl.playing = false;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(tl.replay ? "Drag to scrub through the replay."
+                                    : "Drag to scrub back through recorded frames.\n"
+                                      "The simulation pauses while you look back;\n"
+                                      "Live returns to it. Visual only: results are not changed.");
+    }
+    ImGui::EndDisabled();
+
+    if (!tl.replay) {
+        ImGui::SameLine();
+        ImGui::BeginDisabled(!tl.playback);
+        if (ImGui::Button("Live")) {
+            GoLive();
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Back to the live simulation (End); resumes it if it was running.");
+        }
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", info);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Frames kept for scrubbing (one per rendered frame in which\n"
+                          "time advanced). The oldest are dropped beyond the memory budget.");
+    }
+}
+
+void SeastackGuiComponent::RenderTimelineBanner() {
+    const TimelineState& tl = settings_->timeline;
+    char text[160];
+    ImU32 color = IM_COL32(255, 176, 64, 255);
+    if (tl.playback) {
+        if (tl.replay) {
+            std::snprintf(text, sizeof(text), "REPLAY   t = %.2f s%s", tl.playback_time,
+                          tl.interpolated ? "   (interpolated)" : "");
+        } else {
+            std::snprintf(text, sizeof(text), "PLAYBACK   t = %.2f s   -   live at t = %.2f s%s", tl.playback_time,
+                          tl.end_time, tl.interpolated ? "   (interpolated)" : "");
+        }
+    } else if (tl.smooth_slow_motion_active) {
+        std::snprintf(text, sizeof(text), "Smooth slow motion: interpolated between steps");
+        color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    } else {
+        return;
+    }
+    const float margin = kOverlayMargin * ui_scale_;
+    const float pad = 6.0f * ui_scale_;
+    const ImVec2 size = ImGui::CalcTextSize(text);
+    const ImVec2 p0(scene_rect_.x + 0.5f * (scene_rect_.w - size.x) - pad,
+                    scene_rect_.y + scene_rect_.h - margin - size.y - 2.0f * pad);
+    const ImVec2 p1(p0.x + size.x + 2.0f * pad, p0.y + size.y + 2.0f * pad);
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    dl->AddRectFilled(p0, p1, ImGui::GetColorU32(ImGuiCol_WindowBg), ImGui::GetStyle().WindowRounding);
+    dl->AddRect(p0, p1, color, ImGui::GetStyle().WindowRounding);
+    dl->AddText(ImVec2(p0.x + pad, p0.y + pad), color, text);
+}
+
 void SeastackGuiComponent::render(vsg::CommandBuffer& /*cb*/) {
     Draw();
 }
@@ -277,7 +449,10 @@ void SeastackGuiComponent::Draw() {
     // Docked layout: transport bar along the bottom, inspector on the right,
     // and the 3D scene in the rectangle that is left.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    const float bar_h = ImGui::GetFrameHeight() + 2.0f * ImGui::GetStyle().WindowPadding.y;
+    float bar_h = ImGui::GetFrameHeight() + 2.0f * ImGui::GetStyle().WindowPadding.y;
+    if (settings_ && settings_->timeline.available) {
+        bar_h += ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
+    }
     const float inspector_w = (settings_ && show_inspector_) ? kInspectorWidth * ui_scale_ : 0.0f;
     scene_rect_.x = vp->WorkPos.x;
     scene_rect_.y = vp->WorkPos.y;
@@ -294,6 +469,9 @@ void SeastackGuiComponent::Draw() {
 
     RenderViewToolbar();
     RenderColorBar();
+    if (settings_ && settings_->timeline.available && !settings_->capturing_frame) {
+        RenderTimelineBanner();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +493,14 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
             ImGui::SetTooltip("Dark studio background, or light theme with sky.\n"
                               "Visual only; set the start-up theme with\n"
                               "simulation.visualization.theme: dark | light");
+        }
+        if (settings_->timeline.available && !settings_->timeline.replay) {
+            ImGui::Checkbox("Smooth slow motion", &settings_->timeline.smooth_slow_motion);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("When each time step lasts several frames, draw poses\n"
+                                  "interpolated between the last two steps (the view lags\n"
+                                  "one step). Visual only; results are not changed.");
+            }
         }
     }
 

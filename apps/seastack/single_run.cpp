@@ -1371,12 +1371,22 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             // budget already bounds the frame time.
             const bool unlimited = ui.simulationStarted && pacer.IsUnlimited();
             if (!unlimited) {
-                const double frame_rate = ui.simulationStarted ? kGuiRunningFrameRate : kGuiPausedFrameRate;
+                const double frame_rate = (ui.simulationStarted || ui.animatingWithoutStepping)
+                                              ? kGuiRunningFrameRate
+                                              : kGuiPausedFrameRate;
                 const double remaining = 1.0 / frame_rate - (wall_seconds() - frame_wall_start);
                 if (remaining > 0.0) {
                     std::this_thread::sleep_for(std::chrono::duration<double>(remaining));
                 }
             }
+
+            // Slow motion (a step lasts longer than a frame): the time to draw
+            // next lies between the last two steps, one step behind the pacer
+            // target. The GUI interpolates there; visual only.
+            const bool slow_motion = ui.simulationStarted && !pacer.IsUnlimited() && pacer.IsAnchored() &&
+                                     loop_dt > ui.playbackSpeed / kGuiRunningFrameRate;
+            ui.runStatus.display_time = slow_motion ? pacer.TargetSimTime(wall_seconds()) - loop_dt
+                                                    : std::numeric_limits<double>::quiet_NaN();
             }
             active_wall_s = run_clock.ActiveWallTime();
 #ifdef _WIN32

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <memory>
 
 #include <seastack/config.h>
@@ -18,6 +19,7 @@
 #ifdef SEASTACK_HAVE_VSG
     #include "vsg_visual_system.h"
     #include <seastack/adapters/chrono/viz_extractor.h>
+    #include <seastack/viz_core/frame_history.h>
     #include <seastack/viz_core/scene_framing.h>
     #include <seastack/viz_core/scene_model.h>
 #endif
@@ -147,8 +149,19 @@ class GUIImplSeastack : public GUIImpl {
     void DrawBodyLabels();
     /// Pass a GUI screenshot request to the viewer and show the last result.
     void HandleScreenshot();
+    /// Add the live frame to the timeline history if simulated time advanced.
+    void RecordFrame(const VizFrame& live);
+    /// Frame to draw: the live state, a recorded frame in playback, or the live
+    /// view interpolated between the last two steps in slow motion.
+    VizFrame SelectFrame(VizFrame live);
 
     ViewerOptions options_;
+    UI* ui_ = nullptr;  ///< Owner of the run state (playback speed, start/pause)
+    std::unique_ptr<FrameHistory> history_;  ///< Timeline recording; one frame per rendered frame
+    size_t history_frame_bytes_ = 0;         ///< Frame size the history capacity was chosen for [bytes]
+    double last_live_display_time_ = 0.0;    ///< Smooth slow motion never moves backwards [s]
+    std::chrono::steady_clock::time_point last_select_wall_{};  ///< Previous SelectFrame() call
+    bool has_last_select_wall_ = false;
     VizFrame last_frame_;  ///< Frame shown this render; labels are placed from it
     std::string reported_screenshot_;  ///< Last screenshot whose result the GUI has shown
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;

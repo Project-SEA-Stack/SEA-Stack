@@ -13,6 +13,7 @@
 #include <seastack/viz_core/simulation_pacer.h>
 #include <seastack/viz_core/visual_theme.h>
 
+#include <cstddef>
 #include <string>
 
 namespace seastack::viz {
@@ -25,6 +26,30 @@ struct ScreenRect {
     float y = 0.0f;
     float w = 0.0f;
     float h = 0.0f;
+};
+
+/// Timeline of recorded frames (SEA-Stack viewer only). The viewer records
+/// frames and fills the range; the transport bar edits the playback fields.
+/// Playback is visual only: it shows stored frames and never changes the
+/// simulation, which stays paused while a recorded frame is shown.
+struct TimelineState {
+    // --- Written by the viewer every frame ---
+    bool available = false;    ///< The viewer records frames (show the timeline row)
+    bool replay = false;       ///< Offline replay from file: there is no live simulation
+    double start_time = 0.0;   ///< Oldest recorded frame [s]
+    double end_time = 0.0;     ///< Newest recorded frame [s] (the live state when not replaying)
+    size_t frame_count = 0;    ///< Recorded frames
+    double memory_mb = 0.0;    ///< Approximate memory held by the recording [MB]
+    bool interpolated = false; ///< The frame shown is blended between recorded frames
+    bool smooth_slow_motion_active = false;  ///< Live view is interpolated between steps
+
+    // --- Written by the GUI (and by the viewer when playback reaches the end) ---
+    bool playback = false;        ///< Show recorded frames instead of the live state
+    double playback_time = 0.0;   ///< Time shown in playback [s]
+    bool playing = false;         ///< Playback advances at the playback speed
+    int step_request = 0;         ///< -1 / +1 = show the previous / next recorded frame
+    bool resume_on_live = false;  ///< Restart stepping when returning to live
+    bool smooth_slow_motion = true;  ///< Interpolate the live view when steps are slower than frames
 };
 
 /// Runtime-adjustable water visualization settings.
@@ -85,6 +110,9 @@ struct ViewerSettings {
     bool capturing_frame = false;       ///< This frame is being saved: hide the view toolbar
     std::string screenshot_status;      ///< Last result shown next to the button; empty = none
     double screenshot_status_time = 0.0;  ///< ImGui time the status was shown first [s]; < 0 = new status
+
+    // --- Timeline (SEA-Stack viewer) ---
+    TimelineState timeline;
 };
 
 /// Unused file path `<directory>/screenshot_YYYYMMDD_HHMMSS[_n].png`;
@@ -129,6 +157,16 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
 
   private:
     void RenderTransportBar(const ImVec2& pos, const ImVec2& size);
+    /// Second transport row: scrub slider and frame buttons (when settings_->timeline.available).
+    void RenderTimelineRow();
+    /// "PLAYBACK" / "REPLAY" / "interpolated" banner at the bottom of the scene.
+    void RenderTimelineBanner();
+    /// Show recorded frames from time t [s]; pauses stepping, remembering whether to resume.
+    void EnterPlayback(double t);
+    /// Leave playback and show the live state again; resumes stepping if it was running.
+    void GoLive();
+    /// Play / Pause action: the simulation when live, the recording in playback.
+    void TogglePlay();
     void RenderInspector(const ImVec2& pos, const ImVec2& size);
     void RenderViewToolbar();
     void RenderMooringPanel();

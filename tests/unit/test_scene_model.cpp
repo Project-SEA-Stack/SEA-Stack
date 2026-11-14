@@ -2,6 +2,7 @@
 // (Chrono-free, VSG-free).
 
 #include <seastack/viz_core/frame_history.h>
+#include <seastack/viz_core/frame_interpolation.h>
 #include <seastack/viz_core/scene_model.h>
 
 #include "test_macros.h"
@@ -99,6 +100,75 @@ int main() {
         h.Push(FrameAt(0.2));  // simulation reset / rewind
         TEST_ASSERT(h.Size() == 1, "non-increasing time restarts history");
         TEST_NEAR(h.Newest().time, 0.2, 1e-12, "restarted history holds the new frame");
+    }
+
+    // --- Interpolation (visual only) ---
+    {
+        const Quat a = AxisAngle({0.0, 0.0, 1.0}, 0.0);
+        const Quat b = AxisAngle({0.0, 0.0, 1.0}, 0.5 * kPi);
+        const Quat mid = Slerp(a, b, 0.5);
+        const Quat expected = AxisAngle({0.0, 0.0, 1.0}, 0.25 * kPi);
+        TEST_NEAR(mid[0], expected[0], 1e-12, "slerp halfway: w");
+        TEST_NEAR(mid[3], expected[3], 1e-12, "slerp halfway: z");
+        const Quat b_neg{-b[0], -b[1], -b[2], -b[3]};  // same rotation as b
+        const Quat mid_neg = Slerp(a, b_neg, 0.5);
+        TEST_NEAR(std::abs(mid_neg[0]), expected[0], 1e-12, "slerp takes the shorter arc");
+        TEST_NEAR(std::abs(mid_neg[3]), expected[3], 1e-12, "slerp shorter arc: z");
+
+        VizFrame f0 = FrameAt(1.0);
+        VizFrame f1 = FrameAt(2.0);
+        f0.step = 10;
+        f1.step = 11;
+        f0.bodies.resize(1);
+        f1.bodies.resize(1);
+        f1.bodies[0].pose.position = {4.0, 0.0, -2.0};
+        f1.bodies[0].pose.rotation = b;
+        f0.mooring_lines.resize(1);
+        f1.mooring_lines.resize(1);
+        f0.mooring_lines[0].node_positions = {{0.0, 0.0, 0.0}};
+        f1.mooring_lines[0].node_positions = {{0.0, 0.0, -10.0}};
+        f0.mooring_lines[0].node_tensions = {100.0};
+        f1.mooring_lines[0].node_tensions = {300.0};
+
+        const VizFrame q = InterpolateFrames(f0, f1, 1.25);
+        TEST_NEAR(q.time, 1.25, 1e-12, "interpolated time");
+        TEST_ASSERT(q.step == 10, "step from the nearer frame");
+        TEST_NEAR(q.bodies[0].pose.position[0], 1.0, 1e-12, "position blended linearly");
+        TEST_NEAR(q.bodies[0].pose.position[2], -0.5, 1e-12, "position blended linearly: z");
+        TEST_NEAR(q.bodies[0].pose.rotation[3], std::sin(0.0625 * kPi), 1e-12, "rotation slerped");
+        TEST_NEAR(q.mooring_lines[0].node_positions[0][2], -2.5, 1e-12, "mooring node blended");
+        TEST_NEAR(q.mooring_lines[0].node_tensions[0], 150.0, 1e-12, "tension blended");
+
+        VizFrame f2 = f1;
+        f2.mooring_lines[0].node_positions.push_back({1.0, 1.0, 1.0});
+        f2.mooring_lines[0].node_tensions.push_back(0.0);
+        TEST_ASSERT(InterpolateFrames(f0, f2, 1.75).step == 11, "layout change: nearer frame unchanged");
+
+        FrameHistory h(8);
+        h.Push(f0);
+        h.Push(f1);
+        VizFrame s;
+        TEST_ASSERT(h.Sample(1.5, &s), "between frames: interpolated");
+        TEST_NEAR(s.bodies[0].pose.position[0], 2.0, 1e-12, "sampled position");
+        TEST_ASSERT(!h.Sample(2.0, &s) && s.step == 11, "on a recorded frame: exact");
+        TEST_ASSERT(!h.Sample(9.0, &s) && s.step == 11, "after the range: newest");
+        TEST_ASSERT(!h.Sample(0.0, &s) && s.step == 10, "before the range: oldest");
+    }
+
+    // --- Memory budget ---
+    {
+        VizFrame f;
+        f.bodies.resize(10);
+        f.mooring_lines.resize(4);
+        for (auto& line : f.mooring_lines) {
+            line.node_positions.resize(40);
+            line.node_tensions.resize(40);
+        }
+        const size_t bytes = EstimateFrameBytes(f);
+        TEST_ASSERT(bytes > 4 * 40 * 32 && bytes < 8000, "frame size estimate is a few kB");
+        TEST_ASSERT(FrameCapacityForBudget(bytes, 256u << 20, 1000000) == (256u << 20) / bytes, "budget fit");
+        TEST_ASSERT(FrameCapacityForBudget(bytes, 256u << 20, 1000) == 1000, "frame cap");
+        TEST_ASSERT(FrameCapacityForBudget(bytes, 10, 1000) == 2, "at least two frames");
     }
 
     test_results.Summary();

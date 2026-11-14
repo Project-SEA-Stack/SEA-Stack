@@ -122,6 +122,10 @@ class UI {
     /// Run progress written by the simulation loop, displayed by the GUI.
     RunStatus runStatus;
 
+    /// Set by the GUI while it animates without stepping (timeline playback),
+    /// so the loop renders at the running frame rate instead of the paused one.
+    bool animatingWithoutStepping = false;
+
   protected:
     ::chrono::ChSystem* pSystem;  // Do not manage the memory
 };

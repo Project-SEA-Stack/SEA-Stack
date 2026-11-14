@@ -132,6 +132,9 @@ struct RunStatus {
     int steps_last_frame = 0;       ///< Physics steps taken in the last frame
     bool falling_behind = false;    ///< True if the requested speed cannot be sustained
     bool finished = false;          ///< True once end_time has been reached
+    /// Slow motion only: simulated time the view should show now, between the
+    /// last two steps (for visual interpolation) [s]; NaN otherwise.
+    double display_time = std::numeric_limits<double>::quiet_NaN();
 };
 
 }  // namespace seastack::viz

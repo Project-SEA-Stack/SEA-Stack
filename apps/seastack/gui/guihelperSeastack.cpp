@@ -25,6 +25,7 @@
 
 #include <chrono/core/ChDataPath.h>
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
@@ -42,6 +43,7 @@ GUIImplSeastack::GUIImplSeastack()
 GUIImplSeastack::~GUIImplSeastack() = default;
 
 void GUIImplSeastack::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
+    ui_ = &ui;
     // Same palette as the Chrono viewer, applied to the Chrono assets so the
     // extracted scene carries it.
     if (system) {
@@ -121,6 +123,14 @@ void GUIImplSeastack::UpdateWater(const VizFrame& frame) {
         return;
     }
     ApplyWaterSettings(water_.get(), viewer_settings_.get());
+    if (viewer_settings_->timeline.playback) {
+        // The radiation overlay keeps per-source state from live frames; it
+        // is hidden while recorded frames are shown.
+        ViewerSettings no_radiation = *viewer_settings_;
+        no_radiation.show_radiation_viz = false;
+        water_->Update(wave_model_, frame.time, &no_radiation);
+        return;
+    }
     if (viewer_settings_->show_radiation_viz) {
         UpdateRadiationSources(water_.get(), *viewer_settings_, wave_model_.get(), extractor_->Scene(), frame);
     }
@@ -252,11 +262,106 @@ void GUIImplSeastack::HandleScreenshot() {
     }
 }
 
+void GUIImplSeastack::RecordFrame(const VizFrame& live) {
+    // Memory budget for the timeline; at about 3 kB per frame (10 bodies,
+    // 4 lines x 40 nodes) this keeps roughly 85k frames.
+    constexpr size_t kHistoryBudgetBytes = size_t{256} << 20;
+    constexpr size_t kMaxHistoryFrames = 200000;
+    const size_t bytes = EstimateFrameBytes(live);
+    // Mooring data can appear after the first frames; size the buffer again
+    // (dropping the few frames recorded so far) if frames grew noticeably.
+    if (!history_ || bytes > history_frame_bytes_ + history_frame_bytes_ / 4) {
+        history_frame_bytes_ = bytes;
+        history_ = std::make_unique<FrameHistory>(
+            FrameCapacityForBudget(bytes, kHistoryBudgetBytes, kMaxHistoryFrames));
+    }
+    // Same time = nothing new (paused, or slow motion between steps); an
+    // earlier time restarts the history (see FrameHistory::Push).
+    if (history_->Empty() || live.time != history_->Newest().time) {
+        history_->Push(live);
+    }
+}
+
+VizFrame GUIImplSeastack::SelectFrame(VizFrame live) {
+    TimelineState& tl = viewer_settings_->timeline;
+    const FrameHistory& h = *history_;
+    tl.available = true;
+    tl.start_time = h.Oldest().time;
+    tl.end_time = h.Newest().time;
+    tl.frame_count = h.Size();
+    tl.memory_mb = static_cast<double>(h.Size() * history_frame_bytes_) / (1024.0 * 1024.0);
+    tl.interpolated = false;
+    tl.smooth_slow_motion_active = false;
+
+    const auto now = std::chrono::steady_clock::now();
+    const double wall_dt =
+        has_last_select_wall_ ? std::chrono::duration<double>(now - last_select_wall_).count() : 0.0;
+    last_select_wall_ = now;
+    has_last_select_wall_ = true;
+
+    if (tl.playback) {
+        if (tl.playing) {
+            constexpr double kMaxPlaybackSpeed = 20.0;  // "Max" speed for recorded frames [-]
+            const double speed = ui_->playbackSpeed > 0.0 ? ui_->playbackSpeed : kMaxPlaybackSpeed;
+            tl.playback_time += speed * wall_dt;
+        }
+        if (tl.step_request != 0) {
+            // Previous / next recorded frame strictly before / after the shown time.
+            constexpr double kSameTime = 1e-9;  // [s]
+            size_t i = h.NearestIndex(tl.playback_time);
+            if (tl.step_request < 0 && h.At(i).time >= tl.playback_time - kSameTime && i > 0) {
+                --i;
+            } else if (tl.step_request > 0 && h.At(i).time <= tl.playback_time + kSameTime && i + 1 < h.Size()) {
+                ++i;
+            }
+            tl.playback_time = h.At(i).time;
+            tl.step_request = 0;
+        }
+        if (tl.playback_time >= tl.end_time && tl.playing) {
+            tl.playing = false;
+            if (!tl.replay) {
+                // Played up to the live state: carry on with the simulation.
+                tl.playback = false;
+                ui_->simulationStarted = !ui_->runStatus.finished;
+            }
+        }
+        tl.playback_time = std::clamp(tl.playback_time, tl.start_time, tl.end_time);
+        ui_->animatingWithoutStepping = tl.playback && tl.playing;
+        if (tl.playback) {
+            VizFrame shown;
+            tl.interpolated = h.Sample(tl.playback_time, &shown);
+            last_live_display_time_ = live.time;
+            return shown;
+        }
+    }
+
+    ui_->animatingWithoutStepping = false;
+    // Live. In slow motion, draw the time between the last two steps that the
+    // run loop asks for, never moving backwards (e.g. just after resuming).
+    const double display_time = ui_->runStatus.display_time;
+    if (last_live_display_time_ > live.time) {
+        last_live_display_time_ = live.time;  // history restarted
+    }
+    if (tl.smooth_slow_motion && std::isfinite(display_time) && h.Size() >= 2) {
+        const double t = std::clamp(display_time, std::max(last_live_display_time_, h.At(h.Size() - 2).time),
+                                    h.Newest().time);
+        last_live_display_time_ = t;
+        VizFrame shown;
+        h.Sample(t, &shown);
+        tl.smooth_slow_motion_active = true;
+        return shown;
+    }
+    last_live_display_time_ = live.time;
+    return live;
+}
+
 bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     if (!extractor_) {
         return false;
     }
-    last_frame_ = extractor_->Capture(0);
+    VizFrame live = extractor_->Capture(0);
+    RecordFrame(live);
+    last_frame_ = SelectFrame(std::move(live));
     const VizFrame& frame = last_frame_;
     viewer_->SetFrame(frame);
     viewer_->SetShowBodyFrames(viewer_settings_->show_body_frames);
