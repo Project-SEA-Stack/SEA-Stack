@@ -50,6 +50,7 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::LogInfo("      --nogui          Disable GUI visualization");
     seastack::infra::cli::LogInfo("      --viewer=NAME    GUI renderer: chrono (default) or seastack (experimental)");
     seastack::infra::cli::LogInfo("      --replay FILE    Replay a results .h5 in the SEA-Stack viewer (no simulation)");
+    seastack::infra::cli::LogInfo("      --schedule FILE  Apply TSDA/RSDA parameter changes from a schedule YAML");
     seastack::infra::cli::LogInfo("      --log            Enable detailed logging to file");
     seastack::infra::cli::LogInfo("      --model_file     Override model YAML file (default: auto-detected)");
     seastack::infra::cli::LogInfo("      --sim_file       Override simulation YAML file (default: auto-detected)");
@@ -71,6 +72,9 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::ShowEmptyLine();
     seastack::infra::cli::LogInfo(std::string("  # Replay a finished run (scrub, any speed; nothing is simulated)"));
     seastack::infra::cli::LogInfo(std::string("  ") + program_name + " --replay ./my_case/outputs/results.irregular.h5");
+    seastack::infra::cli::ShowEmptyLine();
+    seastack::infra::cli::LogInfo(std::string("  # Rerun a GUI session's parameter changes headless"));
+    seastack::infra::cli::LogInfo(std::string("  ") + program_name + " ./my_case/ --nogui --schedule ./my_case/outputs/results.regular.schedule.yaml");
     seastack::infra::cli::ShowEmptyLine();
     seastack::infra::cli::LogInfo(std::string("  # Override YAML files"));
     seastack::infra::cli::LogInfo(std::string("  ") + program_name + " ./ --model_file alt.model.yaml --sim_file alt.sim.yaml");
@@ -99,6 +103,7 @@ struct CLIArgs {
     std::string campaign_file;          // --campaign <file>
     std::string run_cell_file;          // --run-cell <file> (subprocess IPC)
     std::string replay_file;            // --replay <results.h5>
+    std::string schedule_file;          // --schedule <file.schedule.yaml>
 
     bool nogui = false;
     bool log = false;
@@ -163,6 +168,13 @@ static CLIArgs ParseArguments(int argc, char* argv[]) {
                 args.replay_file = argv[++i];
             } else {
                 seastack::infra::cli::LogError("ERROR: --replay requires a results .h5 file path");
+                std::exit(1);
+            }
+        } else if (arg == "--schedule") {
+            if (i + 1 < argc) {
+                args.schedule_file = argv[++i];
+            } else {
+                seastack::infra::cli::LogError("ERROR: --schedule requires a schedule .yaml file path");
                 std::exit(1);
             }
         } else if (arg == "--output-level") {
@@ -419,6 +431,10 @@ int main(int argc, char* argv[]) {
     if (!args.output_level.empty()) {
         runner_args.push_back("--output-level");
         runner_args.push_back(args.output_level);
+    }
+    if (!args.schedule_file.empty()) {
+        runner_args.push_back("--schedule");
+        runner_args.push_back(std::filesystem::absolute(args.schedule_file).generic_string());
     }
     
     // Convert to argc/argv format for the runner

@@ -21,6 +21,7 @@
 #include <seastack/hydro/config/yaml_parser.h>
 #include <seastack/adapters/chrono/hydro_system.h>
 #include <seastack/adapters/chrono/simulation_export.h>
+#include <seastack/adapters/chrono/runtime_controls.h>
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 
@@ -42,6 +43,7 @@
 #include <chrono/core/ChMatrix33.h>
 #include <chrono/geometry/ChTriangleMeshConnected.h>
 #include <chrono/physics/ChLinkLock.h>
+#include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChLinkMate.h>
 #include <chrono/timestepper/ChAssemblyAnalysis.h>
 #include <yaml-cpp/yaml.h>
@@ -1047,6 +1049,54 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
         // -----------------------------------------------------------------
+        // 5b. Runtime controls: TSDA/RSDA parameters changed from the GUI or
+        //     a schedule file, applied at step boundaries and logged.
+        // -----------------------------------------------------------------
+        seastack::chrono::RuntimeControls runtime_controls(system.get());
+#ifdef SEASTACK_HAVE_EXTERNAL
+        for (const auto& link : system->GetLinks()) {
+            auto* tsda = dynamic_cast<::chrono::ChLinkTSDA*>(link.get());
+            if (tsda && std::dynamic_pointer_cast<seastack::app::TensionOnlyRopeForce>(tsda->GetForceFunctor())) {
+                const std::string prefix = "tsda." + tsda->GetName() + ".";
+                runtime_controls.SetOwner(prefix + "spring_coefficient", "tension-only rope (ropes file)");
+                runtime_controls.SetOwner(prefix + "damping_coefficient", "tension-only rope (ropes file)");
+            }
+        }
+        if (controller) {
+            for (const auto& channel : controller->actuator_names()) {
+                runtime_controls.SetOwner(channel, "controller");
+            }
+        }
+#endif
+        if (exporter) {
+            seastack::chrono::SimulationExporter* exp = exporter.get();
+            runtime_controls.SetChangeCallback([exp](const seastack::chrono::RuntimeParameter& p) {
+                exp->UpdateLinkParameter(p.link_name, p.field, p.value);
+            });
+        }
+        if (!config.schedule_file.empty()) {
+            try {
+                const auto schedule = seastack::chrono::ReadRuntimeSchedule(config.schedule_file);
+                runtime_controls.LoadSchedule(schedule, system->GetChTime(), loop_dt);
+                seastack::infra::cli::LogInfo("Schedule: " + std::to_string(schedule.commands.size()) +
+                                              " parameter change(s) from " + config.schedule_file);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+        // Where the GUI writes the schedule of its edits (next to the results).
+        std::string schedule_export_path;
+        if (!persisted_hdf5_path.empty()) {
+            std::filesystem::path p(persisted_hdf5_path);
+            schedule_export_path = (p.parent_path() / (p.stem().string() + ".schedule.yaml")).generic_string();
+        }
+        if (gui_init_ok) {
+            ui.SetRuntimeControls(&runtime_controls, schedule_export_path, loop_dt);
+        }
+
+        // -----------------------------------------------------------------
         // 6. Run simulation
         // -----------------------------------------------------------------
         startup_line("[startup] Entering simulation loop");
@@ -1110,6 +1160,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 double current_time = system->GetChTime();
                 try {
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
+                    runtime_controls.ApplyDue(step_count, system->GetChTime());
 #ifdef SEASTACK_HAVE_EXTERNAL
                     if (controller) {
                         controller->BeforeStep(system->GetChTime());
@@ -1288,6 +1339,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                             budget_exhausted = true;
                             break;
                         }
+                        runtime_controls.ApplyDue(step_count, system->GetChTime());
 #ifdef SEASTACK_HAVE_EXTERNAL
                         if (controller) {
                             controller->BeforeStep(system->GetChTime());
@@ -1433,8 +1485,39 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         active_wall_s = std::min(active_wall_s, loop_wall_s);
         const double paused_wall_s = std::max(0.0, loop_wall_s - active_wall_s);
 
+        if (runtime_controls.UnappliedScheduledCount() > 0) {
+            seastack::infra::cli::LogWarning(
+                "Schedule: " + std::to_string(runtime_controls.UnappliedScheduledCount()) +
+                " parameter change(s) not applied (scheduled after the run ended)");
+        }
+        if (runtime_controls.HasGuiEvents() && !schedule_export_path.empty()) {
+            try {
+                seastack::chrono::WriteRuntimeSchedule(
+                    schedule_export_path, runtime_controls.events(), loop_dt,
+                    "Parameter changes from the GUI run that wrote " +
+                        std::filesystem::path(persisted_hdf5_path).filename().string());
+                seastack::infra::cli::LogInfo("Schedule of GUI parameter changes: " + schedule_export_path);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogWarning(e.what());
+            }
+        }
+
         // Finalize HDF5 output with runtime metadata
         if (exporter) {
+            {
+                std::vector<long long> steps;
+                std::vector<double> times, values, previous;
+                std::vector<std::string> parameters, origins;
+                for (const auto& e : runtime_controls.events()) {
+                    steps.push_back(e.command.step);
+                    times.push_back(e.command.time);
+                    parameters.push_back(e.command.parameter);
+                    values.push_back(e.command.value);
+                    previous.push_back(e.previous_value);
+                    origins.push_back(e.origin);
+                }
+                exporter->SetRuntimeEvents(steps, times, parameters, values, previous, origins);
+            }
             exporter->SetRunMetadata(std::string(""), std::string(""), wall_s, step_count, loop_dt, system->GetChTime());
             exporter->SetRunTiming(setup_wall_s, active_wall_s, paused_wall_s, !nogui);
             exporter->Finalize();

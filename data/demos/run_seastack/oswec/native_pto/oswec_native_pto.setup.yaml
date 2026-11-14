@@ -1,0 +1,5 @@
+model_file: oswec_native_pto.model.yaml
+simulation_file: oswec_native_pto.simulation.yaml
+hydro_file: oswec_native_pto.hydro.yaml
+
+output_directory: outputs

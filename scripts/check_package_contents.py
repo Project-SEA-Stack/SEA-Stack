@@ -37,7 +37,7 @@ EXPECTED_DEMO_CASES = {
                    "regular_waves_nlfk"},
     "oswec": {"assets", "decay", "divergence_limits", "external_pto",
               "external_pto_adaptive", "external_pto_hydraulic", "irregular_waves",
-              "regular_waves", "translucent_hull"},
+              "native_pto", "regular_waves", "translucent_hull"},
     "rm3": {"assets", "bimodal_sea", "decay", "decay_nl", "external_pto",
             "external_pto_adaptive", "external_pto_hydraulic", "irregular_waves", "mooring"},
     "trimaran": {"assets", "rigid"},

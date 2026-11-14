@@ -204,6 +204,14 @@ struct SimulationExporter::Impl {
     /// MoorDyn endpoint types per line (start, end), for /visualization.
     std::vector<std::array<int, 2>> mooring_end_types;
 
+    // ── Runtime commands applied during the run (/events) ──
+    std::vector<double> event_steps;  // step counts, exact as double below 2^53
+    std::vector<double> event_times;
+    std::vector<std::string> event_parameters;
+    std::vector<double> event_values;
+    std::vector<double> event_previous_values;
+    std::vector<std::string> event_origins;
+
     // ── Visualization (offline replay): scene source and cable endpoints ──
     std::unique_ptr<VizExtractor> viz_extractor;
     std::vector<std::vector<double>> cable_point1;   // [cable] -> N x 3 [m]
@@ -1374,6 +1382,44 @@ bool SimulationExporter::LastStepWasRecorded() const {
     return impl_->last_step_was_recorded;
 }
 
+void SimulationExporter::UpdateLinkParameter(const std::string& link_name, const std::string& field,
+                                             double value) {
+    for (auto& t : impl_->tsdas) {
+        if (t.link == nullptr || t.link->GetName() != link_name) continue;
+        if (field == "damping_coefficient") t.c = value;
+        if (field == "rest_length") t.rest_length = value;
+        if (field == "spring_coefficient" && !t.link->GetForceFunctor()) t.k = value;
+    }
+    for (auto& r : impl_->rsdas) {
+        if (r.link == nullptr || r.link->GetName() != link_name) continue;
+        if (field == "damping_coefficient") r.c = value;
+        if (field == "rest_angle") r.rest_angle = value;
+        if (field == "spring_coefficient" && !r.link->GetTorqueFunctor()) r.k = value;
+    }
+}
+
+void SimulationExporter::SetRuntimeEvents(const std::vector<long long>& steps,
+                                          const std::vector<double>& times,
+                                          const std::vector<std::string>& parameters,
+                                          const std::vector<double>& values,
+                                          const std::vector<double>& previous_values,
+                                          const std::vector<std::string>& origins) {
+    const size_t n = steps.size();
+    if (times.size() != n || parameters.size() != n || values.size() != n ||
+        previous_values.size() != n || origins.size() != n) {
+        throw std::invalid_argument("SetRuntimeEvents: columns must have the same length");
+    }
+    impl_->event_steps.clear();
+    for (long long s : steps) {
+        impl_->event_steps.push_back(static_cast<double>(s));
+    }
+    impl_->event_times = times;
+    impl_->event_parameters = parameters;
+    impl_->event_values = values;
+    impl_->event_previous_values = previous_values;
+    impl_->event_origins = origins;
+}
+
 void SimulationExporter::RecordMooringLines(
     const std::vector<seastack::viz::MooringLineVizData>& lines) {
     if (lines.empty()) {
@@ -1724,6 +1770,22 @@ void SimulationExporter::Finalize() {
         }
     }
 
+    // ── Runtime commands (GUI edits and schedules) ──────────────────────────
+    if (!impl_->event_steps.empty()) {
+        auto g_events = impl_->writer.RequireGroup("/events");
+        const std::array<hsize_t, 1> d1 = {static_cast<hsize_t>(impl_->event_steps.size())};
+        g_events.WriteDataset("step", impl_->event_steps, d1);
+        g_events.WriteDataset("time", impl_->event_times, d1);
+        g_events.WriteStringArray("parameter", impl_->event_parameters);
+        g_events.WriteDataset("value", impl_->event_values, d1);
+        g_events.WriteDataset("previous_value", impl_->event_previous_values, d1);
+        g_events.WriteStringArray("origin", impl_->event_origins);
+        g_events.WriteAttribute("description",
+            std::string("Parameter changes applied before step `step` (steps already taken) at time "
+                        "`time` [s]; SI units of the parameter (tsda.<link>.<field> / rsda.<link>.<field>). "
+                        "Rerun with run_seastack --schedule <results>.schedule.yaml."));
+    }
+
     // ── meta/run runtime details ────────────────────────────────────────────
     {
         auto g_run = impl_->writer.RequireGroup("/meta/run");
@@ -1968,6 +2030,10 @@ void SimulationExporter::RecordMooringLines(
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }
 bool SimulationExporter::LastStepWasRecorded() const { return false; }
+void SimulationExporter::UpdateLinkParameter(const std::string&, const std::string&, double) {}
+void SimulationExporter::SetRuntimeEvents(const std::vector<long long>&, const std::vector<double>&,
+                                          const std::vector<std::string>&, const std::vector<double>&,
+                                          const std::vector<double>&, const std::vector<std::string>&) {}
 void SimulationExporter::WriteRadiationDiagnostics(const std::vector<seastack::hydro::KernelFitDiagnostics>&) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }

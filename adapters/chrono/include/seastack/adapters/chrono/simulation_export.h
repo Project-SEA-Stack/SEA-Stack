@@ -257,6 +257,31 @@ class SimulationExporter {
     bool LastStepWasRecorded() const;
 
     /**
+     * @brief Follow a runtime change of a TSDA/RSDA parameter (RuntimeControls).
+     *
+     * Updates the coefficients the exporter uses for PTO power (c v^2) and the
+     * extension / relative angle reference from the next RecordStep on.
+     * spring_coefficient is followed only for links without a force functor,
+     * where it was read from the link. Unknown links or fields are ignored.
+     *
+     * @param link_name Chrono link name; field: spring_coefficient,
+     *        damping_coefficient, rest_length or rest_angle; value in SI units.
+     */
+    void UpdateLinkParameter(const std::string& link_name, const std::string& field, double value);
+
+    /**
+     * @brief Record the applied runtime commands under /events (written by Finalize).
+     *
+     * Columns: step (steps taken before the change), time [s], parameter id,
+     * value, previous_value, origin ("gui" or "schedule"). Nothing is written
+     * when the list is empty.
+     */
+    void SetRuntimeEvents(const std::vector<long long>& steps, const std::vector<double>& times,
+                          const std::vector<std::string>& parameters, const std::vector<double>& values,
+                          const std::vector<double>& previous_values,
+                          const std::vector<std::string>& origins);
+
+    /**
      * @brief Write radiation kernel fit diagnostics to HDF5.
      * @param diagnostics Vector of per-body kernel fit diagnostics
      */

@@ -481,6 +481,13 @@ else()
     message(STATUS "Skipping test_adapter_layer (requires SEASTACK_ENABLE_CHRONO)")
 endif()
 
+# Runtime controls: registry, ownership, bit-identical functor swap, schedules
+if(TARGET seastack_chrono_adapter)
+    build_unit_test(test_runtime_controls)
+    target_link_libraries(test_runtime_controls PRIVATE SEAStack::ChronoAdapter)
+    set_tests_properties(test_runtime_controls PROPERTIES LABELS "unit;chrono")
+endif()
+
 # Chrono -> viz_core scene extractor (headless Chrono, no VSG)
 if(TARGET seastack_chrono_adapter)
     build_unit_test(test_viz_extractor)

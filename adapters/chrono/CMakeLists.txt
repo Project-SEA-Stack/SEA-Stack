@@ -14,6 +14,7 @@ add_library(seastack_chrono_adapter STATIC
     src/pto_chrono_adapter.cpp
     src/viz_extractor.cpp
     src/visualization_recording.cpp
+    src/runtime_controls.cpp
 )
 add_library(SEAStack::ChronoAdapter ALIAS seastack_chrono_adapter)
 

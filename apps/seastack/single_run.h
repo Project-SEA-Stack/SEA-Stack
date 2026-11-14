@@ -77,6 +77,10 @@ struct SingleRunConfig {
     /// Optional tension-only ropes YAML (resolved path; empty = none).
     /// Requires a build with SEASTACK_ENABLE_EXTERNAL.
     std::string ropes_file;
+
+    /// Optional runtime schedule YAML (--schedule): parameter changes applied
+    /// at step boundaries, e.g. exported from a GUI run. Empty = none.
+    std::string schedule_file;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).
