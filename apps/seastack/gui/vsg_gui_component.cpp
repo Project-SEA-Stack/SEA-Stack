@@ -561,6 +561,11 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
     // ---- Mooring ----
     RenderMooringPanel();
 
+    // ---- Analysis (SEA-Stack viewer) ----
+    if (!vsys_) {
+        RenderAnalysisPanel();
+    }
+
     // ---- Parameters ----
     RenderParametersPanel();
 
@@ -1131,6 +1136,66 @@ void SeastackGuiComponent::RenderMooringPanel() {
 }
 
 // ---------------------------------------------------------------------------
+
+void SeastackGuiComponent::RenderAnalysisPanel() {
+    if (!ImGui::CollapsingHeader("Analysis", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    AnalysisState& a = settings_->analysis;
+
+    ImGui::Checkbox("Force vectors", &a.show_forces);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Loads the solver applied in the step shown, per hydro\n"
+                          "model component (incl. mooring and external forces),\n"
+                          "drawn at each centre of mass in the world frame.\n"
+                          "Arrow lengths are scaled; the legend gives the scale.\n"
+                          "PTO and joint forces are not included.");
+    }
+    if (a.show_forces) {
+        ImGui::Indent();
+        if (a.force_sources.empty()) {
+            ImGui::TextDisabled("No force data yet (or a replay)");
+        }
+        for (size_t i = 0; i < a.force_sources.size() && i < a.source_shown.size(); ++i) {
+            bool shown = a.source_shown[i] != 0;
+            if (ImGui::Checkbox(a.force_sources[i].c_str(), &shown)) {
+                a.source_shown[i] = shown ? 1 : 0;
+            }
+        }
+        if (!a.force_sources.empty()) {
+            ImGui::Checkbox("Total", &a.show_total);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Sum of all components listed above, shown or not.");
+            }
+            ImGui::Checkbox("Moments", &a.show_moments);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Moments about the centre of mass as double-headed\n"
+                                  "arrows (right-hand rule), with their own scale.");
+            }
+            ImGui::Checkbox("Lock scale", &a.lock_scale);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Keep the current arrow scale. Otherwise the largest\n"
+                                  "load of the last 30 s sets it.");
+            }
+        }
+        ImGui::Unindent();
+    }
+
+    ImGui::Checkbox("Trajectories", &a.show_trajectories);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Path of each moving body's centre of mass over the\n"
+                          "recorded frames up to the time shown.");
+    }
+    if (a.show_trajectories) {
+        ImGui::Indent();
+        ImGui::SliderFloat("Trail", &a.trail_seconds, 2.0f, 600.0f, "%.0f s", ImGuiSliderFlags_Logarithmic);
+        ImGui::Unindent();
+    }
+
+    ImGui::Checkbox("Plots", &a.show_plots);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Time histories of body motions and loads from the\n"
+                          "recorded frames (one point per rendered frame).");
+    }
+}
 
 void SeastackGuiComponent::RenderColorBar() {
     if (!settings_ || !settings_->show_mooring_colors) return;

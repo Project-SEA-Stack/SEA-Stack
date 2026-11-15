@@ -120,6 +120,33 @@ int main() {
     TEST_NEAR(frame.mooring_lines[0].node_positions[1][2], -12.0, 1e-12, "capture tracks mooring");
     TEST_NEAR(system.GetChTime(), t_before, 0.0, "capture does not advance time");
 
+    // Body loads: matched to scene bodies by pointer; bodies the sample does
+    // not list get zero; a sample with other sources is ignored.
+    {
+        TEST_ASSERT(frame.body_wrenches.empty() && scene.force_sources.empty(), "no force provider: no loads");
+        seastack::chrono::ForceSample sample;
+        extractor.SetForceProvider([&sample]() { return sample; });
+        TEST_ASSERT(extractor.Capture(9).body_wrenches.empty(), "empty sample (before the first step): no loads");
+        sample.sources = {"Excitation", "Mooring"};
+        sample.bodies = {aux.get(), hull.get()};  // not scene order; anchor not listed
+        sample.wrenches.resize(4);
+        sample.wrenches[0].force = {1.0, 0.0, 0.0};   // Excitation on aux
+        sample.wrenches[1].force = {2.0, 0.0, 0.0};   // Excitation on hull
+        sample.wrenches[3].moment = {0.0, 0.0, 4.0};  // Mooring on hull
+        VizFrame loaded = extractor.Capture(10);
+        TEST_ASSERT(scene.force_sources == sample.sources, "first sample defines the force sources");
+        TEST_ASSERT(IsConsistent(scene, loaded), "frame with loads matches scene");
+        TEST_ASSERT(loaded.body_wrenches.size() == 6 && loaded.body_wrenches[0].force[0] == 2.0 &&
+                        loaded.body_wrenches[2].force[0] == 1.0 && loaded.body_wrenches[3].moment[2] == 4.0,
+                    "loads mapped to scene bodies (hull 0, aux 2)");
+        TEST_ASSERT(loaded.body_wrenches[1].force[0] == 0.0 && loaded.body_wrenches[4].force[0] == 0.0,
+                    "unlisted body (anchor): zero");
+        sample.sources = {"Radiation"};
+        sample.wrenches.resize(2);
+        TEST_ASSERT(extractor.Capture(11).body_wrenches.empty(), "other source list: ignored, no loads");
+        TEST_ASSERT(seastack::chrono::MakeHydroForceProvider(nullptr) == nullptr, "no hydro system: no provider");
+    }
+
     // TSDA with a SEGMENT visual is exported as a 2-node overlay line after
     // MoorDyn lines; a TSDA without a visual is ignored (station-keeping).
     {

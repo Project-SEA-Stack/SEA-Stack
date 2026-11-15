@@ -94,6 +94,27 @@ struct ParametersPanelState {
     std::string status;  ///< Last rejected edit or export result; empty = none
 };
 
+/// Force vectors, trajectories and live plots (SEA-Stack viewer). Visual
+/// only: everything is read from the recorded frames, so it follows the
+/// timeline in playback.
+struct AnalysisState {
+    // --- Written by the viewer every frame ---
+    std::vector<std::string> force_sources;  ///< Empty = no force data (replay, or no hydro model)
+    double force_scale = 0.0;   ///< Arrow length per unit force in use [m/N]
+    double moment_scale = 0.0;  ///< Arrow length per unit moment in use [m/(N m)]
+
+    // --- Written by the GUI ---
+    bool show_forces = false;   ///< Force arrows at each centre of mass
+    bool show_moments = false;  ///< Moment arrows (double head, right-hand rule)
+    /// Per force source, same order as force_sources; the viewer sizes it (all on).
+    std::vector<char> source_shown;
+    bool show_total = false;    ///< Also draw the sum of all sources
+    bool lock_scale = false;    ///< Keep the arrow scale instead of following the loads
+    bool show_trajectories = false;  ///< Centre-of-mass trails of moving bodies
+    float trail_seconds = 30.0f;     ///< Trail length [s of simulated time]
+    bool show_plots = false;         ///< Plot window
+};
+
 /// Runtime-adjustable water visualization settings.
 ///
 /// Allows tuning water appearance without recompiling. Owned by GUIImplVSG
@@ -158,6 +179,9 @@ struct ViewerSettings {
 
     // --- Runtime parameters (SEA-Stack viewer) ---
     ParametersPanelState parameters;
+
+    // --- Force vectors, trajectories, plots (SEA-Stack viewer) ---
+    AnalysisState analysis;
 };
 
 /// Unused file path `<directory>/screenshot_YYYYMMDD_HHMMSS[_n].png`;
@@ -215,6 +239,8 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     void RenderInspector(const ImVec2& pos, const ImVec2& size);
     void RenderViewToolbar();
     void RenderMooringPanel();
+    /// Force vectors, trajectories and the plot window (SEA-Stack viewer).
+    void RenderAnalysisPanel();
     /// TSDA/RSDA parameters: edit, reset, owner, and the log of applied changes.
     void RenderParametersPanel();
     /// One slider that sets `field` on every editable member (one row per member).

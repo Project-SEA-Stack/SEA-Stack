@@ -14,7 +14,7 @@ namespace seastack::viz {
 /// Approximate heap + object size of one recorded frame [bytes].
 inline size_t EstimateFrameBytes(const VizFrame& frame) {
     size_t bytes = sizeof(VizFrame) + frame.bodies.size() * sizeof(BodyState) +
-                   frame.cable_lines.size() * sizeof(CableLineState);
+                   frame.cable_lines.size() * sizeof(CableLineState) + frame.body_wrenches.size() * sizeof(Wrench);
     for (const MooringLineState& line : frame.mooring_lines) {
         bytes += sizeof(MooringLineState) + line.node_positions.size() * sizeof(Vec3) +
                  line.node_tensions.size() * sizeof(double);

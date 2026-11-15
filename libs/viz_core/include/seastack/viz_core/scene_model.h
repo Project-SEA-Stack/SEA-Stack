@@ -167,6 +167,9 @@ struct SceneDescription {
     std::vector<MooringLineDescription> mooring_lines;
     /// Hoist ropes / PTO springs (Chrono TSDA visuals); separate from MoorDyn.
     std::vector<CableLineDescription> cable_lines;
+    /// Names of the force sources in VizFrame::body_wrenches, e.g. "Excitation";
+    /// empty until the first forces are known.
+    std::vector<std::string> force_sources;
     Bounds3 model_bounds;     ///< World bounds of all bodies at build time [m]
     double gravity = 9.81;    ///< [m/s^2]
     double water_depth = 0.0; ///< [m]; <= 0 = deep / unknown
@@ -190,6 +193,13 @@ struct CableLineState {
     double tension = 0.0;        ///< |force| [N]; optional colouring
 };
 
+/// Load on one body from one source: force [N] and moment about the body's
+/// centre of mass [N m], both in the world frame (as applied to Chrono).
+struct Wrench {
+    Vec3 force{0.0, 0.0, 0.0};
+    Vec3 moment{0.0, 0.0, 0.0};
+};
+
 /// State at one simulated instant. Index i in bodies / mooring_lines /
 /// cable_lines matches the same index in the SceneDescription.
 struct VizFrame {
@@ -198,6 +208,9 @@ struct VizFrame {
     std::vector<BodyState> bodies;
     std::vector<MooringLineState> mooring_lines;
     std::vector<CableLineState> cable_lines;
+    /// Solver output: body_wrenches[s * bodies.size() + b] is force source s
+    /// (SceneDescription::force_sources) on body b. Empty = no force data.
+    std::vector<Wrench> body_wrenches;
 };
 
 /// True if the frame's arrays match the description's sizes.
@@ -205,6 +218,10 @@ inline bool IsConsistent(const SceneDescription& scene, const VizFrame& frame) {
     if (frame.bodies.size() != scene.bodies.size() ||
         frame.mooring_lines.size() != scene.mooring_lines.size() ||
         frame.cable_lines.size() != scene.cable_lines.size()) {
+        return false;
+    }
+    if (!frame.body_wrenches.empty() &&
+        frame.body_wrenches.size() != scene.force_sources.size() * scene.bodies.size()) {
         return false;
     }
     for (size_t i = 0; i < frame.mooring_lines.size(); ++i) {

@@ -61,6 +61,7 @@ class GUIImpl {
                                               double /*node_marker_radius_m*/) {}
     virtual void SetRuntimeControls(seastack::chrono::RuntimeControls* /*controls*/,
                                     const std::string& /*schedule_path*/, double /*time_step*/) {}
+    virtual void SetHydroForces(seastack::chrono::HydroSystem* /*hydro*/) {}
 };
 
 #ifdef SEASTACK_HAVE_VSG
@@ -124,6 +125,7 @@ class GUIImplVSG : public GUIImpl {
 
 class SeastackViewer;
 class SeastackGuiComponent;
+class AnalysisOverlays;
 
 /// GUI backed by SEA-Stack's own viewer (--viewer=seastack). Reads Chrono
 /// only through the VizExtractor.
@@ -147,6 +149,7 @@ class GUIImplSeastack : public GUIImpl {
                                       double node_marker_radius_m) override;
     void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
                             const std::string& schedule_path, double time_step) override;
+    void SetHydroForces(seastack::chrono::HydroSystem* hydro) override;
 
   private:
     /// Copy parameters and applied changes to the GUI panel and pass its edit
@@ -196,6 +199,7 @@ class GUIImplSeastack : public GUIImpl {
     std::unique_ptr<SeastackViewer> viewer_;
     std::unique_ptr<ViewerSettings> viewer_settings_;
     std::unique_ptr<SeastackGuiComponent> gui_;
+    std::unique_ptr<AnalysisOverlays> analysis_;  ///< Force vectors, trajectories, plots
     MooringVizProvider mooring_provider_;
     std::unique_ptr<MooringLinesViz> mooring_viz_;
     /// Blender-style TSDA glyphs: thin SEGMENT cables + SPRING hydraulic rams.

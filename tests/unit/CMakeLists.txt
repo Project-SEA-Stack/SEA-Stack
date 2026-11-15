@@ -139,6 +139,11 @@ build_unit_test(test_scene_model)
 target_link_libraries(test_scene_model PRIVATE SEAStack::VizCore)
 set_tests_properties(test_scene_model PROPERTIES LABELS "unit;chrono-free")
 
+# Plots / trajectories / force arrows: series from recorded frames (viz_core only)
+build_unit_test(test_frame_series)
+target_link_libraries(test_frame_series PRIVATE SEAStack::VizCore)
+set_tests_properties(test_frame_series PROPERTIES LABELS "unit;chrono-free")
+
 build_unit_test(test_primitive_meshes)
 target_link_libraries(test_primitive_meshes PRIVATE SEAStack::VizCore)
 set_tests_properties(test_primitive_meshes PROPERTIES LABELS "unit;chrono-free")

@@ -10,6 +10,7 @@
 #include "guihelper_impl.h"
 
 #include "seastack_viewer.h"
+#include "vsg_analysis_overlays.h"
 #include "vsg_config.h"
 #include "vsg_gui_component.h"
 #include "vsg_materials.h"
@@ -41,7 +42,8 @@ using namespace vsg_config;
 GUIImplSeastack::GUIImplSeastack()
     : water_(std::make_unique<AnimatedWaterSurface>()),
       viewer_(std::make_unique<SeastackViewer>()),
-      viewer_settings_(std::make_unique<ViewerSettings>()) {}
+      viewer_settings_(std::make_unique<ViewerSettings>()),
+      analysis_(std::make_unique<AnalysisOverlays>()) {}
 
 GUIImplSeastack::~GUIImplSeastack() = default;
 
@@ -122,6 +124,14 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
     auto draw_gui = [this]() {
         gui_->Draw();
         DrawBodyLabels();
+        if (history_ && !viewer_settings_->capturing_frame) {
+            analysis_->DrawSceneOverlays(Scene(), *history_, last_frame_, *viewer_, gui_->SceneRect(),
+                                         model_bounds_.Radius(), viewer_->UiScale(), &viewer_settings_->analysis);
+        }
+        if (history_) {
+            analysis_->DrawPlots(Scene(), *history_, last_frame_, gui_->SceneRect(), viewer_->UiScale(),
+                                 &viewer_settings_->analysis);
+        }
     };
     if (!viewer_->Initialize(Scene(), options, draw_gui)) {
         throw std::runtime_error("SEA-Stack viewer initialization failed. Try --viewer=chrono or --nogui.");
@@ -221,6 +231,12 @@ void GUIImplSeastack::SetMooringLineProvider(MooringVizProvider provider) {
     mooring_provider_ = std::move(provider);
     if (extractor_) {
         extractor_->SetMooringProvider(mooring_provider_);
+    }
+}
+
+void GUIImplSeastack::SetHydroForces(seastack::chrono::HydroSystem* hydro) {
+    if (extractor_) {
+        extractor_->SetForceProvider(seastack::chrono::MakeHydroForceProvider(hydro));
     }
 }
 

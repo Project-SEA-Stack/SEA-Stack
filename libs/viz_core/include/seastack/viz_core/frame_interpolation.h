@@ -47,8 +47,8 @@ inline Vec3 Lerp(const Vec3& a, const Vec3& b, double s) {
 }
 
 /// State at time t between frames a and b of the same scene (a.time <= t <=
-/// b.time; t is clamped to that range). Positions, velocities, mooring nodes
-/// and tensions are blended linearly, rotations by slerp. If the frames do
+/// b.time; t is clamped to that range). Positions, velocities, mooring nodes,
+/// tensions and body forces are blended linearly, rotations by slerp. If the frames do
 /// not have the same layout (e.g. mooring data appeared between them), the
 /// frame nearer in time is returned unchanged.
 inline VizFrame InterpolateFrames(const VizFrame& a, const VizFrame& b, double t) {
@@ -59,7 +59,8 @@ inline VizFrame InterpolateFrames(const VizFrame& a, const VizFrame& b, double t
     const double s = std::clamp((t - a.time) / span, 0.0, 1.0);
     const VizFrame& nearer = s <= 0.5 ? a : b;
     bool same_layout = a.bodies.size() == b.bodies.size() && a.mooring_lines.size() == b.mooring_lines.size() &&
-                       a.cable_lines.size() == b.cable_lines.size();
+                       a.cable_lines.size() == b.cable_lines.size() &&
+                       a.body_wrenches.size() == b.body_wrenches.size();
     for (size_t i = 0; same_layout && i < a.mooring_lines.size(); ++i) {
         same_layout = a.mooring_lines[i].node_positions.size() == b.mooring_lines[i].node_positions.size() &&
                       a.mooring_lines[i].node_tensions.size() == b.mooring_lines[i].node_tensions.size();
@@ -97,6 +98,10 @@ inline VizFrame InterpolateFrames(const VizFrame& a, const VizFrame& b, double t
         co.point1 = Lerp(co.point1, cb.point1, s);
         co.point2 = Lerp(co.point2, cb.point2, s);
         co.tension += s * (cb.tension - co.tension);
+    }
+    for (size_t i = 0; i < out.body_wrenches.size(); ++i) {
+        out.body_wrenches[i].force = Lerp(a.body_wrenches[i].force, b.body_wrenches[i].force, s);
+        out.body_wrenches[i].moment = Lerp(a.body_wrenches[i].moment, b.body_wrenches[i].moment, s);
     }
     return out;
 }

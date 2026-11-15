@@ -856,6 +856,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                                                  hydro_data.moordyn_visualization_node_marker_radius);
             }
 #endif
+            if (hydro_forces) {
+                ui.SetHydroForces(hydro_forces.get());
+            }
         }
 
         if (gui_init_ok) {

@@ -259,6 +259,9 @@ class HydroSystem {
 
     HydroProfileStats GetProfileStats() const { return profile_stats_; }
 
+    /// Bodies in hydro body order (index i = BodyForces entry i).
+    const std::vector<std::shared_ptr<::chrono::ChBody>>& GetBodies() const { return bodies_; }
+
     /// Enable per-component hydro force capture (for detailed export).
     void SetPerComponentCaptureEnabled(bool enabled) {
         per_component_capture_ = enabled;

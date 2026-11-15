@@ -1,5 +1,8 @@
 #include <seastack/adapters/chrono/viz_extractor.h>
 
+#include <seastack/adapters/chrono/hydro_system.h>
+#include <seastack/core/force_component.h>
+
 #include <chrono/assets/ChVisualShapeBox.h>
 #include <chrono/assets/ChVisualShapeCylinder.h>
 #include <chrono/assets/ChVisualShapePointPoint.h>
@@ -22,6 +25,23 @@ namespace viz = seastack::viz;
 namespace {
 
 viz::Vec3 ToVec3(const ::chrono::ChVector3d& v) { return {v.x(), v.y(), v.z()}; }
+
+viz::Vec3 ToVec3(const Eigen::Vector3d& v) { return {v.x(), v.y(), v.z()}; }
+
+const char* ForceSourceName(seastack::hydro::HydroComponentType type) {
+    using T = seastack::hydro::HydroComponentType;
+    switch (type) {
+        case T::kHydrostatics: return "Hydrostatics";
+        case T::kNonlinearHydrostatics: return "Nonlinear hydrostatics";
+        case T::kNonlinearFroudeKrylov: return "Nonlinear Froude-Krylov";
+        case T::kRadiation: return "Radiation";
+        case T::kExcitation: return "Excitation";
+        case T::kMooring: return "Mooring";
+        case T::kDamping: return "Damping";
+        case T::kExternal: return "External";
+    }
+    return "Other";
+}
 
 viz::Pose ToPose(const ::chrono::ChFrame<>& frame) {
     const ::chrono::ChQuaterniond& q = frame.GetRot();
@@ -255,6 +275,49 @@ void VizExtractor::SetMooringProvider(viz::MooringVizProvider mooring) {
     scene_.mooring_lines.clear();
 }
 
+void VizExtractor::SetForceProvider(ForceProvider forces) {
+    forces_ = std::move(forces);
+    scene_.force_sources.clear();
+}
+
+ForceProvider MakeHydroForceProvider(HydroSystem* hydro) {
+    if (!hydro) {
+        return {};
+    }
+    hydro->SetPerComponentCaptureEnabled(true);
+    return [hydro]() {
+        ForceSample sample;
+        const auto& records = hydro->GetLastComponentForces();
+        if (records.empty()) {
+            return sample;
+        }
+        for (const auto& body : hydro->GetBodies()) {
+            sample.bodies.push_back(body.get());
+        }
+        const size_t n_bodies = sample.bodies.size();
+        // One source per component type, in the order the model evaluates them.
+        for (const auto& record : records) {
+            const std::string name = ForceSourceName(record.type);
+            auto it = std::find(sample.sources.begin(), sample.sources.end(), name);
+            const size_t s = static_cast<size_t>(it - sample.sources.begin());
+            if (it == sample.sources.end()) {
+                sample.sources.push_back(name);
+                sample.wrenches.resize(sample.sources.size() * n_bodies);
+            }
+            for (size_t b = 0; b < n_bodies && b < record.forces.size(); ++b) {
+                viz::Wrench& w = sample.wrenches[s * n_bodies + b];
+                const viz::Vec3 f = ToVec3(record.forces[b].force);
+                const viz::Vec3 m = ToVec3(record.forces[b].moment);
+                for (int k = 0; k < 3; ++k) {
+                    w.force[k] += f[k];
+                    w.moment[k] += m[k];
+                }
+            }
+        }
+        return sample;
+    };
+}
+
 viz::VizFrame VizExtractor::Capture(int64_t step) {
     std::vector<viz::MooringLineVizData> provider_lines;
     if (mooring_) {
@@ -301,6 +364,28 @@ viz::VizFrame VizExtractor::Capture(int64_t step) {
         out.point1 = ToVec3(tsda->GetPoint1Abs());
         out.point2 = ToVec3(tsda->GetPoint2Abs());
         out.tension = std::abs(tsda->GetForce());
+    }
+    if (forces_) {
+        const ForceSample sample = forces_();
+        if (scene_.force_sources.empty()) {
+            scene_.force_sources = sample.sources;
+        }
+        const size_t n_sources = scene_.force_sources.size();
+        if (n_sources > 0 && sample.sources == scene_.force_sources &&
+            sample.wrenches.size() == n_sources * sample.bodies.size()) {
+            frame.body_wrenches.assign(n_sources * bodies_.size(), viz::Wrench{});
+            for (size_t b = 0; b < sample.bodies.size(); ++b) {
+                auto it = std::find_if(bodies_.begin(), bodies_.end(),
+                                       [&](const auto& body) { return body.get() == sample.bodies[b]; });
+                if (it == bodies_.end()) {
+                    continue;
+                }
+                const size_t scene_b = static_cast<size_t>(it - bodies_.begin());
+                for (size_t s = 0; s < n_sources; ++s) {
+                    frame.body_wrenches[s * bodies_.size() + scene_b] = sample.wrenches[s * sample.bodies.size() + b];
+                }
+            }
+        }
     }
     return frame;
 }

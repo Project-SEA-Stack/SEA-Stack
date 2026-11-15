@@ -13,6 +13,7 @@ class ChSystem;
 
 namespace seastack::hydro { class WaveBase; }
 namespace seastack::chrono {
+class HydroSystem;
 struct ReplayRecording;
 class RuntimeControls;
 }  // namespace seastack::chrono
@@ -127,6 +128,14 @@ class UI {
     virtual void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
                                     const std::string& schedule_path, double time_step);
 
+    /**@brief Show the hydro model's loads per component (SEA-Stack viewer).
+     *
+     * Force vectors and plots read the per-component forces of `hydro` from
+     * each step (a copy; results are unchanged). Call after Init(). `hydro`
+     * must outlive the GUI loop. No effect in headless UI or the Chrono viewer.
+     */
+    virtual void SetHydroForces(seastack::chrono::HydroSystem* hydro);
+
     /**@brief return the internal system.
      *
      * Should be called after init.
@@ -175,6 +184,7 @@ class GUI : public UI {
                                       double node_marker_radius_m) override;
     void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
                             const std::string& schedule_path, double time_step) override;
+    void SetHydroForces(seastack::chrono::HydroSystem* hydro) override;
 
   private:
     std::shared_ptr<seastack::viz::GUIImpl> pImpl;

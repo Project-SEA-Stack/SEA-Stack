@@ -80,6 +80,10 @@ void UI::SetRuntimeControls(seastack::chrono::RuntimeControls* /*controls*/,
     // Default (headless) UI has no parameter panel.
 }
 
+void UI::SetHydroForces(seastack::chrono::HydroSystem* /*hydro*/) {
+    // Default (headless) UI does not draw forces.
+}
+
 // -----------------------------------------------------------------------------
 
 GUI::GUI(ViewerBackend backend) : backend_(backend) {
@@ -171,4 +175,8 @@ void GUI::SetMooringVisualizationRadii(double line_radius_m,
 void GUI::SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
                              const std::string& schedule_path, double time_step) {
     pImpl->SetRuntimeControls(controls, schedule_path, time_step);
+}
+
+void GUI::SetHydroForces(seastack::chrono::HydroSystem* hydro) {
+    pImpl->SetHydroForces(hydro);
 }
