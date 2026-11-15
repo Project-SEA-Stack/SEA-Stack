@@ -26,6 +26,7 @@
 #include <seastack/core/types.h>
 #include <seastack/hydro/hydro_data.h>
 #include <seastack/hydro/waves/wave_base.h>
+#include <seastack/hydro/waves/sea_state_change.h>
 #include <seastack/core/system_state.h>
 #include <seastack/hydro/hydro_forces.h>
 #include <seastack/hydro/hydro_model_builder.h>
@@ -229,6 +230,11 @@ class HydroSystem {
     /// Wetted area below the incident surface [m^2] for bodies with
     /// froude_krylov = nonlinear; 0 otherwise.
     double GetLastWettedArea(int body_index) const;
+
+    /// What the BEM data and hydro settings allow for live wave period and
+    /// direction changes (seastack::hydro::CheckSeaStateChange). Call after
+    /// BuildModel().
+    seastack::hydro::SeaStateChangeLimits GetSeaStateChangeLimits() const;
 
     bool HasKernelFitDiagnostics() const;
     std::vector<seastack::hydro::KernelFitDiagnostics> GetKernelFitDiagnostics() const;

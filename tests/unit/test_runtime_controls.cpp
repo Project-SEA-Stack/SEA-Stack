@@ -400,6 +400,71 @@ int main() {
                     "schedule replays a registered parameter at the same step");
     }
 
+    // ---- 6. Checks: refused at the request, at the boundary, or in a schedule ----
+    {
+        auto rig = MakeRig(std::make_shared<cu::LinearDamperForce>(40.0), nullptr);
+        seastack::chrono::RuntimeParameter p;
+        p.id = "waves.period";
+        p.element = "waves";
+        p.field = "period";
+        p.label = "T";
+        p.units = "s";
+        p.default_value = p.value = 8.0;
+        p.min_value = 0.0;
+        // Refuses periods above 12 s, and anything while "busy" (a transition).
+        bool busy = false;
+        int applied = 0;
+        auto apply = [&](double, double time) {
+            ++applied;
+            return time + 16.0;
+        };
+        auto check = [&](double value, double) -> std::string {
+            if (busy) return "still fading in";
+            return value > 12.0 ? "outside the BEM frequency range" : "";
+        };
+
+        RuntimeControls controls(rig.system.get());
+        controls.AddParameter(p, apply, check);
+        std::string error;
+        TEST_ASSERT(!controls.Request("waves.period", 20.0, &error) && error == "outside the BEM frequency range",
+                    "refused at the request, with the reason");
+        TEST_ASSERT(!controls.Find("waves.period")->pending, "refused request is not pending");
+
+        TEST_ASSERT(controls.Request("waves.period", 10.0, &error), "allowed request queued");
+        busy = true;  // the state changed before the boundary
+        controls.ApplyDue(3, 0.003);
+        const auto* q = controls.Find("waves.period");
+        TEST_ASSERT(applied == 0 && q->value == 8.0 && !q->pending && controls.events().empty(),
+                    "refused at the boundary: not applied, not pending, not logged");
+        const std::string refusal = controls.TakeRefusal();
+        TEST_ASSERT(refusal.find("still fading in") != std::string::npos && refusal.find("T 10") == 0,
+                    "refusal reported once with the label and value: " + refusal);
+        TEST_ASSERT(controls.TakeRefusal().empty(), "refusal cleared after it is taken");
+
+        busy = false;
+        TEST_ASSERT(controls.Request("waves.period", 10.0, &error), "request after the transition");
+        controls.ApplyDue(4, 0.004);
+        TEST_ASSERT(applied == 1 && controls.Find("waves.period")->value == 10.0, "applied when allowed");
+
+        RuntimeControls scheduled(rig.system.get());
+        scheduled.AddParameter(p, apply, check);
+        seastack::chrono::RuntimeSchedule schedule;
+        schedule.time_step = kDt;
+        seastack::chrono::RuntimeCommand cmd;
+        cmd.step = 2;
+        cmd.parameter = "waves.period";
+        cmd.value = 20.0;
+        schedule.commands.push_back(cmd);
+        scheduled.LoadSchedule(schedule, 0.0, kDt);
+        bool threw = false;
+        try {
+            for (long long s = 0; s < 5; ++s) scheduled.ApplyDue(s, s * kDt);
+        } catch (const std::runtime_error& e) {
+            threw = std::string(e.what()).find("refused: outside the BEM frequency range") != std::string::npos;
+        }
+        TEST_ASSERT(threw, "refused scheduled command stops the run with the reason");
+    }
+
     test_results.Summary();
     return test_results.failed > 0 ? 1 : 0;
 }

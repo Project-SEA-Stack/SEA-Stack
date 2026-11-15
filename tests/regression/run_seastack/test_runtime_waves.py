@@ -96,12 +96,13 @@ def write_schedule(path: Path, events: list[tuple[int, str, float]], dt: float) 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def run(exe: str, case: Path, schedule: Path | None) -> Path | None:
+def run(exe: str, case: Path, schedule: Path | None, extra_args: list[str] | None = None) -> Path | None:
     out = case / "outputs"
     shutil.rmtree(out, ignore_errors=True)
     cmd = [exe, "--nogui", "--quiet", str(case)]
     if schedule is not None:
         cmd += ["--schedule", str(schedule)]
+    cmd += extra_args or []
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                           errors="replace", env=_run_env(), timeout=1800)
     if proc.returncode != 0:

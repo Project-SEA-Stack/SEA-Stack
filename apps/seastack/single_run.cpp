@@ -24,6 +24,9 @@
 #include <seastack/adapters/chrono/runtime_controls.h>
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
+#include <seastack/hydro/waves/component_sampler.h>
+#include <seastack/hydro/waves/sea_state_change.h>
+#include <seastack/core/math_constants.h>
 
 #ifdef SEASTACK_HAVE_EXTERNAL
 #include "external_controller.h"
@@ -63,6 +66,7 @@
 #include <chrono>
 #include <iomanip>
 #include <cmath>
+#include <limits>
 #include <thread>
 
 #ifdef SEASTACK_HAVE_HYDRO_IO
@@ -1105,6 +1109,92 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             runtime_controls.AddParameter(p, [envelope, reference, transition](double value, double time) {
                 return envelope->RampTo(time, value / reference, transition);
             });
+        }
+        // Live wave period and direction (one regular or spectral sea state).
+        // A change samples the sea again with the new value and crossfades to
+        // it over two dominant periods (the longer of the old and new one),
+        // keeping each component's phase at the origin. It is refused while a
+        // crossfade runs, or when the BEM data does not cover the new sea
+        // (CheckSeaStateChange). Eta-file seas and partitions have no single
+        // period or direction to change.
+        if (hydro_forces) {
+            const auto field = std::dynamic_pointer_cast<LinearDirectionalWaveField>(hydro_forces->GetWave());
+            const auto& ws = hydro_data.waves;
+            if (field && ws.partitions.empty() && ws.eta_file.empty() && ws.period > 0.0) {
+                const bool regular = field->GetWaveMode() == WaveMode::kRegular;
+                auto sea = std::make_shared<seastack::hydro::SeaStateDefinition>(
+                    seastack::chrono::SeaStateDefinitionFromYAML(ws));
+                const seastack::hydro::SeaStateChangeLimits limits = hydro_forces->GetSeaStateChangeLimits();
+                // `sea` with its period [s] or direction [deg] set to `value`.
+                auto modified = [sea, regular](const std::string& what, double value) {
+                    seastack::hydro::SeaStateDefinition def = *sea;
+                    if (what == "period") {
+                        if (regular) {
+                            def.omega = seastack::kTwoPi / value;
+                        } else {
+                            def.partitions[0].spectrum.Tp = value;
+                        }
+                    } else if (regular) {
+                        def.direction_deg = value;
+                    } else {
+                        def.partitions[0].spreading.mean_direction_deg = value;
+                    }
+                    return def;
+                };
+                auto check = [field, modified, limits](const std::string& what, double value,
+                                                       double time) -> std::string {
+                    if (what == "period" && !(value > 0.0)) {
+                        return "the period must be > 0";
+                    }
+                    if (field->IsCrossfading(time)) {
+                        return "the last period or direction change is still fading in";
+                    }
+                    std::vector<seastack::hydro::WaveComponent> proposed;
+                    try {
+                        proposed = seastack::hydro::ComponentSampler::Build(modified(what, value));
+                    } catch (const std::exception& e) {
+                        return e.what();
+                    }
+                    return seastack::hydro::CheckSeaStateChange(field->GetCurrentComponents(), proposed, limits);
+                };
+                auto apply = [field, modified, sea](const std::string& what, double value, double time) {
+                    const seastack::hydro::SeaStateDefinition def = modified(what, value);
+                    auto components = seastack::hydro::ComponentSampler::Build(def);
+                    double new_period = 0.0;
+                    double max_amplitude = -1.0;
+                    for (const auto& c : components) {
+                        if (c.amplitude > max_amplitude && c.omega > 0.0) {
+                            max_amplitude = c.amplitude;
+                            new_period = seastack::kTwoPi / c.omega;
+                        }
+                    }
+                    const double period = std::max(field->GetCharacteristicPeriod(), new_period);
+                    *sea = def;
+                    return field->CrossfadeTo(std::move(components), time, period > 0.0 ? 2.0 * period : 10.0);
+                };
+                for (const std::string what : {"period", "direction"}) {
+                    seastack::chrono::RuntimeParameter q;
+                    q.element = "waves";
+                    q.id = "waves." + what;
+                    q.field = what;
+                    if (what == "period") {
+                        q.label = regular ? "T" : "Tp";
+                        q.units = "s";
+                        q.default_value = ws.period;
+                        q.min_value = 0.0;
+                    } else {
+                        q.label = "Direction";
+                        q.units = "deg";
+                        q.default_value = ws.direction;
+                        q.min_value = -std::numeric_limits<double>::infinity();
+                    }
+                    q.value = q.default_value;
+                    q.source = "hydro YAML";
+                    runtime_controls.AddParameter(
+                        q, [apply, what](double value, double time) { return apply(what, value, time); },
+                        [check, what](double value, double time) { return check(what, value, time); });
+                }
+            }
         }
         if (exporter) {
             seastack::chrono::SimulationExporter* exp = exporter.get();

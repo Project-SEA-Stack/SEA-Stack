@@ -720,6 +720,13 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
     } else if (first.field == "height" || first.field == "height_scale") {
         slider = pos_hi > 0.0;  // calm (0) to three times the start height
         hi = std::max(3.0 * pos_hi, v_hi);
+    } else if (first.field == "period") {
+        slider = pos_hi > 0.0;  // half to twice the start period; the BEM check refuses what is not covered
+        lo = std::min(0.5 * pos_lo, v_lo);
+        hi = std::max(2.0 * pos_hi, v_hi);
+    } else if (first.field == "direction") {
+        lo = std::min(d_lo - 180.0, v_lo);  // [deg]
+        hi = std::max(d_hi + 180.0, v_hi);
     } else if (first.field == "rest_length") {
         slider = pos_hi > 0.0;
         hi = std::max(2.0 * pos_hi, v_hi);
@@ -786,11 +793,18 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
         } else if (panel.run_finished) {
             ImGui::SetTooltip("The run has ended; changes can no longer take effect.");
         } else if (members.size() == 1 && first.element == "waves") {
-            ImGui::SetTooltip("Wave %s [%s], from %s. Start value %.6g.\n%s\n"
-                              "Scales every wave component (excitation and the drawn sea).\n"
-                              "A change ramps in over two wave periods; 0 = calm.\n"
+            const char* what =
+                (first.field == "period" || first.field == "direction")
+                    ? "The sea is sampled again with the new value and crossfaded in\n"
+                      "over two wave periods (excitation and the drawn sea).\n"
+                      "Refused if the BEM data does not cover the new sea,\n"
+                      "or while the last period or direction change fades in."
+                    : "Scales every wave component (excitation and the drawn sea).\n"
+                      "A change ramps in over two wave periods; 0 = calm.";
+            ImGui::SetTooltip("Wave %s [%s], from %s. Start value %.6g.\n%s\n%s\n"
                               "Every change is logged; Export schedule reruns it.",
-                              first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how);
+                              first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how,
+                              what);
         } else if (members.size() == 1) {
             ImGui::SetTooltip("%s [%s], from %s. Start value %.6g.\n%s\nEvery change is logged; Export schedule reruns it.%s",
                               first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how,

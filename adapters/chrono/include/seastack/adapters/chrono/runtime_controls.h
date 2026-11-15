@@ -116,19 +116,31 @@ class RuntimeControls {
     /// from which it is fully in effect (`time` for an instant change).
     using ApplyFunction = std::function<double(double value, double time)>;
 
+    /// Why `value` cannot be applied at `time` [s] (e.g. the wave data does
+    /// not cover it, or a transition is still running); empty if it can.
+    using CheckFunction = std::function<std::string(double value, double time)>;
+
     /// Register a parameter that is not a link field (e.g. the wave height).
     /// `parameter.value` must equal `parameter.default_value`. Requests,
     /// schedules and the event log treat it like the link parameters.
+    /// `check` (optional) runs in Request(), at the last boundary time, and
+    /// again at the boundary that applies the value. There a refused GUI
+    /// request is dropped (see TakeRefusal) and a refused scheduled command
+    /// throws, since the schedule could not be reproduced.
     /// @throws std::invalid_argument if the id is taken or `apply` is empty.
-    void AddParameter(RuntimeParameter parameter, ApplyFunction apply);
+    void AddParameter(RuntimeParameter parameter, ApplyFunction apply, CheckFunction check = nullptr);
 
     const std::vector<RuntimeParameter>& parameters() const { return parameters_; }
     const RuntimeParameter* Find(const std::string& parameter_id) const;
 
     /// Queue a change for the next step boundary (GUI). Returns false and sets
-    /// `error` if the id is unknown, the parameter is owned elsewhere, or the
-    /// value is not finite or below min_value.
+    /// `error` if the id is unknown, the parameter is owned elsewhere, the
+    /// value is not finite or below min_value, or its check refuses it.
     bool Request(const std::string& parameter_id, double value, std::string* error);
+
+    /// The last GUI request refused at a step boundary by its check, as a
+    /// message; empty if none since the last call. Clears it.
+    std::string TakeRefusal();
 
     /// Add scheduled commands. Commands without a step are placed at the first
     /// boundary at or after their time: step = ceil((time - start_time) / dt).
@@ -162,6 +174,9 @@ class RuntimeControls {
     std::vector<std::unique_ptr<LinkState>> links_;
     std::vector<size_t> link_of_parameter_;  ///< Index into links_ for each parameter; kNoLink if none
     std::vector<ApplyFunction> apply_of_parameter_;  ///< Set for AddParameter parameters
+    std::vector<CheckFunction> check_of_parameter_;  ///< Optional, AddParameter parameters
+    double last_boundary_time_ = 0.0;  ///< Time of the last ApplyDue [s]
+    std::string refusal_;
     static constexpr size_t kNoLink = static_cast<size_t>(-1);
     std::vector<RuntimeCommand> scheduled_;  ///< Sorted by step (stable)
     size_t next_scheduled_ = 0;

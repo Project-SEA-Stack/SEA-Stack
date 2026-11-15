@@ -308,6 +308,10 @@ std::vector<std::shared_ptr<ChBody>> MatchBodiesByName(
 
 } // anonymous namespace
 
+SeaStateDefinition SeaStateDefinitionFromYAML(const WaveSettings& waves) {
+    return BuildSeaStateDefinition(waves);
+}
+
 // ------------------------------------------------------------
 // SECTION: Main setup function
 // ------------------------------------------------------------

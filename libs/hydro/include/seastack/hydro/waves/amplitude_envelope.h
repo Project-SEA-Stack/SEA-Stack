@@ -14,6 +14,10 @@
  *   e(t) = v0 + (v1 - v0) * 0.5 * (1 - cos(pi (t - t0) / T)),  t0 <= t <= t0 + T
  * Past segments are kept so that IRF excitation, which convolves the
  * elevation history, sees the envelope that was in effect at each past time.
+ *
+ * The same ramp serves as the weight of a component set in a live period or
+ * direction crossfade (WaveLayer in wave_base.h); a set that fades in starts
+ * at 0.
  *********************************************************************/
 
 #ifndef SEASTACK_HYDRO_WAVES_AMPLITUDE_ENVELOPE_H
@@ -25,7 +29,10 @@ namespace seastack::hydro {
 
 class AmplitudeEnvelope {
   public:
-    /// e(t) [-]. 1 before the first change.
+    /// @param initial_value e before the first change [-], >= 0.
+    explicit AmplitudeEnvelope(double initial_value = 1.0);
+
+    /// e(t) [-]. The initial value (1 by default) before the first change.
     double Value(double time) const;
 
     /// True once any change was made (callers may skip work while false).
@@ -39,9 +46,13 @@ class AmplitudeEnvelope {
     double RampTo(double start_time, double target, double duration);
 
     /// Value e reaches once the last change has finished [-].
-    double Target() const { return segments_.empty() ? 1.0 : segments_.back().v1; }
+    double Target() const { return segments_.empty() ? initial_value_ : segments_.back().v1; }
+
+    /// Time [s] at which the last change ends; -inf before the first change.
+    double EndTime() const;
 
   private:
+    double initial_value_ = 1.0;
     struct Segment {
         double t0 = 0.0;  ///< Start [s]
         double t1 = 0.0;  ///< End [s]; t1 >= t0

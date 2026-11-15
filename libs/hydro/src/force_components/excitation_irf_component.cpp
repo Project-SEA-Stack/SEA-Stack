@@ -247,6 +247,11 @@ void ExcitationIrfComponent::Compute(
     const Eigen::Index n_steps = birf0.time_vec.size();
     if (n_steps == 0) return;
 
+    if (!waves_->GetWaveLayers().empty()) {
+        ComputeLayered(state, time, inout_forces);
+        return;
+    }
+
     // Use member buffer instead of allocating every timestep
     // Resize to exact size needed (buffer is pre-allocated to max size, so this is cheap)
     eta_at_tau_buffer_.resize(n_steps);
@@ -282,6 +287,112 @@ void ExcitationIrfComponent::Compute(
         const Eigen::Matrix3d heading_to_world = HeadingToWorld(state.bodies[b]);
         inout_forces[b].force  += heading_to_world * f_heading.head<3>();
         inout_forces[b].moment += heading_to_world * f_heading.tail<3>();
+    }
+}
+
+void ExcitationIrfComponent::AddNewWaveComponents() {
+    const auto& layers = waves_->GetWaveLayers();
+    const auto* comps = waves_->GetWaveComponents();
+    if (!has_fast_path_ || !comps) {
+        throw std::logic_error("ExcitationIrfComponent: live period or direction changes need a wave defined "
+                               "by components");
+    }
+    const Eigen::Index n_old = comp_amplitudes_.size();
+    const Eigen::Index n_new = static_cast<Eigen::Index>(comps->size());
+    if (n_new > n_old) {
+        const auto& birf0 = body_irfs_[0];
+        const Eigen::Index n_irf = birf0.time_vec.size();
+        comp_amplitudes_.conservativeResize(n_new);
+        comp_omegas_.conservativeResize(n_new);
+        comp_phases_.conservativeResize(n_new);
+        irf_cos_wt_.conservativeResize(Eigen::NoChange, n_new);
+        irf_sin_wt_.conservativeResize(Eigen::NoChange, n_new);
+        for (Eigen::Index i = n_old; i < n_new; ++i) {
+            const auto& c = (*comps)[static_cast<std::size_t>(i)];
+            comp_amplitudes_[i] = c.amplitude;
+            comp_omegas_[i] = c.omega;
+            comp_phases_[i] = c.phase;
+            for (Eigen::Index j = 0; j < n_irf; ++j) {
+                const double arg = c.omega * birf0.time_vec[j];
+                irf_cos_wt_(j, i) = std::cos(arg);
+                irf_sin_wt_(j, i) = std::sin(arg);
+            }
+        }
+    }
+    // Kernels for layers 1, 2, ...: each layer is long-crested.
+    const Eigen::VectorXd& bem_headings = data_.GetSimulationInfo().wave_directions;
+    while (layer_kernels_.size() + 1 < layers.size()) {
+        const WaveLayer& layer = layers[layer_kernels_.size() + 1];
+        const double direction = (*comps)[layer.begin].direction;
+        std::vector<Eigen::MatrixXd> kernels(static_cast<std::size_t>(num_bodies_));
+        for (int b = 0; b < num_bodies_; ++b) {
+            const auto& irreg = data_.GetIrregularWaveInfos()[b];
+            const Eigen::MatrixXd k =
+                SelectKernelForHeading(irreg.excitation_irf_by_heading, bem_headings, direction,
+                                       irreg.excitation_irf_matrix);
+            kernels[static_cast<std::size_t>(b)] = k.leftCols(body_irfs_[b].kernel.cols());
+        }
+        layer_kernels_.push_back(std::move(kernels));
+    }
+}
+
+void ExcitationIrfComponent::ComputeLayered(const SystemState& state, double time, BodyForces& inout_forces) {
+    AddNewWaveComponents();
+    const auto& layers = waves_->GetWaveLayers();
+    const auto& birf0 = body_irfs_[0];
+    const Eigen::Index n_steps = birf0.time_vec.size();
+
+    const Eigen::ArrayXd theta = comp_phases_.array() - comp_omegas_.array() * time;
+    const Eigen::VectorXd a_cos = (comp_amplitudes_.array() * theta.cos()).matrix();
+    const Eigen::VectorXd a_sin = (comp_amplitudes_.array() * theta.sin()).matrix();
+    const AmplitudeEnvelope& envelope = *waves_->GetAmplitudeEnvelope();
+
+    std::vector<Eigen::Matrix<double, kDofPerBody, 1>> f_heading(
+        static_cast<std::size_t>(num_bodies_), Eigen::Matrix<double, kDofPerBody, 1>::Zero());
+    Eigen::VectorXd& eta = layer_eta_buffer_;
+    Eigen::VectorXd& weight = layer_weight_buffer_;
+    weight.resize(n_steps);
+    for (std::size_t l = 0; l < layers.size(); ++l) {
+        // Weight of each past sample, with the ramp and e(t - tau).
+        bool active = false;
+        for (Eigen::Index s = 0; s < n_steps; ++s) {
+            const double t_eval = time - birf0.time_vec[s];
+            double w = layers[l].weight.Value(t_eval);
+            if (w != 0.0) {
+                active = true;
+                if (ramp_duration_ > 0.0) w *= RampFactor(t_eval);
+                if (envelope.HasChanges()) w *= envelope.Value(t_eval);
+            }
+            weight[s] = w;
+        }
+        if (!active) continue;  // faded out over the whole kernel length, or not started
+
+        const Eigen::Index begin = static_cast<Eigen::Index>(layers[l].begin);
+        const Eigen::Index size = static_cast<Eigen::Index>(layers[l].end - layers[l].begin);
+        eta = irf_cos_wt_.middleCols(begin, size) * a_cos.segment(begin, size) -
+              irf_sin_wt_.middleCols(begin, size) * a_sin.segment(begin, size);
+        eta.array() *= weight.array();
+
+        for (int b = 0; b < num_bodies_; ++b) {
+            const auto& birf = body_irfs_[b];
+            const Eigen::MatrixXd& kernel = (l == 0) ? birf.kernel : layer_kernels_[l - 1][static_cast<std::size_t>(b)];
+            for (int dof = 0; dof < kDofPerBody; ++dof) {
+                double force_dof = 0.0;
+                for (Eigen::Index s = 0; s < n_steps; ++s) {
+                    const double w = birf.width_vec[s];
+                    if (w == 0.0) continue;
+                    force_dof += kernel(dof, s) * eta[s] * w;
+                }
+                f_heading[static_cast<std::size_t>(b)][dof] += force_dof;
+            }
+        }
+    }
+
+    // Excitation in each body's heading frame, rotated to world (heading_frame.h).
+    for (int b = 0; b < num_bodies_; ++b) {
+        const Eigen::Matrix3d heading_to_world = HeadingToWorld(state.bodies[b]);
+        inout_forces[b].force  += heading_to_world * f_heading[static_cast<std::size_t>(b)].head<3>();
+        inout_forces[b].moment += heading_to_world * f_heading[static_cast<std::size_t>(b)].tail<3>();
     }
 }
 

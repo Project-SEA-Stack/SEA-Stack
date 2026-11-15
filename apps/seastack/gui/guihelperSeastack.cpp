@@ -335,6 +335,9 @@ void GUIImplSeastack::SyncParameters() {
         }
     }
     panel.requests.clear();
+    if (std::string refusal = controls.TakeRefusal(); !refusal.empty()) {
+        panel.status = refusal;
+    }
     if (panel.export_requested) {
         panel.export_requested = false;
         try {

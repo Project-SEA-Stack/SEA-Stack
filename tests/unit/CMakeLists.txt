@@ -387,6 +387,11 @@ build_unit_test(test_amplitude_envelope)
 target_link_libraries(test_amplitude_envelope PRIVATE SEAStack::Hydro)
 set_tests_properties(test_amplitude_envelope PROPERTIES LABELS "unit;chrono-free")
 
+# Live wave period / direction: guardrails, crossfade, FD excitation (Chrono-free)
+build_unit_test(test_sea_state_change)
+target_link_libraries(test_sea_state_change PRIVATE SEAStack::Hydro)
+set_tests_properties(test_sea_state_change PROPERTIES LABELS "unit;chrono-free")
+
 # Excitation TF interpolation on uniform vs non-uniform omega grids (Chrono-free, HDF5-free)
 build_unit_test(test_excitation_nonuniform_grid)
 target_link_libraries(test_excitation_nonuniform_grid PRIVATE SEAStack::Hydro)

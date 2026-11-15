@@ -13,6 +13,7 @@
 #include <seastack/adapters/chrono/chrono_force_attacher.h>
 #include <seastack/adapters/chrono/chrono_coupler.h>
 #include <seastack/core/system_state.h>
+#include <seastack/hydro/force_components/excitation_irf_component.h>
 #include <seastack/hydro/force_components/nonlinear_froude_krylov_component.h>
 #include <seastack/hydro/force_components/nonlinear_hydrostatics_component.h>
 #include <seastack/hydro/force_components/radiation_ss_component.h>
@@ -376,6 +377,34 @@ double HydroSystem::GetLastWettedArea(int body_index) const {
         }
     }
     return 0.0;
+}
+
+seastack::hydro::SeaStateChangeLimits HydroSystem::GetSeaStateChangeLimits() const {
+    seastack::hydro::SeaStateChangeLimits limits;
+    // The frequency-domain excitation interpolates over the regular-wave
+    // frequency list; the IRF kernels come from the same BEM run.
+    const auto& regular = file_info_.GetRegularWaveInfos();
+    limits.bem_frequencies = (!regular.empty() && regular[0].freq_list.size() > 0) ? regular[0].freq_list
+                                                                                   : file_info_.GetBemFrequencies();
+    limits.bem_headings = file_info_.GetSimulationInfo().wave_directions;
+    limits.constant_coefficient_radiation =
+        config_.radiation_method == seastack::hydro::RadiationMethod::kConstantCoefficients;
+    bool irf_excitation = false;
+    if (hydro_model_) {
+        for (const auto& comp : hydro_model_->GetForces().GetComponents()) {
+            irf_excitation = irf_excitation ||
+                             dynamic_cast<const seastack::hydro::ExcitationIrfComponent*>(comp.get()) != nullptr;
+        }
+    }
+    if (irf_excitation) {
+        const Eigen::Index n_dir = limits.bem_headings.size();
+        for (const auto& irreg : file_info_.GetIrregularWaveInfos()) {
+            if (static_cast<Eigen::Index>(irreg.excitation_irf_by_heading.size()) != n_dir) {
+                limits.heading_kernels = false;
+            }
+        }
+    }
+    return limits;
 }
 
 bool HydroSystem::HasKernelFitDiagnostics() const {

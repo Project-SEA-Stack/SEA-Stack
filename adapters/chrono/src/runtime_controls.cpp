@@ -305,6 +305,7 @@ RuntimeControls::RuntimeControls(::chrono::ChSystem* system) {
             parameters_.push_back(std::move(p));
             link_of_parameter_.push_back(links_.size());
             apply_of_parameter_.emplace_back();
+            check_of_parameter_.emplace_back();
         };
         // A spring term means the model gave a free length / angle.
         const bool rest_in_model = spring_in_model || state->law == LinkState::Law::kBuiltIn ||
@@ -330,7 +331,7 @@ void RuntimeControls::SetOwner(const std::string& parameter_id, const std::strin
     }
 }
 
-void RuntimeControls::AddParameter(RuntimeParameter parameter, ApplyFunction apply) {
+void RuntimeControls::AddParameter(RuntimeParameter parameter, ApplyFunction apply, CheckFunction check) {
     if (!apply) {
         throw std::invalid_argument("RuntimeControls::AddParameter: '" + parameter.id + "' needs an apply function");
     }
@@ -340,6 +341,13 @@ void RuntimeControls::AddParameter(RuntimeParameter parameter, ApplyFunction app
     parameters_.push_back(std::move(parameter));
     link_of_parameter_.push_back(kNoLink);
     apply_of_parameter_.push_back(std::move(apply));
+    check_of_parameter_.push_back(std::move(check));
+}
+
+std::string RuntimeControls::TakeRefusal() {
+    std::string out;
+    out.swap(refusal_);
+    return out;
 }
 
 const RuntimeParameter* RuntimeControls::Find(const std::string& parameter_id) const {
@@ -376,6 +384,16 @@ bool RuntimeControls::Validate(const std::string& parameter_id, double value,
 bool RuntimeControls::Request(const std::string& parameter_id, double value, std::string* error) {
     if (!Validate(parameter_id, value, error)) {
         return false;
+    }
+    {
+        const size_t index = static_cast<size_t>(Find(parameter_id) - parameters_.data());
+        if (const CheckFunction& check = check_of_parameter_[index]) {
+            const std::string reason = check(value, last_boundary_time_);
+            if (!reason.empty()) {
+                if (error != nullptr) *error = reason;
+                return false;
+            }
+        }
     }
     auto same = [&](const RuntimeCommand& r) { return r.parameter == parameter_id; };
     requests_.erase(std::remove_if(requests_.begin(), requests_.end(), same), requests_.end());
@@ -418,6 +436,7 @@ void RuntimeControls::LoadSchedule(const RuntimeSchedule& schedule, double start
 }
 
 void RuntimeControls::ApplyDue(long long step, double time) {
+    last_boundary_time_ = time;
     while (next_scheduled_ < scheduled_.size() && scheduled_[next_scheduled_].step <= step) {
         RuntimeCommand cmd = scheduled_[next_scheduled_++];
         cmd.step = step;
@@ -442,6 +461,18 @@ void RuntimeControls::Apply(const RuntimeCommand& command, const std::string& or
         return;  // validated when queued
     }
     const size_t index = static_cast<size_t>(p - parameters_.data());
+    if (const CheckFunction& check = check_of_parameter_[index]) {
+        const std::string reason = check(command.value, command.time);
+        if (!reason.empty()) {
+            if (origin == "schedule") {
+                throw std::runtime_error("schedule: '" + command.parameter + "' = " + FormatValue(command.value) +
+                                         " at t = " + FormatValue(command.time) + " s refused: " + reason);
+            }
+            p->pending = false;
+            refusal_ = p->label + " " + FormatValue(command.value) + " " + p->units + " not applied: " + reason;
+            return;
+        }
+    }
     double effective_time = command.time;
     if (link_of_parameter_[index] == kNoLink) {
         effective_time = apply_of_parameter_[index](command.value, command.time);

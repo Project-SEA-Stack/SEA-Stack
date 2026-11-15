@@ -690,10 +690,19 @@ HydroModel HydroModelBuilder::Build() {
                 double ramp = ramp_duration_;
                 if (ramp <= 0.0 && wave) ramp = wave->GetRampDuration();
 
+                // For components added by live period or direction changes.
+                // HydroModel owns the data and outlives its force components.
+                const HydroData* data = data_.get();
+                const ExcitationInterpolation interpolation = excitation_interpolation_;
+                auto transfer = [data, interpolation](const std::vector<WaveComponent>& added) {
+                    return InterpolateExcitationTransfer(added, data->GetRegularWaveInfos(),
+                                                         data->GetSimulationInfo().wave_directions,
+                                                         interpolation);
+                };
                 components.push_back(
                     std::make_unique<ExcitationComponent>(
                         std::move(wcd), std::move(tf.re), std::move(tf.im),
-                        num_bodies, ramp, wave->GetAmplitudeEnvelope()));
+                        num_bodies, ramp, wave->GetAmplitudeEnvelope(), wave, std::move(transfer)));
             } else {
                 std::ostringstream oss;
                 oss << "HydroModelBuilder::Build(): frequency-domain excitation requires "

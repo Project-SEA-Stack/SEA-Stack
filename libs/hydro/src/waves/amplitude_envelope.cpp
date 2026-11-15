@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace seastack::hydro {
@@ -15,9 +16,19 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 }  // namespace
 
+AmplitudeEnvelope::AmplitudeEnvelope(double initial_value) : initial_value_(initial_value) {
+    if (!std::isfinite(initial_value) || initial_value < 0.0) {
+        throw std::invalid_argument("AmplitudeEnvelope: initial value must be finite and >= 0");
+    }
+}
+
+double AmplitudeEnvelope::EndTime() const {
+    return segments_.empty() ? -std::numeric_limits<double>::infinity() : segments_.back().t1;
+}
+
 double AmplitudeEnvelope::Value(double time) const {
     if (segments_.empty() || time < segments_.front().t0) {
-        return 1.0;
+        return initial_value_;
     }
     // Last segment that started at or before `time`.
     auto it = std::upper_bound(segments_.begin(), segments_.end(), time,

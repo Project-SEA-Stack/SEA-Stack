@@ -92,9 +92,15 @@ void LinearDirectionalWaveField::PrecomputeArrays() {
 
     std::vector<Eigen::Index> order(static_cast<std::size_t>(n));
     for (Eigen::Index i = 0; i < n; ++i) order[static_cast<std::size_t>(i)] = i;
-    std::stable_sort(order.begin(), order.end(), [this](Eigen::Index a, Eigen::Index b) {
-        return amplitudes_[a] > amplitudes_[b];
-    });
+    auto by_amplitude = [this](Eigen::Index a, Eigen::Index b) { return amplitudes_[a] > amplitudes_[b]; };
+    if (layers_.empty()) {
+        std::stable_sort(order.begin(), order.end(), by_amplitude);
+    } else {
+        for (const auto& layer : layers_) {
+            std::stable_sort(order.begin() + static_cast<std::ptrdiff_t>(layer.begin),
+                             order.begin() + static_cast<std::ptrdiff_t>(layer.end), by_amplitude);
+        }
+    }
     viz_amplitudes_.resize(n);
     viz_kx_.resize(n);
     viz_ky_.resize(n);
@@ -110,6 +116,57 @@ void LinearDirectionalWaveField::PrecomputeArrays() {
     }
 }
 
+const Eigen::VectorXd& LinearDirectionalWaveField::AmplitudesAt(double time, Eigen::VectorXd& scratch) const {
+    if (layers_.empty()) {
+        return amplitudes_;
+    }
+    GetComponentWeights(time, scratch);
+    scratch.array() *= amplitudes_.array();
+    return scratch;
+}
+
+std::vector<WaveComponent> LinearDirectionalWaveField::GetCurrentComponents() const {
+    const std::size_t begin = layers_.empty() ? 0 : layers_.back().begin;
+    return std::vector<WaveComponent>(components_.begin() + static_cast<std::ptrdiff_t>(begin), components_.end());
+}
+
+double LinearDirectionalWaveField::CrossfadeTo(std::vector<WaveComponent> components, double start_time,
+                                               double duration) {
+    if (!std::isfinite(start_time) || !std::isfinite(duration) || duration < 0.0) {
+        throw std::invalid_argument("LinearDirectionalWaveField::CrossfadeTo: times must be finite, duration >= 0");
+    }
+    if (IsCrossfading(start_time)) {
+        throw std::logic_error("LinearDirectionalWaveField::CrossfadeTo: a period or direction change is still "
+                               "in progress");
+    }
+    const std::size_t current_begin = layers_.empty() ? 0 : layers_.back().begin;
+    const std::size_t current_end = components_.size();
+    if (components.size() != current_end - current_begin) {
+        throw std::invalid_argument("LinearDirectionalWaveField::CrossfadeTo: " + std::to_string(components.size()) +
+                                    " new components for " + std::to_string(current_end - current_begin) +
+                                    " current ones (the discretisation must not change)");
+    }
+    constexpr double kTwoPi = 2.0 * M_PI;
+    for (std::size_t i = 0; i < components.size(); ++i) {
+        WaveComponent& c = components[i];
+        const WaveComponent& old = components_[current_begin + i];
+        c.k = ComputeWaveNumber(c.omega, water_depth_, g_);
+        c.phase = std::fmod(old.phase + (c.omega - old.omega) * start_time, kTwoPi);
+        if (c.phase < 0.0) c.phase += kTwoPi;
+    }
+
+    if (layers_.empty()) {
+        layers_.push_back(WaveLayer{0, current_end, AmplitudeEnvelope(1.0)});
+    }
+    layers_.back().weight.RampTo(start_time, 0.0, duration);
+    WaveLayer next{current_end, current_end + components.size(), AmplitudeEnvelope(0.0)};
+    crossfade_end_ = next.weight.RampTo(start_time, 1.0, duration);
+    layers_.push_back(std::move(next));
+    components_.insert(components_.end(), components.begin(), components.end());
+    PrecomputeArrays();
+    return crossfade_end_;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Kinematics: elevation, velocity, acceleration
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,7 +180,9 @@ double LinearDirectionalWaveField::GetElevation(const Eigen::Vector3d& position,
                                     + ky_.array() * y
                                     - omegas_.array() * time
                                     + phases_.array();
-    return (amplitudes_.array() * phase_args.cos()).sum();
+    Eigen::VectorXd scratch;
+    const Eigen::VectorXd& amplitudes = AmplitudesAt(time, scratch);
+    return (amplitudes.array() * phase_args.cos()).sum();
 }
 
 Eigen::Vector2d LinearDirectionalWaveField::GetElevationGradientXY(
@@ -135,7 +194,9 @@ Eigen::Vector2d LinearDirectionalWaveField::GetElevationGradientXY(
                                     + ky_.array() * y
                                     - omegas_.array() * time
                                     + phases_.array();
-    const Eigen::ArrayXd neg_a_sin = -(amplitudes_.array() * phase_args.sin());
+    Eigen::VectorXd scratch;
+    const Eigen::VectorXd& amplitudes = AmplitudesAt(time, scratch);
+    const Eigen::ArrayXd neg_a_sin = -(amplitudes.array() * phase_args.sin());
 
     double deta_dx = (neg_a_sin * kx_.array()).sum();
     double deta_dy = (neg_a_sin * ky_.array()).sum();
@@ -145,19 +206,37 @@ Eigen::Vector2d LinearDirectionalWaveField::GetElevationGradientXY(
 
 double LinearDirectionalWaveField::GetElevationForVisualization(
     const Eigen::Vector3d& position, double time, int max_components) const {
-    const Eigen::Index n_total = amplitudes_.size();
-    const Eigen::Index n = (max_components <= 0 || max_components >= n_total)
-                           ? n_total
-                           : static_cast<Eigen::Index>(max_components);
-
     const double x = position.x();
     const double y = position.y();
+    if (layers_.empty()) {
+        const Eigen::Index n_total = amplitudes_.size();
+        const Eigen::Index n = (max_components <= 0 || max_components >= n_total)
+                               ? n_total
+                               : static_cast<Eigen::Index>(max_components);
 
-    const Eigen::ArrayXd phase_args = viz_kx_.head(n).array() * x
-                                    + viz_ky_.head(n).array() * y
-                                    - viz_omegas_.head(n).array() * time
-                                    + viz_phases_.head(n).array();
-    return (viz_amplitudes_.head(n).array() * phase_args.cos()).sum();
+        const Eigen::ArrayXd phase_args = viz_kx_.head(n).array() * x
+                                        + viz_ky_.head(n).array() * y
+                                        - viz_omegas_.head(n).array() * time
+                                        + viz_phases_.head(n).array();
+        return (viz_amplitudes_.head(n).array() * phase_args.cos()).sum();
+    }
+    // Crossfade: the limit applies to each component set.
+    double eta = 0.0;
+    for (const auto& layer : layers_) {
+        const double w = layer.weight.Value(time);
+        if (w == 0.0) continue;
+        const Eigen::Index begin = static_cast<Eigen::Index>(layer.begin);
+        const Eigen::Index size = static_cast<Eigen::Index>(layer.end - layer.begin);
+        const Eigen::Index n = (max_components <= 0 || max_components >= size)
+                               ? size
+                               : static_cast<Eigen::Index>(max_components);
+        const Eigen::ArrayXd phase_args = viz_kx_.segment(begin, n).array() * x
+                                        + viz_ky_.segment(begin, n).array() * y
+                                        - viz_omegas_.segment(begin, n).array() * time
+                                        + viz_phases_.segment(begin, n).array();
+        eta += w * (viz_amplitudes_.segment(begin, n).array() * phase_args.cos()).sum();
+    }
+    return eta;
 }
 
 double LinearDirectionalWaveField::GetElevation(
@@ -167,8 +246,10 @@ double LinearDirectionalWaveField::GetElevation(
 
 double LinearDirectionalWaveField::GetCharacteristicPeriod() const {
     if (components_.empty()) return 0.0;
+    // The newest set: the sea once any crossfade has finished.
+    const std::size_t begin = layers_.empty() ? 0 : layers_.back().begin;
     const auto& c = *std::max_element(
-        components_.cbegin(), components_.cend(),
+        components_.cbegin() + static_cast<std::ptrdiff_t>(begin), components_.cend(),
         [](const WaveComponent& a, const WaveComponent& b) {
             return a.amplitude < b.amplitude;
         });
@@ -218,17 +299,19 @@ Eigen::Vector3d LinearDirectionalWaveField::GetVelocity(
                                     + phases_.array();
     const Eigen::ArrayXd cos_phase = phase_args.cos();
     const Eigen::ArrayXd sin_phase = phase_args.sin();
+    Eigen::VectorXd scratch;
+    const Eigen::VectorXd& amplitudes = AmplitudesAt(time, scratch);
 
     Eigen::Vector3d velocity = Eigen::Vector3d::Zero();
 
-    for (Eigen::Index i = 0; i < amplitudes_.size(); ++i) {
+    for (Eigen::Index i = 0; i < amplitudes.size(); ++i) {
         const double k_mag = std::abs(wavenumbers_[i]);
-        if (k_mag == 0.0 || omegas_[i] == 0.0 || amplitudes_[i] == 0.0) continue;
+        if (k_mag == 0.0 || omegas_[i] == 0.0 || amplitudes[i] == 0.0) continue;
 
         const auto [H_cosh, H_sinh] = ComputeDepthAttenuation(k_mag, z, water_depth_);
 
-        const double u_horiz = omegas_[i] * amplitudes_[i] * H_cosh * cos_phase[i];
-        const double u_vert  = omegas_[i] * amplitudes_[i] * H_sinh * sin_phase[i];
+        const double u_horiz = omegas_[i] * amplitudes[i] * H_cosh * cos_phase[i];
+        const double u_vert  = omegas_[i] * amplitudes[i] * H_sinh * sin_phase[i];
 
         velocity[0] += u_horiz * cos_dirs_[i];
         velocity[1] += u_horiz * sin_dirs_[i];
@@ -254,18 +337,20 @@ Eigen::Vector3d LinearDirectionalWaveField::GetAcceleration(
                                     + phases_.array();
     const Eigen::ArrayXd sin_phase = phase_args.sin();
     const Eigen::ArrayXd cos_phase = phase_args.cos();
+    Eigen::VectorXd scratch;
+    const Eigen::VectorXd& amplitudes = AmplitudesAt(time, scratch);
 
     Eigen::Vector3d acceleration = Eigen::Vector3d::Zero();
 
-    for (Eigen::Index i = 0; i < amplitudes_.size(); ++i) {
+    for (Eigen::Index i = 0; i < amplitudes.size(); ++i) {
         const double k_mag = std::abs(wavenumbers_[i]);
-        if (k_mag == 0.0 || omegas_[i] == 0.0 || amplitudes_[i] == 0.0) continue;
+        if (k_mag == 0.0 || omegas_[i] == 0.0 || amplitudes[i] == 0.0) continue;
 
         const auto [H_cosh, H_sinh] = ComputeDepthAttenuation(k_mag, z, water_depth_);
 
         const double w2 = omegas_[i] * omegas_[i];
-        const double a_horiz =  w2 * amplitudes_[i] * H_cosh * sin_phase[i];
-        const double a_vert  = -w2 * amplitudes_[i] * H_sinh * cos_phase[i];
+        const double a_horiz =  w2 * amplitudes[i] * H_cosh * sin_phase[i];
+        const double a_vert  = -w2 * amplitudes[i] * H_sinh * cos_phase[i];
 
         acceleration[0] += a_horiz * cos_dirs_[i];
         acceleration[1] += a_horiz * sin_dirs_[i];
@@ -287,10 +372,12 @@ double LinearDirectionalWaveField::GetDynamicPressureHead(
                                     + ky_.array() * position.y()
                                     - omegas_.array() * time
                                     + phases_.array();
+    Eigen::VectorXd scratch;
+    const Eigen::VectorXd& amplitudes = AmplitudesAt(time, scratch);
     double head = 0.0;
-    for (Eigen::Index i = 0; i < amplitudes_.size(); ++i) {
+    for (Eigen::Index i = 0; i < amplitudes.size(); ++i) {
         const double depth_factor = AiryPressureDepthFactor(wavenumbers_[i], z_s, water_depth_);
-        head += amplitudes_[i] * depth_factor * std::cos(phase_args[i]);
+        head += amplitudes[i] * depth_factor * std::cos(phase_args[i]);
     }
     return head;
 }
@@ -313,6 +400,8 @@ void LinearDirectionalWaveField::GetElevationAndPressureHead(const Eigen::Matrix
     // Time part of the phase, shared by all points: phi_i - omega_i t.
     const Eigen::ArrayXd theta = phases_.array() - omegas_.array() * time;
     const Eigen::ArrayXd abs_k = wavenumbers_.array().abs();
+    Eigen::VectorXd scratch;
+    const Eigen::VectorXd& amplitudes = AmplitudesAt(time, scratch);
 
     const int n = static_cast<int>(n_points);
 #ifdef _OPENMP
@@ -333,7 +422,7 @@ void LinearDirectionalWaveField::GetElevationAndPressureHead(const Eigen::Matrix
             const double y = points(1, j);
             const double z = points(2, j);
             cos_phase = (kx_.array() * x + ky_.array() * y + theta).cos();
-            const double eta = elevation_scale * (amplitudes_.array() * cos_phase).sum();
+            const double eta = elevation_scale * (amplitudes.array() * cos_phase).sum();
             elevation[j] = eta;
             if (!pressure_head) continue;
             if (z - mwl_ - eta > 0.0) {
@@ -351,7 +440,7 @@ void LinearDirectionalWaveField::GetElevationAndPressureHead(const Eigen::Matrix
                     depth_factor[i] = AiryPressureDepthFactor(wavenumbers_[i], z_s, water_depth_);
                 }
             }
-            (*pressure_head)[j] = (amplitudes_.array() * depth_factor * cos_phase).sum();
+            (*pressure_head)[j] = (amplitudes.array() * depth_factor * cos_phase).sum();
         }
     }
 }

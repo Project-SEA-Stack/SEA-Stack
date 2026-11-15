@@ -476,6 +476,30 @@ if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
             ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
     endif()
 
+    # Live wave period and direction through --schedule (PR-5): layered paths
+    # match the unchanged run, a turned sea has the excitation of a run started
+    # there (FD, IRF), a period change reaches the new steady state, and every
+    # refused case stops the run with its reason.
+    add_test(
+        NAME test_runtime_sea_state
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_runtime_sea_state.py"
+            --exe $<TARGET_FILE:run_seastack>
+    )
+    set_tests_properties(test_runtime_sea_state PROPERTIES
+        LABELS "regression;chrono;rm3;sphere;oswec;execute"
+        COST 10
+        SKIP_RETURN_CODE ${SEASTACK_SKIP_MISSING_PYTHON_DEPS}
+    )
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.22")
+        set_tests_properties(test_runtime_sea_state PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${Python3_ROOT_DIR};PATH=path_list_prepend:${Python3_ROOT_DIR}/Library/bin;PATH=path_list_prepend:${Python3_ROOT_DIR}/DLLs")
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        set_tests_properties(test_runtime_sea_state PROPERTIES
+            ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+    endif()
+
     # External controller (preview) through run_seastack: YAML mistakes, bad
     # step() returns, process failures, print forwarding and cost per tick.
     # Standard-library Python only.

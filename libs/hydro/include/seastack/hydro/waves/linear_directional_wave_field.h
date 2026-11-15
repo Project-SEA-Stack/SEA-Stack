@@ -20,6 +20,7 @@
 #include <seastack/hydro/hydro_data.h>
 
 #include <Eigen/Core>
+#include <limits>
 #include <vector>
 
 namespace seastack::hydro {
@@ -65,7 +66,33 @@ class LinearDirectionalWaveField : public WaveBase {
                                     bool use_file_water_depth);
 
     /// Access the raw component list (for logging, plotting, diagnostics).
+    /// After a live period or direction change it holds every layer.
     [[nodiscard]] const std::vector<WaveComponent>& GetComponents() const { return components_; }
+
+    /// Components of the newest layer: the sea in effect once any crossfade
+    /// has finished (all components when there are no layers).
+    [[nodiscard]] std::vector<WaveComponent> GetCurrentComponents() const;
+
+    /// Live period or direction change: crossfade from the current components
+    /// to `components` over [start_time, start_time + duration] (see WaveLayer).
+    ///
+    /// `components` must match the current set one to one (same seed and
+    /// discretisation). Wavenumbers are recomputed for this field's depth and
+    /// gravity. Each phase is shifted so the new component has the phase of
+    /// the current one at the origin at start_time:
+    ///   phi_new = phi_old + (w_new - w_old) * start_time   (mod 2 pi)
+    /// so a direction change leaves eta at the origin unchanged, and after a
+    /// period change both sets start in step.
+    ///
+    /// Evaluation cost grows with the number of changes: faded-out sets stay
+    /// in the list, because IRF excitation convolves the elevation history.
+    /// @return Time [s] at which the new set has full weight.
+    /// @throws std::invalid_argument on a size mismatch or bad times;
+    ///         std::logic_error if a crossfade is still running at start_time.
+    double CrossfadeTo(std::vector<WaveComponent> components, double start_time, double duration);
+
+    /// True while a crossfade started by CrossfadeTo is running at `time`.
+    [[nodiscard]] bool IsCrossfading(double time) const { return time < crossfade_end_; }
 
     // ── Overrides from WaveBase ──────────────────────────────────────
 
@@ -94,6 +121,7 @@ class LinearDirectionalWaveField : public WaveBase {
     double ramp_duration_ = 0.0;
 
     std::vector<WaveComponent> components_;
+    double crossfade_end_ = -std::numeric_limits<double>::infinity();  ///< End of the last crossfade [s]
 
     // Pre-computed SIMD-friendly arrays (one element per component).
     Eigen::VectorXd amplitudes_;
@@ -105,8 +133,8 @@ class LinearDirectionalWaveField : public WaveBase {
     Eigen::VectorXd sin_dirs_;
     Eigen::VectorXd wavenumbers_;
 
-    // Same components sorted by decreasing amplitude, so a visualization
-    // limit keeps the most energetic components.
+    // Same components sorted by decreasing amplitude within each layer, so a
+    // visualization limit keeps the most energetic components of each set.
     Eigen::VectorXd viz_amplitudes_;
     Eigen::VectorXd viz_kx_;
     Eigen::VectorXd viz_ky_;
@@ -114,6 +142,11 @@ class LinearDirectionalWaveField : public WaveBase {
     Eigen::VectorXd viz_phases_;
 
     void PrecomputeArrays();
+
+    /// Component amplitudes times the layer weights at `time` [m]. Returns
+    /// amplitudes_ itself when there are no layers (bit-identical path);
+    /// otherwise fills and returns `scratch`.
+    const Eigen::VectorXd& AmplitudesAt(double time, Eigen::VectorXd& scratch) const;
 
     /// Cosine excitation ramp: 0.5*(1 - cos(pi*t/T_ramp)); 1 if no ramp or t >= T_ramp.
     double ExcitationRampFactor(double time) const;
