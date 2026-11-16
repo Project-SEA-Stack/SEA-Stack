@@ -34,6 +34,10 @@ double WireframeHalfWidth(double spacing_x, double spacing_y) {
     return kFractionOfCell * std::min(spacing_x, spacing_y);
 }
 
+/// For irregular waves, the largest components per component set drawn. 500
+/// gives excellent visual quality while being faster than using all of them
+/// (which can be 1000+). Physics always uses all components.
+constexpr int kVizFrequencyLimit = 500;
 }  // namespace
 
 // Visitor to find vertex (N=0) or normal (N=1) arrays in VSG scene graph.
@@ -179,6 +183,8 @@ void AnimatedWaterSurface::Reset() {
     visible_ = true;
     num_triangles_ = 0;
     current_resolution_ = 0;
+    requested_resolution_ = 0;
+    gpu_ = false;
     counts_ = WaterGridCounts{};
     last_update_time_ = -1.0;
 
@@ -209,7 +215,7 @@ void AnimatedWaterSurface::Reinitialize(int resolution, const ViewerSettings* se
     }
 
     // Skip if resolution and extent are the same.
-    if (resolution == current_resolution_ && initialized_ && !extent_changed) {
+    if (resolution == requested_resolution_ && initialized_ && !extent_changed) {
         return;
     }
 
@@ -247,7 +253,7 @@ void AnimatedWaterSurface::InitializeInternal(OverlayBuilder* builder, int resol
     }
 
     builder_ = builder;
-    current_resolution_ = resolution;
+    requested_resolution_ = resolution;
 
     // Store custom grid extent from settings.
     if (settings) {
@@ -264,6 +270,73 @@ void AnimatedWaterSurface::InitializeInternal(OverlayBuilder* builder, int resol
         }
         return;
     }
+
+    gpu_ = false;
+    if (prefer_gpu_) {
+        BuildFlatGrid(resolution);
+        vsg_node_ = builder->CreateGpuWaterGrid(grid_, counts_.nx);
+        gpu_ = static_cast<bool>(vsg_node_);
+    }
+    if (!gpu_) {
+        BuildFlatGrid(std::min(resolution, kMaxCpuResolution));
+        OverlayMaterial water_material;
+        water_material.color = {1.0f, 1.0f, 1.0f, kWaterOpacity};
+        water_material.roughness = kWaterRoughness;
+        water_material.metallic = kWaterMetallic;
+        vsg_node_ = builder->CreateWaterMesh(grid_, water_material);
+    }
+
+    if (!vsg_node_) {
+        if constexpr (kDebugWaveSurface) {
+            std::cout << "[WaveSurfaceDebug] Failed to create VSG mesh\n";
+        }
+        return;
+    }
+
+    if (!gpu_) {
+        // Use VSG visitor pattern to find vertex and normal arrays.
+        // For CreateTrimeshPbrMatShape: [0]=vertices, [1]=normals, [2]=texcoords
+        vsg_vertices_ = vsg::visit<FindVec3BufferData<0>>(vsg_node_).GetBufferData();
+        vsg_normals_ = vsg::visit<FindVec3BufferData<1>>(vsg_node_).GetBufferData();
+        // PbrMatShape may not have vertex colors - try to find them anyway.
+        vsg_colors_ = vsg::visit<FindVec4BufferData<3>>(vsg_node_).GetBufferData();
+
+        if (!vsg_vertices_ || !vsg_normals_) {
+            if constexpr (kDebugWaveSurface) {
+                std::cout << "[WaveSurfaceDebug] Failed to find vertex/normal arrays via visitor\n";
+            }
+            return;
+        }
+
+        // Mark arrays as dynamic for GPU re-upload support.
+        vsg_vertices_->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
+        vsg_normals_->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
+        if (vsg_colors_) {
+            vsg_colors_->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
+        }
+    }
+
+    // Add to scene.
+    scene_->addChild(vsg_node_);
+
+    initialized_ = true;
+    visible_ = true;
+
+    // Log water surface creation.
+    const double extent_x = (grid_width_ > 0) ? grid_width_ : kWaterGridSize;
+    const double extent_y = (grid_length_ > 0) ? grid_length_ : kWaterGridSize;
+
+    std::cout << "[WaterSurface] Created: " << counts_.nx << "x" << counts_.ny << " grid, " << extent_x << " x "
+              << extent_y << " m";
+    if (grid_center_x_ != 0.0 || grid_center_y_ != 0.0) {
+        std::cout << ", center: (" << grid_center_x_ << ", " << grid_center_y_ << ")";
+    }
+    std::cout << (gpu_ ? ", displaced on the GPU" : ", computed on the CPU") << std::endl;
+}
+
+void AnimatedWaterSurface::BuildFlatGrid(int resolution) {
+    current_resolution_ = resolution;
+    grid_ = TriangleMesh{};
 
     // Use custom grid extent if specified, otherwise use defaults.
     const double grid_size_x = (grid_width_ > 0) ? grid_width_ : kWaterGridSize;
@@ -303,60 +376,6 @@ void AnimatedWaterSurface::InitializeInternal(OverlayBuilder* builder, int resol
     }
 
     num_triangles_ = faces.size();
-
-    // Create transparent white material for the water surface.
-    // White diffuse allows vertex colors to show through when multiplied.
-    // Opacity enables transparency so we can see through the water.
-    OverlayMaterial water_material;
-    water_material.color = {1.0f, 1.0f, 1.0f, kWaterOpacity};
-    water_material.roughness = kWaterRoughness;
-    water_material.metallic = kWaterMetallic;
-    vsg_node_ = builder->CreateOverlayMesh(grid_, water_material);
-
-    if (!vsg_node_) {
-        if constexpr (kDebugWaveSurface) {
-            std::cout << "[WaveSurfaceDebug] Failed to create VSG mesh\n";
-        }
-        return;
-    }
-
-    // Use VSG visitor pattern to find vertex and normal arrays.
-    // For CreateTrimeshPbrMatShape: [0]=vertices, [1]=normals, [2]=texcoords
-    vsg_vertices_ = vsg::visit<FindVec3BufferData<0>>(vsg_node_).GetBufferData();
-    vsg_normals_ = vsg::visit<FindVec3BufferData<1>>(vsg_node_).GetBufferData();
-    // PbrMatShape may not have vertex colors - try to find them anyway.
-    vsg_colors_ = vsg::visit<FindVec4BufferData<3>>(vsg_node_).GetBufferData();
-
-    if (!vsg_vertices_ || !vsg_normals_) {
-        if constexpr (kDebugWaveSurface) {
-            std::cout << "[WaveSurfaceDebug] Failed to find vertex/normal arrays via visitor\n";
-        }
-        return;
-    }
-
-    // Mark arrays as dynamic for GPU re-upload support.
-    vsg_vertices_->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
-    vsg_normals_->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
-    if (vsg_colors_) {
-        vsg_colors_->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
-    }
-
-    // Add to scene.
-    scene_->addChild(vsg_node_);
-
-    initialized_ = true;
-    visible_ = true;
-
-    // Log water surface creation.
-    const double extent_x = (grid_width_ > 0) ? grid_width_ : kWaterGridSize;
-    const double extent_y = (grid_length_ > 0) ? grid_length_ : kWaterGridSize;
-
-    std::cout << "[WaterSurface] Created: " << nx << "x" << ny << " grid, " << extent_x << " x " << extent_y
-              << " m";
-    if (grid_center_x_ != 0.0 || grid_center_y_ != 0.0) {
-        std::cout << ", center: (" << grid_center_x_ << ", " << grid_center_y_ << ")";
-    }
-    std::cout << std::endl;
 }
 
 void AnimatedWaterSurface::SetVisible(bool visible) {
@@ -629,6 +648,25 @@ void AnimatedWaterSurface::UpdateWireframe() {
 
 void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t,
                                   const ViewerSettings* settings) {
+    // GPU path unless the shader cannot draw this sea: it needs discrete
+    // components, and the radiation overlay is only on the CPU.
+    if (initialized_ && builder_) {
+        const bool use_radiation = settings && settings->show_radiation_viz;
+        const bool want_gpu = !use_radiation && (!wave || wave->GetWaveMode() == WaveMode::kNoWave ||
+                                                 wave->GetWaveComponents() != nullptr);
+        if (want_gpu != prefer_gpu_) {
+            prefer_gpu_ = want_gpu;
+            auto* builder = builder_;
+            const int resolution = requested_resolution_;
+            Reset();
+            InitializeInternal(builder, resolution, settings);
+        }
+    }
+    if (gpu_) {
+        UpdateGpu(wave, t, settings);
+        return;
+    }
+
     if (!initialized_ || !vsg_vertices_ || !vsg_normals_ || grid_.vertices.empty()) {
         if constexpr (kDebugWaveSurface) {
             if (frame_count_++ % kDebugPrintEveryNFrames == 0) {
@@ -698,15 +736,10 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     // point and then copying to the soup, we avoid redundant wave calculations.
     //
     // For irregular sea states with ~1000 frequency components:
-    //   - Without optimization: ~24,000 × 1000 = 24M trig operations/frame
-    //   - With optimization:     ~4,000 × 1000 = 4M trig operations/frame
+    //   - Without optimization: ~24,000 ï¿½ 1000 = 24M trig operations/frame
+    //   - With optimization:     ~4,000 ï¿½ 1000 = 4M trig operations/frame
     // -------------------------------------------------------------------------
     std::vector<float> grid_eta(orig_verts.size(), 0.0f);
-
-    // For irregular waves, use limited frequency components for visualization.
-    // 500 components provides excellent visual quality while being faster than
-    // using all components (which can be 1000+). Physics always uses all components.
-    constexpr int kVizFrequencyLimit = 500;
 
     const double excitation_ramp =
         wave ? wave->GetExcitationRampForVisualization(t) : 1.0;
@@ -806,6 +839,8 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
             adaptive_eta_min_ += min_alpha * (frame_min_eta - adaptive_eta_min_);
             adaptive_eta_max_ += max_alpha * (frame_max_eta - adaptive_eta_max_);
         }
+        // For a viewer with its own water shader: crest colour scale [m].
+        builder_->SetWaterElevationScale(0.5f * std::max(kMinRange, adaptive_eta_max_ - adaptive_eta_min_));
     }
 
     // Debug: spike first triangle to verify GPU update pipeline is working.
@@ -899,6 +934,36 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     }
 }
 
+void AnimatedWaterSurface::UpdateGpu(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t,
+                                     const ViewerSettings* settings) {
+    if (!initialized_ || !builder_ || !visible_) {
+        return;
+    }
+
+    // Wireframe: every mesh edge, as on the CPU path.
+    const bool show_lines = settings && settings->show_water_grid;
+    builder_->SetGpuWaterGridLines(show_lines ? 1.0f : 0.0f);
+
+    // Every frame: the CPU work is a sort of the component amplitudes, and
+    // the shader does the rest. The scale is the CPU path's, so both draw the
+    // same elevation.
+    const double visual_scale = settings ? settings->wave_visual_scale : 1.0;
+    const double excitation_ramp = wave ? wave->GetExcitationRampForVisualization(t) : 1.0;
+    display_components_.clear();
+    if (wave) {
+        CollectDisplayWaveComponents(*wave, t, kVizFrequencyLimit, visual_scale * excitation_ramp,
+                                     &display_components_);
+    }
+    const int used = builder_->SetGpuWaterWaves(display_components_);
+    builder_->SetWaterElevationScale(DisplayElevationScale(display_components_));
+    if (used < static_cast<int>(display_components_.size()) && !gpu_capacity_logged_) {
+        std::cout << "[WaterSurface] Drawing " << used << " of " << display_components_.size()
+                  << " wave components (GPU water limit)." << std::endl;
+        gpu_capacity_logged_ = true;
+    }
+    last_update_time_ = t;
+}
+
 bool AnimatedWaterSurface::IsInitialized() const {
     return initialized_;
 }
@@ -918,8 +983,9 @@ double AnimatedWaterSurface::GetCellSize() const {
 
 std::string AnimatedWaterSurface::GetStatusString() const {
     std::ostringstream ss;
-    ss << "Water: " << (initialized_ ? "ANIM" : "OFF");
-    ss << " verts=" << (vsg_vertices_ ? std::to_string(vsg_vertices_->size()) : "null");
+    ss << "Water: " << (initialized_ ? (gpu_ ? "GPU" : "ANIM") : "OFF");
+    ss << " verts=" << (gpu_ ? std::to_string(grid_.vertices.size())
+                             : (vsg_vertices_ ? std::to_string(vsg_vertices_->size()) : "null"));
     return ss.str();
 }
 
@@ -980,7 +1046,9 @@ void UpdateWaterReadouts(const AnimatedWaterSurface& water, const WaveBase* wave
     if (!settings) {
         return;
     }
+    settings->water_counts = water.GetGridCounts();
     settings->water_cell_m = water.GetCellSize();
+    settings->water_gpu = water.IsGpu();
     settings->water_wavelength_m = 0.0;
     if (wave && wave->GetWaveMode() != WaveMode::kNoWave) {
         settings->water_wavelength_m = DeepWaterWavelength(wave->GetCharacteristicPeriod(), wave->GetGravity());

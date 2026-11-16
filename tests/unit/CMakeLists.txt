@@ -406,6 +406,12 @@ build_unit_test(test_sea_state_change)
 target_link_libraries(test_sea_state_change PRIVATE SEAStack::Hydro)
 set_tests_properties(test_sea_state_change PROPERTIES LABELS "unit;chrono-free")
 
+# GPU water: displayed wave components vs the visualization elevation (header in apps/seastack/gui)
+build_unit_test(test_water_display_components)
+target_link_libraries(test_water_display_components PRIVATE SEAStack::Hydro)
+target_include_directories(test_water_display_components PRIVATE "${CMAKE_SOURCE_DIR}/apps/seastack/gui")
+set_tests_properties(test_water_display_components PROPERTIES LABELS "unit;chrono-free")
+
 # Excitation TF interpolation on uniform vs non-uniform omega grids (Chrono-free, HDF5-free)
 build_unit_test(test_excitation_nonuniform_grid)
 target_link_libraries(test_excitation_nonuniform_grid PRIVATE SEAStack::Hydro)

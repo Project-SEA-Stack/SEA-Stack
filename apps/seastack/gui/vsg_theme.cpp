@@ -10,14 +10,38 @@
 namespace seastack::viz {
 
 SceneTheme GetSceneTheme(VisualTheme theme) {
+    SceneTheme t{};
     if (theme == VisualTheme::kLight) {
         // Skybox backdrop; light-grey clear colour only shows if the skybox
         // texture failed to load.
-        return SceneTheme{{0.78f, 0.82f, 0.87f}, true, 0.22f, 0.40f, 0.20f};
+        t.background_srgb = {0.78f, 0.82f, 0.87f};
+        t.show_sky = true;
+        t.ambient_intensity = 0.22f;
+        t.fill_intensity = 0.40f;
+        t.rim_intensity = 0.20f;
+        // Clear day: blue overhead, pale at the horizon. The water is a
+        // deeper, more saturated blue than both, so it stands apart.
+        t.sky_zenith_srgb = {0.30f, 0.50f, 0.76f};
+        t.sky_horizon_srgb = {0.74f, 0.81f, 0.88f};
+        t.water_deep_srgb = {0.03f, 0.17f, 0.28f};
+        t.water_scatter_srgb = {0.08f, 0.40f, 0.46f};
+        return t;
     }
     // Studio Dark: neutral dark slate so bodies, water and mooring colours
     // stand out; a stronger rim light separates silhouettes from the background.
-    return SceneTheme{{0.10f, 0.115f, 0.14f}, false, 0.18f, 0.38f, 0.45f};
+    t.background_srgb = {0.10f, 0.115f, 0.14f};
+    t.show_sky = false;
+    t.ambient_intensity = 0.18f;
+    t.fill_intensity = 0.38f;
+    t.rim_intensity = 0.45f;
+    // Studio: a dark reflected sky with a faint light band at the horizon.
+    // The water is a mid-tone teal-blue, lighter than it, so it reads
+    // against the dark background.
+    t.sky_zenith_srgb = {0.07f, 0.08f, 0.10f};
+    t.sky_horizon_srgb = {0.17f, 0.19f, 0.23f};
+    t.water_deep_srgb = {0.04f, 0.22f, 0.32f};
+    t.water_scatter_srgb = {0.12f, 0.46f, 0.52f};
+    return t;
 }
 
 namespace {

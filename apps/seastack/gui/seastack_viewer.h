@@ -10,6 +10,7 @@
 
 #include "vsg_overlay_builder.h"
 #include "vsg_theme.h"
+#include "vsg_water_shader.h"
 
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/scene_model.h>
@@ -104,6 +105,16 @@ class SeastackViewer : public OverlayBuilder {
     // water blends over them.
     vsg::ref_ptr<vsg::Group> OverlayScene() override { return overlay_root_; }
     vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) override;
+    /// Water shader (Fresnel sky reflection, sun glint, soft edges); the PBR
+    /// overlay if the shader cannot be compiled.
+    vsg::ref_ptr<vsg::Node> CreateWaterMesh(const TriangleMesh& mesh, const OverlayMaterial& material) override;
+    vsg::ref_ptr<vsg::Node> CreateGpuWaterGrid(const TriangleMesh& flat_grid, int nx) override;
+    int SetGpuWaterWaves(const std::vector<DisplayWaveComponent>& components) override {
+        return water_shader_.SetWaves(components);
+    }
+    void SetWaterElevationScale(float elevation_scale) override { water_shader_.SetElevationScale(elevation_scale); }
+
+    void SetGpuWaterGridLines(float cells_per_line) override { water_shader_.SetGridLines(cells_per_line); }
     vsg::ref_ptr<vsg::Node> CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) override;
     vsg::ref_ptr<vsg::Node> CreateSphereOverlay(const OverlayMaterial& material,
                                                 vsg::ref_ptr<vsg::MatrixTransform> transform) override;
@@ -164,6 +175,7 @@ class SeastackViewer : public OverlayBuilder {
     vsg::ref_ptr<vsg::AmbientLight> ambient_light_;
     vsg::ref_ptr<vsg::DirectionalLight> fill_light_;
     vsg::ref_ptr<vsg::DirectionalLight> rim_light_;
+    WaterShader water_shader_;  ///< Shared by every water mesh; eye updated each frame
 
     /// One transform per scene body, in scene order (world <- body ref frame).
     std::vector<vsg::ref_ptr<vsg::MatrixTransform>> body_transforms_;

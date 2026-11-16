@@ -185,10 +185,14 @@ struct ViewerSettings {
     /// rectangular patch spreads them over near-square cells.
     int grid_resolution = 64;
     bool resolution_changed = false;  ///< Triggers mesh rebuild when resolution changes
-    /// Readouts written by the viewer: grid cell size [m] (0 = no grid) and the
-    /// deep-water wavelength of the current characteristic period [m] (0 = none).
+    /// Readouts written by the viewer: grid size drawn (vertices), cell size
+    /// [m] (0 = no grid), the deep-water wavelength of the current
+    /// characteristic period [m] (0 = none), and whether the surface is
+    /// displaced on the GPU.
+    WaterGridCounts water_counts;
     double water_cell_m = 0.0;
     double water_wavelength_m = 0.0;
+    bool water_gpu = false;
 
     static constexpr int kResolutionOptions[] = {32, 64, 96, 128};
     static constexpr int kResolutionCount = 4;

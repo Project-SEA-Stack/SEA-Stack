@@ -17,6 +17,7 @@
 
 #include "vsg_overlay_builder.h"
 #include "vsg_radiation_surface.h"
+#include "water_display_components.h"
 
 namespace seastack::viz {
 
@@ -24,9 +25,19 @@ namespace seastack::viz {
 struct ViewerSettings;
 
 /// Deformable water surface mesh for visualizing ocean waves.
-/// Updates vertex Z-coordinates each frame based on wave elevation.
+///
+/// Two paths, chosen each frame:
+///  - GPU: if the viewer supports it (OverlayBuilder::CreateGpuWaterGrid),
+///    the wave model has discrete components and the radiation overlay is
+///    off. A flat grid is displaced in the vertex shader by the same
+///    components GetElevation(pos, t, 500) sums; updated every frame.
+///  - CPU: otherwise (e.g. tabulated elevation records, the radiation
+///    overlay, the Chrono viewer). Vertex Z from GetElevation at update_hz.
 class AnimatedWaterSurface {
   public:
+    /// Largest grid resolution on the CPU path; finer settings use this.
+    static constexpr int kMaxCpuResolution = 128;
+
     AnimatedWaterSurface();
     ~AnimatedWaterSurface();
 
@@ -53,6 +64,8 @@ class AnimatedWaterSurface {
     bool IsInitialized() const;
     bool IsInitializedFor(const OverlayBuilder* builder) const;
     int GetGridResolution() const { return current_resolution_; }
+    /// True if the surface is displaced on the GPU now.
+    bool IsGpu() const { return gpu_; }
     /// Vertices along X and Y (about GetGridResolution()^2 in total).
     WaterGridCounts GetGridCounts() const { return counts_; }
     /// Grid cell size [m] (cells are near-square; the larger side is returned).
@@ -69,6 +82,9 @@ class AnimatedWaterSurface {
     void InitializeInternal(OverlayBuilder* builder, int resolution, const ViewerSettings* settings = nullptr);
     void InitializeWireframe();
     void UpdateWireframe();
+    /// Flat grid_ at z = 0 for `resolution` and the current extent; sets counts_.
+    void BuildFlatGrid(int resolution);
+    void UpdateGpu(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t, const ViewerSettings* settings);
 
     TriangleMesh grid_;  ///< Flat grid at z = 0: vertex positions [m] and faces
     vsg::ref_ptr<vsg::vec3Array> vsg_vertices_;
@@ -79,8 +95,13 @@ class AnimatedWaterSurface {
     vsg::ref_ptr<vsg::Group> scene_;
     OverlayBuilder* builder_ = nullptr;
     size_t num_triangles_ = 0;
-    int current_resolution_ = 0;
+    int current_resolution_ = 0;    ///< Resolution of the grid drawn (CPU path: at most kMaxCpuResolution)
+    int requested_resolution_ = 0;  ///< Resolution asked for; used again when the path changes
     WaterGridCounts counts_;  ///< Vertices along X and Y for current_resolution_ and the extent
+    bool prefer_gpu_ = true;  ///< Try the GPU path at the next (re)build
+    bool gpu_ = false;        ///< The grid drawn is the GPU one
+    bool gpu_capacity_logged_ = false;
+    std::vector<DisplayWaveComponent> display_components_;  ///< Scratch for the GPU path
     bool initialized_ = false;
     bool visible_ = true;
     mutable int frame_count_ = 0;

@@ -27,9 +27,11 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -260,6 +262,12 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
                                       vsg::vec3(1.00f, 0.95f, 0.88f));
     scene_root_->addChild(fill_light_);
     scene_root_->addChild(rim_light_);
+    {
+        const vsg::vec3 towards_key(static_cast<float>(std::cos(kKeyElevation) * std::cos(kKeyAzimuth)),
+                                    static_cast<float>(std::cos(kKeyElevation) * std::sin(kKeyAzimuth)),
+                                    static_cast<float>(std::sin(kKeyElevation)));
+        water_shader_.SetSun(towards_key, vsg::vec3(kKeyIntensity, kKeyIntensity, kKeyIntensity));
+    }
 
     pbr_shader_set_ = vsg::createPhysicsBasedRenderingShaderSet();
     shared_objects_ = vsg::SharedObjects::create();
@@ -358,6 +366,82 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreateOverlayMesh(const TriangleMesh& me
         return {};
     }
     return CompileNode(CreatePbrNode(UnsharedArrays(mesh), material, /*dynamic=*/true));
+}
+
+namespace {
+
+/// Plan-view bounds [m] of the mesh vertices, for the water patch edge fade.
+void PatchBounds(const TriangleMesh& mesh, vsg::vec2* patch_min, vsg::vec2* patch_max) {
+    *patch_min = vsg::vec2(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+    *patch_max = vsg::vec2(std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest());
+    for (const Vec3& p : mesh.vertices) {
+        patch_min->x = std::min(patch_min->x, static_cast<float>(p[0]));
+        patch_min->y = std::min(patch_min->y, static_cast<float>(p[1]));
+        patch_max->x = std::max(patch_max->x, static_cast<float>(p[0]));
+        patch_max->y = std::max(patch_max->y, static_cast<float>(p[1]));
+    }
+}
+
+}  // namespace
+
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateWaterMesh(const TriangleMesh& mesh, const OverlayMaterial& material) {
+    if (mesh.faces.empty()) {
+        return {};
+    }
+    vsg::vec2 patch_min, patch_max;
+    PatchBounds(mesh, &patch_min, &patch_max);
+    const MeshArrays arrays = UnsharedArrays(mesh);
+    for (vsg::Data* data : {static_cast<vsg::Data*>(arrays.vertices.get()),
+                            static_cast<vsg::Data*>(arrays.normals.get()),
+                            static_cast<vsg::Data*>(arrays.colors.get())}) {
+        data->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
+    }
+    // Until the first wave update writes the tint: the material colour.
+    for (auto& c : *arrays.colors) {
+        c.set(material.color[0], material.color[1], material.color[2], material.color[3]);
+    }
+    if (look_at_) {
+        water_shader_.SetEye(look_at_->eye);
+    }
+    auto node = CompileNode(water_shader_.CreateNode(arrays.vertices, arrays.normals, arrays.texcoords, arrays.colors,
+                                                     arrays.indices, patch_min, patch_max));
+    if (!node) {
+        std::cerr << "[SeastackViewer] Water shader unavailable; using the plain water material." << std::endl;
+        return CreateOverlayMesh(mesh, material);
+    }
+    return node;
+}
+
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateGpuWaterGrid(const TriangleMesh& flat_grid, int nx) {
+    if (flat_grid.faces.empty() || nx < 2) {
+        return {};
+    }
+    vsg::vec2 patch_min, patch_max;
+    PatchBounds(flat_grid, &patch_min, &patch_max);
+
+    const size_t n = flat_grid.vertices.size();
+    auto vertices = vsg::vec3Array::create(static_cast<uint32_t>(n));
+    auto grid_coords = vsg::vec2Array::create(static_cast<uint32_t>(n));
+    for (size_t v = 0; v < n; ++v) {
+        const Vec3& p = flat_grid.vertices[v];
+        (*vertices)[v] = vsg::vec3(static_cast<float>(p[0]), static_cast<float>(p[1]), 0.0f);
+        (*grid_coords)[v] = vsg::vec2(static_cast<float>(v % static_cast<size_t>(nx)),
+                                      static_cast<float>(v / static_cast<size_t>(nx)));
+    }
+    auto indices = vsg::uintArray::create(static_cast<uint32_t>(3 * flat_grid.faces.size()));
+    for (size_t f = 0; f < flat_grid.faces.size(); ++f) {
+        for (int k = 0; k < 3; ++k) {
+            (*indices)[3 * f + static_cast<size_t>(k)] = static_cast<uint32_t>(flat_grid.faces[f][k]);
+        }
+    }
+    if (look_at_) {
+        water_shader_.SetEye(look_at_->eye);
+    }
+    auto node = CompileNode(water_shader_.CreateGpuNode(vertices, grid_coords, indices, patch_min, patch_max));
+    if (!node) {
+        std::cerr << "[SeastackViewer] GPU water unavailable; computing the surface on the CPU." << std::endl;
+    }
+    return node;
 }
 
 vsg::ref_ptr<vsg::Node> SeastackViewer::CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) {
@@ -621,6 +705,9 @@ bool SeastackViewer::RenderFrame() {
             return false;
         }
         viewer_->handleEvents();
+        if (look_at_) {
+            water_shader_.SetEye(look_at_->eye);  // after the trackball moved the camera
+        }
         viewer_->update();
         viewer_->recordAndSubmit();
         CollectScreenshotWrite(/*wait=*/false);
@@ -887,6 +974,11 @@ void SeastackViewer::ApplySceneTheme(const SceneTheme& theme) {
     if (rim_light_) {
         rim_light_->intensity = theme.rim_intensity;
     }
+    auto linear = [](const std::array<float, 3>& srgb) {
+        return vsg::vec3(SrgbToLinear(srgb[0]), SrgbToLinear(srgb[1]), SrgbToLinear(srgb[2]));
+    };
+    water_shader_.SetSky(linear(theme.sky_zenith_srgb), linear(theme.sky_horizon_srgb));
+    water_shader_.SetWaterColors(linear(theme.water_deep_srgb), linear(theme.water_scatter_srgb));
 }
 
 }  // namespace seastack::viz

@@ -20,6 +20,7 @@ if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
         gui/vsg_theme.cpp
         gui/vsg_radiation_surface.cpp
         gui/vsg_skybox.cpp
+        gui/vsg_water_shader.cpp
     )
 endif()
 

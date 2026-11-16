@@ -31,6 +31,7 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <string>
 
 namespace seastack::viz {
 
@@ -668,7 +669,8 @@ void SeastackGuiComponent::RenderWaterRows() {
     ImGui::Checkbox("Wireframe", &settings_->show_water_grid);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Mesh edges on the water surface: shows the wave\n"
-                          "shape and how finely the surface is drawn.");
+                          "shape and how finely the surface is drawn. On GPU water\n"
+                          "they fade out where cells are smaller than a pixel.");
     }
     ImGui::SameLine();
     const char* resolution_labels[] = {"32", "64", "96", "128"};
@@ -693,23 +695,29 @@ void SeastackGuiComponent::RenderWaterRows() {
     }
     if (settings_->water_cell_m > 0.0) {
         ImGui::Indent();
+        const int nx = settings_->water_counts.nx;
+        const int ny = settings_->water_counts.ny;
+        const char* where = settings_->water_gpu ? "GPU" : "CPU";
         if (settings_->water_wavelength_m > 0.0) {
             const double per_wave = settings_->water_wavelength_m / settings_->water_cell_m;
             // Below about 20 points per wavelength the crests look faceted.
             constexpr double kCoarsePointsPerWave = 20.0;
             if (per_wave < kCoarsePointsPerWave) {
-                ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.25f, 1.0f), "%.2g m cells, %.0f per wave: coarse",
-                                   settings_->water_cell_m, per_wave);
+                ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.25f, 1.0f), "%d x %d %s, %.2g m cells, %.0f per wave",
+                                   nx, ny, where, settings_->water_cell_m, per_wave);
             } else {
-                ImGui::TextDisabled("%.2g m cells, %.0f per wave", settings_->water_cell_m, per_wave);
+                ImGui::TextDisabled("%d x %d %s, %.2g m cells, %.0f per wave", nx, ny, where,
+                                    settings_->water_cell_m, per_wave);
             }
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Grid cell size, and grid points per deep-water wavelength\n"
-                                  "(%.3g m) at the characteristic wave period. Visual only.",
+                ImGui::SetTooltip("Grid drawn (points along x and y, displaced on the GPU or\n"
+                                  "computed on the CPU), cell size, and grid points per\n"
+                                  "deep-water wavelength (%.3g m) at the characteristic\n"
+                                  "period. Visual only.",
                                   settings_->water_wavelength_m);
             }
         } else {
-            ImGui::TextDisabled("%.2g m cells", settings_->water_cell_m);
+            ImGui::TextDisabled("%d x %d %s, %.2g m cells", nx, ny, where, settings_->water_cell_m);
         }
         ImGui::Unindent();
     }

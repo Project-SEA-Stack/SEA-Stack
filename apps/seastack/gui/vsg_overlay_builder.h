@@ -10,9 +10,13 @@
 
 #include <seastack/viz_core/scene_model.h>
 
+#include <vector>
+
 #include <vsg/all.h>
 
 namespace seastack::viz {
+
+struct DisplayWaveComponent;  // water_display_components.h
 
 /// PBR appearance of an overlay mesh.
 struct OverlayMaterial {
@@ -34,6 +38,32 @@ class OverlayBuilder {
     /// [2] texture coordinates, [3] colours (vec4). Overlays update the arrays
     /// in place and call dirty().
     virtual vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) = 0;
+
+    /// Water surface node: same vertex layout as CreateOverlayMesh, with the
+    /// vertex colours as the water tint (alpha = opacity). A viewer with its
+    /// own water shader adds sky reflection and soft edges; by default it is
+    /// a plain PBR overlay mesh.
+    virtual vsg::ref_ptr<vsg::Node> CreateWaterMesh(const TriangleMesh& mesh, const OverlayMaterial& material) {
+        return CreateOverlayMesh(mesh, material);
+    }
+
+    /// Water surface displaced on the GPU from linear wave components, or
+    /// null if this viewer cannot (the caller then uses CreateWaterMesh).
+    /// `flat_grid` is a grid at z = 0 with shared vertices: vertex j nx + i is
+    /// column i, row j. The vertices never change; the shape comes from
+    /// SetGpuWaterWaves.
+    virtual vsg::ref_ptr<vsg::Node> CreateGpuWaterGrid(const TriangleMesh& /*flat_grid*/, int /*nx*/) { return {}; }
+
+    /// Components the GPU water sums now [world frame, SI]. Returns the number
+    /// used (the shader has a fixed capacity).
+    virtual int SetGpuWaterWaves(const std::vector<DisplayWaveComponent>& /*components*/) { return 0; }
+
+    /// Elevation [m] at which a viewer with its own water shader draws crests
+    /// in the full crest colour (either path); ignored otherwise.
+    virtual void SetWaterElevationScale(float /*elevation_scale*/) {}
+
+    /// GPU water grid lines every `cells_per_line` cells; 0 hides them.
+    virtual void SetGpuWaterGridLines(float /*cells_per_line*/) {}
 
     /// Compiled mesh node with shared vertices: vertex i is mesh vertex i.
     /// Same array layout as CreateOverlayMesh; colours start at `color`

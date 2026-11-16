@@ -19,6 +19,14 @@ struct SceneTheme {
     float ambient_intensity;               ///< Ambient light [-]
     float fill_intensity;                  ///< Fill light, opposite the key [-]
     float rim_intensity;                   ///< Rim light from behind / above [-]
+
+    // SEA-Stack viewer water shader: the sky gradient the water reflects
+    // (sRGB, 0-1).
+    std::array<float, 3> sky_zenith_srgb;
+    std::array<float, 3> sky_horizon_srgb;
+    /// Water body: deep (troughs, looking straight down) and scatter (crests).
+    std::array<float, 3> water_deep_srgb;
+    std::array<float, 3> water_scatter_srgb;
 };
 
 SceneTheme GetSceneTheme(VisualTheme theme);
