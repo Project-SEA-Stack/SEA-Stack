@@ -17,7 +17,7 @@ int main() {
         const ViewerPreferences p = ParseViewerPreferences("");
         TEST_ASSERT(p == ViewerPreferences{}, "empty text gives defaults");
         TEST_ASSERT(p.water_wireframe, "wireframe on by default");
-        TEST_ASSERT(p.water_grid == 64, "grid 64 by default");
+        TEST_ASSERT(p.water_detail == WaterDetail::kNormal, "normal water detail by default");
     }
 
     // Format then parse returns the same values.
@@ -25,7 +25,8 @@ int main() {
         ViewerPreferences p;
         p.theme = VisualTheme::kLight;
         p.water_wireframe = false;
-        p.water_grid = 96;
+        p.water_detail = WaterDetail::kFine;
+
         p.update_hz = 45;
         p.smooth_slow_motion = false;
         p.mooring_colours = false;
@@ -47,22 +48,23 @@ int main() {
             "  theme =  LIGHT  # trailing comment\r\n"
             "future_key = 3\n"
             "no equals sign\n"
-            "water_grid=128\n");
+            "water_grid = 128\n"
+            "water_detail=coarse\n");
         TEST_ASSERT(p.theme == VisualTheme::kLight, "theme parsed case-insensitively");
-        TEST_ASSERT(p.water_grid == 128, "grid without spaces");
+        TEST_ASSERT(p.water_detail == WaterDetail::kCoarse, "detail without spaces; old water_grid key ignored");
     }
 
     // Invalid values keep the default.
     {
         const ViewerPreferences p = ParseViewerPreferences(
-            "water_grid = 50\n"
+            "water_detail = ultra\n"
             "update_hz = 500\n"
             "trail_seconds = abc\n"
             "show_moments = maybe\n"
             "water_wireframe = 0\n"
             "theme = neon\n");
         const ViewerPreferences d;
-        TEST_ASSERT(p.water_grid == d.water_grid, "grid not in the option list is ignored");
+        TEST_ASSERT(p.water_detail == d.water_detail, "unknown detail level is ignored");
         TEST_ASSERT(p.update_hz == d.update_hz, "update rate out of range is ignored");
         TEST_NEAR(p.trail_seconds, d.trail_seconds, 0.0, "non-numeric trail length is ignored");
         TEST_ASSERT(p.show_moments == d.show_moments, "non-boolean is ignored");
@@ -77,13 +79,13 @@ int main() {
         const std::string path = (dir / "sub" / "viewer.ini").string();
         TEST_ASSERT(LoadViewerPreferences(path) == ViewerPreferences{}, "missing file gives defaults");
         ViewerPreferences p;
-        p.water_grid = 32;
+        p.water_detail = WaterDetail::kCoarse;
         p.open_loads = false;
         TEST_ASSERT(SaveViewerPreferences(path, p), "save creates the folder");
         TEST_ASSERT(LoadViewerPreferences(path) == p, "load returns what was saved");
-        p.water_grid = 128;
+        p.water_detail = WaterDetail::kFine;
         TEST_ASSERT(SaveViewerPreferences(path, p), "save overwrites");
-        TEST_ASSERT(LoadViewerPreferences(path).water_grid == 128, "overwritten value read back");
+        TEST_ASSERT(LoadViewerPreferences(path).water_detail == WaterDetail::kFine, "overwritten value read back");
         TEST_ASSERT(!SaveViewerPreferences("", p), "empty path is refused");
         std::filesystem::remove_all(dir);
     }

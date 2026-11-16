@@ -253,6 +253,48 @@ inline WaterGridCounts ComputeWaterGridCounts(double width, double length, int r
     return c;
 }
 
+/// How finely the water surface is drawn, as grid points per deep-water
+/// wavelength at the sea's characteristic period. Shorter components of an
+/// irregular sea get fewer points (a quarter as many at twice the peak frequency).
+enum class WaterDetail { kCoarse, kNormal, kFine };
+
+inline double WaterPointsPerWavelength(WaterDetail detail) {
+    switch (detail) {
+        case WaterDetail::kCoarse:
+            return 24.0;
+        case WaterDetail::kFine:
+            return 96.0;
+        case WaterDetail::kNormal:
+        default:
+            return 48.0;
+    }
+}
+
+inline constexpr int kMinWaterGridResolution = 32;
+inline constexpr int kMaxWaterGridResolution = 512;
+/// Resolution without a wavelength (no waves): the surface is flat.
+inline constexpr int kStillWaterGridResolution = 64;
+
+/// Grid resolution (as ComputeWaterGridCounts) with about `points_per_wave`
+/// points per `wavelength` [m] on a `width` x `length` [m] patch: rounded up
+/// to a multiple of 16, within [kMinWaterGridResolution, max_resolution].
+/// kStillWaterGridResolution (clamped the same way) if there is no wavelength.
+inline int ChooseWaterGridResolution(double width, double length, double wavelength, double points_per_wave,
+                                     int max_resolution = kMaxWaterGridResolution) {
+    const int hi = std::max(max_resolution, kMinWaterGridResolution);
+    if (!(width > 0.0) || !(length > 0.0) || !(wavelength > 0.0) || !(points_per_wave > 0.0)) {
+        return std::clamp(kStillWaterGridResolution, kMinWaterGridResolution, hi);
+    }
+    // ComputeWaterGridCounts: cell = sqrt(width length) / (resolution - 1).
+    const double cell = wavelength / points_per_wave;
+    const double wanted = std::sqrt(width * length) / cell + 1.0;
+    if (!(wanted < static_cast<double>(hi))) {
+        return hi;
+    }
+    const int rounded = 16 * static_cast<int>(std::ceil(wanted / 16.0));
+    return std::clamp(rounded, kMinWaterGridResolution, hi);
+}
+
 /// Mooring-line visual radii [m].
 struct MooringVizRadii {
     double line = 0.15;

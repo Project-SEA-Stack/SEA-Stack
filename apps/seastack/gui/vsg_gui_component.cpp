@@ -13,6 +13,7 @@
 #include "vsg_analysis_overlays.h"
 #include "vsg_mooring_lines.h"
 #include "vsg_theme.h"
+#include "vsg_water_surface.h"
 
 #include <vsgImGui/imgui.h>
 
@@ -110,7 +111,7 @@ ViewerPreferences PreferencesFromSettings(const ViewerSettings& s) {
     ViewerPreferences p;
     p.theme = s.theme;
     p.water_wireframe = s.show_water_grid;
-    p.water_grid = s.grid_resolution;
+    p.water_detail = s.water_detail;
     p.update_hz = s.update_hz;
     p.smooth_slow_motion = s.timeline.smooth_slow_motion;
     p.mooring_colours = s.show_mooring_colors;
@@ -134,9 +135,9 @@ void ApplyPreferences(const ViewerPreferences& p, ViewerSettings* s) {
         s->theme_changed = true;
     }
     s->show_water_grid = p.water_wireframe;
-    if (s->grid_resolution != p.water_grid) {
-        s->grid_resolution = p.water_grid;
-        s->resolution_changed = true;
+    if (s->water_detail != p.water_detail) {
+        s->water_detail = p.water_detail;
+        s->water_detail_changed = true;
     }
     s->update_hz = p.update_hz;
     s->timeline.smooth_slow_motion = p.smooth_slow_motion;
@@ -673,25 +674,31 @@ void SeastackGuiComponent::RenderWaterRows() {
                           "they fade out where cells are smaller than a pixel.");
     }
     ImGui::SameLine();
-    const char* resolution_labels[] = {"32", "64", "96", "128"};
-    int current_idx = 0;
-    for (int i = 0; i < ViewerSettings::kResolutionCount; ++i) {
-        if (ViewerSettings::kResolutionOptions[i] == settings_->grid_resolution) {
-            current_idx = i;
-            break;
-        }
-    }
-    ImGui::SetNextItemWidth(ImGui::CalcTextSize("1288").x + ImGui::GetFrameHeight() +
+    static constexpr WaterDetail kDetails[] = {WaterDetail::kCoarse, WaterDetail::kNormal, WaterDetail::kFine};
+    static constexpr const char* kDetailLabels[] = {"Coarse", "Normal", "Fine"};
+    ImGui::SetNextItemWidth(ImGui::CalcTextSize("Normal").x + ImGui::GetFrameHeight() +
                             2.0f * ImGui::GetStyle().FramePadding.x);
-    if (ImGui::Combo("##grid", &current_idx, resolution_labels, ViewerSettings::kResolutionCount) &&
-        ViewerSettings::kResolutionOptions[current_idx] != settings_->grid_resolution) {
-        settings_->grid_resolution = ViewerSettings::kResolutionOptions[current_idx];
-        settings_->resolution_changed = true;
+    if (ImGui::BeginCombo("##detail", kDetailLabels[static_cast<int>(settings_->water_detail)])) {
+        for (int i = 0; i < 3; ++i) {
+            if (ImGui::Selectable(kDetailLabels[i], kDetails[i] == settings_->water_detail) &&
+                kDetails[i] != settings_->water_detail) {
+                settings_->water_detail = kDetails[i];
+                settings_->water_detail_changed = true;
+            }
+        }
+        ImGui::EndCombo();
     }
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Water grid: about N x N points, spread over square cells\n"
-                          "on the patch. Finer is smoother but costs more each frame\n"
-                          "(the wave is evaluated at every point).");
+        ImGui::SetTooltip("Water detail: grid points per wavelength at the\n"
+                          "characteristic period (Coarse %.0f, Normal %.0f, Fine %.0f).\n"
+                          "The grid follows the sea: it is rebuilt when the period\n"
+                          "or the patch changes. Up to %d x %d points on the GPU,\n"
+                          "%d x %d when the surface is computed on the CPU.",
+                          WaterPointsPerWavelength(WaterDetail::kCoarse),
+                          WaterPointsPerWavelength(WaterDetail::kNormal),
+                          WaterPointsPerWavelength(WaterDetail::kFine), kMaxWaterGridResolution,
+                          kMaxWaterGridResolution, AnimatedWaterSurface::kMaxCpuResolution,
+                          AnimatedWaterSurface::kMaxCpuResolution);
     }
     if (settings_->water_cell_m > 0.0) {
         ImGui::Indent();

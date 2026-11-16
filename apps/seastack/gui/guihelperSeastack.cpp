@@ -197,11 +197,13 @@ void GUIImplSeastack::UpdateWater(const VizFrame& frame) {
         // One attempt: a failure is logged by the viewer and not retried every frame.
         water_tried_ = true;
         AutoSizeWaterGrid(viewer_settings_.get(), model_bounds_, wave_model_.get());
+        ChooseWaterResolution(wave_model_.get(), viewer_settings_.get());
         water_->Initialize(viewer_.get(), viewer_settings_->grid_resolution, viewer_settings_.get());
     }
     if (!water_->IsInitialized()) {
         return;
     }
+    ChooseWaterResolution(wave_model_.get(), viewer_settings_.get());
     ApplyWaterSettings(water_.get(), viewer_settings_.get());
     UpdateWaterReadouts(*water_, wave_model_.get(), viewer_settings_.get());
     if (viewer_settings_->timeline.playback) {

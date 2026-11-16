@@ -1042,6 +1042,30 @@ void ApplyWaterSettings(AnimatedWaterSurface* water, ViewerSettings* settings) {
     }
 }
 
+void ChooseWaterResolution(const WaveBase* wave, ViewerSettings* settings) {
+    if (!settings) {
+        return;
+    }
+    double wavelength = 0.0;
+    if (wave && wave->GetWaveMode() != WaveMode::kNoWave) {
+        wavelength = DeepWaterWavelength(wave->GetCharacteristicPeriod(), wave->GetGravity());
+    }
+    const double width = (settings->grid_width > 0.0) ? settings->grid_width : kWaterGridSize;
+    const double length = (settings->grid_length > 0.0) ? settings->grid_length : kWaterGridSize;
+    const int wanted = ChooseWaterGridResolution(width, length, wavelength,
+                                                 WaterPointsPerWavelength(settings->water_detail));
+    // Rebuild for a new detail level at once; for a changing period (live Tp)
+    // only past +-25 %, so dragging the slider does not rebuild every step.
+    constexpr double kRebuildRatio = 1.25;
+    const double ratio = static_cast<double>(wanted) / std::max(settings->grid_resolution, 1);
+    const bool far_off = ratio > kRebuildRatio || ratio < 1.0 / kRebuildRatio;
+    if (wanted != settings->grid_resolution && (settings->water_detail_changed || far_off)) {
+        settings->grid_resolution = wanted;
+        settings->resolution_changed = true;
+    }
+    settings->water_detail_changed = false;
+}
+
 void UpdateWaterReadouts(const AnimatedWaterSurface& water, const WaveBase* wave, ViewerSettings* settings) {
     if (!settings) {
         return;

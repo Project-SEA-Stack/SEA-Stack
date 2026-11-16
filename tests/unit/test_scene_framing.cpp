@@ -139,6 +139,29 @@ int main() {
         TEST_ASSERT(bad.nx == 32 && bad.ny == 32, "no extent falls back to square counts");
     }
 
+    // Grid resolution from the wavelength: the cells give the asked points per wave.
+    {
+        const double lambda = DeepWaterWavelength(8.7);  // ~118 m
+        const int n = ChooseWaterGridResolution(315.0, 126.0, lambda, 48.0);
+        TEST_ASSERT(n % 16 == 0, "resolution is a multiple of 16");
+        const WaterGridCounts c = ComputeWaterGridCounts(315.0, 126.0, n);
+        const double cell = std::max(315.0 / (c.nx - 1), 126.0 / (c.ny - 1));
+        TEST_ASSERT(lambda / cell >= 48.0 * 0.95, "at least the asked points per wave (rounding up)");
+        TEST_ASSERT(lambda / cell < 48.0 * 1.5, "not far more than asked");
+        TEST_ASSERT(ChooseWaterGridResolution(315.0, 126.0, lambda, 96.0) >
+                        ChooseWaterGridResolution(315.0, 126.0, lambda, 24.0),
+                    "finer detail gives a finer grid");
+        // Same model at 1:100 scale (wavelength and patch both / 100): same grid.
+        TEST_ASSERT(ChooseWaterGridResolution(3.15, 1.26, lambda / 100.0, 48.0) == n, "scale invariant");
+        TEST_ASSERT(ChooseWaterGridResolution(315.0, 126.0, 1.0, 48.0) == kMaxWaterGridResolution,
+                    "short waves capped at the maximum");
+        TEST_ASSERT(ChooseWaterGridResolution(315.0, 126.0, 1.0, 48.0, 128) == 128, "caller's cap respected");
+        TEST_ASSERT(ChooseWaterGridResolution(315.0, 126.0, 1.0e4, 24.0) == kMinWaterGridResolution,
+                    "very long waves floored at the minimum");
+        TEST_ASSERT(ChooseWaterGridResolution(315.0, 126.0, 0.0, 48.0) == kStillWaterGridResolution,
+                    "still water: default resolution");
+    }
+
     // Clip planes scale with the view.
     {
         const ClipPlanes full = ComputeClipPlanes(80.0, 150.0);

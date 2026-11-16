@@ -181,8 +181,13 @@ struct ViewerSettings {
     int update_hz = 30;               ///< Maximum update rate [Hz], range 10-60
 
     // --- Grid Resolution ---
-    /// About grid_resolution^2 vertices in total (32, 64, 96, or 128); a
-    /// rectangular patch spreads them over near-square cells.
+    /// Grid points per wavelength (the panel's Detail). grid_resolution
+    /// follows from it, the patch and the wavelength (ChooseWaterResolution).
+    WaterDetail water_detail = WaterDetail::kNormal;
+    bool water_detail_changed = true;  ///< Choose the resolution afresh (also the first time)
+    /// About grid_resolution^2 vertices in total; a rectangular patch spreads
+    /// them over near-square cells. The CPU path draws at most
+    /// AnimatedWaterSurface::kMaxCpuResolution.
     int grid_resolution = 64;
     bool resolution_changed = false;  ///< Triggers mesh rebuild when resolution changes
     /// Readouts written by the viewer: grid size drawn (vertices), cell size
@@ -193,9 +198,6 @@ struct ViewerSettings {
     double water_cell_m = 0.0;
     double water_wavelength_m = 0.0;
     bool water_gpu = false;
-
-    static constexpr int kResolutionOptions[] = {32, 64, 96, 128};
-    static constexpr int kResolutionCount = 4;
 
     // --- Grid Extent ---
     // Values <= 0 use defaults (100m x 100m centered at origin).

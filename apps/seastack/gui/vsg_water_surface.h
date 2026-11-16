@@ -137,6 +137,12 @@ std::shared_ptr<::chrono::ChBody> CreateStaticWaterPlane();
 bool AutoSizeWaterGrid(ViewerSettings* settings, const Bounds3& model_bounds,
                        const seastack::hydro::WaveBase* wave);
 
+/// Set settings->grid_resolution from the detail level, the patch extent and
+/// the deep-water wavelength of the wave's characteristic period; flags a
+/// rebuild (resolution_changed) when it moves enough to matter. Call before
+/// Initialize and before ApplyWaterSettings each frame.
+void ChooseWaterResolution(const seastack::hydro::WaveBase* wave, ViewerSettings* settings);
+
 /// Apply panel settings: visibility, and a rebuild after a resolution or
 /// extent change.
 void ApplyWaterSettings(AnimatedWaterSurface* water, ViewerSettings* settings);

@@ -394,6 +394,7 @@ void GUIImplVSG::EnsureWaterSurface() {
 
     // Always create animated water surface (supports waves + radiation viz).
     // Static plane fallback removed - animated water handles all cases.
+    ChooseWaterResolution(wave_model_.get(), viewer_settings_.get());
     int resolution = (viewer_settings_) ? viewer_settings_->grid_resolution : 0;
     animated_water_->Initialize(overlay_builder_.get(), resolution, viewer_settings_.get());
 
@@ -448,6 +449,7 @@ bool GUIImplVSG::IsRunning(double timestep) {
                          frame, model_bounds_, mooring_options, color_on);
     }
 
+    ChooseWaterResolution(wave_model_.get(), viewer_settings_.get());
     ApplyWaterSettings(animated_water_.get(), viewer_settings_.get());
     if (animated_water_) {
         UpdateWaterReadouts(*animated_water_, wave_model_.get(), viewer_settings_.get());

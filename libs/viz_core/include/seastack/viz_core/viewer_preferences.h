@@ -1,17 +1,19 @@
 #pragma once
 
-// Viewer preferences remembered between runs (theme, water grid, panel
+// Viewer preferences remembered between runs (theme, water detail, panel
 // layout, force display). Purely visual: never affects the simulation.
 //
 // Stored per user as plain "key = value" lines; '#' starts a comment.
 // Unknown keys and invalid values are ignored (the default is kept), so an
 // old or hand-edited file never stops the viewer from starting.
 
+#include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/visual_theme.h>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <sstream>
 #include <string>
 
@@ -20,7 +22,7 @@ namespace seastack::viz {
 struct ViewerPreferences {
     VisualTheme theme = VisualTheme::kDark;
     bool water_wireframe = true;
-    int water_grid = 64;           ///< About water_grid^2 vertices: 32, 64, 96 or 128
+    WaterDetail water_detail = WaterDetail::kNormal;  ///< Grid points per wavelength
     int update_hz = 30;            ///< Water update rate [Hz], 10-60
     bool smooth_slow_motion = true;
     bool mooring_colours = true;   ///< Colour lines by tension
@@ -38,7 +40,7 @@ struct ViewerPreferences {
     bool open_display = false;
 
     bool operator==(const ViewerPreferences& o) const {
-        return theme == o.theme && water_wireframe == o.water_wireframe && water_grid == o.water_grid &&
+        return theme == o.theme && water_wireframe == o.water_wireframe && water_detail == o.water_detail &&
                update_hz == o.update_hz && smooth_slow_motion == o.smooth_slow_motion &&
                mooring_colours == o.mooring_colours && show_inspector == o.show_inspector &&
                show_moments == o.show_moments && show_total_force == o.show_total_force &&
@@ -97,6 +99,30 @@ inline bool ParseFloat(const std::string& v, float lo, float hi, float* out) {
 
 }  // namespace preferences_detail
 
+inline const char* WaterDetailName(WaterDetail d) {
+    switch (d) {
+        case WaterDetail::kCoarse:
+            return "coarse";
+        case WaterDetail::kFine:
+            return "fine";
+        case WaterDetail::kNormal:
+        default:
+            return "normal";
+    }
+}
+
+/// "coarse", "normal" or "fine" (lower case); false otherwise.
+inline bool ParseWaterDetail(const std::string& v, WaterDetail* out) {
+    for (WaterDetail d : {WaterDetail::kCoarse, WaterDetail::kNormal, WaterDetail::kFine}) {
+        if (v == WaterDetailName(d)) {
+            *out = d;
+            return true;
+        }
+    }
+    return false;
+}
+
+
 /// Read preferences from text; starts from the defaults.
 inline ViewerPreferences ParseViewerPreferences(const std::string& text) {
     using namespace preferences_detail;
@@ -110,15 +136,12 @@ inline ViewerPreferences ParseViewerPreferences(const std::string& text) {
         if (eq == std::string::npos) continue;
         const std::string key = Trim(line.substr(0, eq));
         const std::string value = Trim(line.substr(eq + 1));
-        int grid = 0;
         if (key == "theme") {
             ParseVisualTheme(value, &p.theme);
         } else if (key == "water_wireframe") {
             ParseBool(value, &p.water_wireframe);
-        } else if (key == "water_grid") {
-            if (ParseInt(value, 32, 128, &grid) && (grid == 32 || grid == 64 || grid == 96 || grid == 128)) {
-                p.water_grid = grid;
-            }
+        } else if (key == "water_detail") {
+            ParseWaterDetail(value, &p.water_detail);
         } else if (key == "update_hz") {
             ParseInt(value, 10, 60, &p.update_hz);
         } else if (key == "smooth_slow_motion") {
@@ -159,7 +182,8 @@ inline std::string FormatViewerPreferences(const ViewerPreferences& p) {
     out << "# SEA-Stack viewer preferences (visual only). Delete this file to reset.\n"
         << "theme = " << VisualThemeName(p.theme) << "\n"
         << "water_wireframe = " << b(p.water_wireframe) << "\n"
-        << "water_grid = " << p.water_grid << "\n"
+        << "water_detail = " << WaterDetailName(p.water_detail) << "\n"
+
         << "update_hz = " << p.update_hz << "\n"
         << "smooth_slow_motion = " << b(p.smooth_slow_motion) << "\n"
         << "mooring_colours = " << b(p.mooring_colours) << "\n"
