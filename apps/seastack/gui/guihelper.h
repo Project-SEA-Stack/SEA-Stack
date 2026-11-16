@@ -33,6 +33,7 @@ bool ParseViewerBackend(const std::string& name, ViewerBackend* backend);
 /// Visual only; never affect the simulation.
 struct ViewerOptions {
     VisualTheme theme = VisualTheme::kDark;  ///< Initial theme (switchable in the GUI)
+    bool theme_from_model = false;           ///< theme was set in YAML; overrides the saved preference
     bool use_model_colors = true;            ///< Keep colours set in the model YAML; palette for the rest
     /// Fixed mooring tension colour range [N]; otherwise the range auto-tracks.
     bool has_mooring_tension_range = false;

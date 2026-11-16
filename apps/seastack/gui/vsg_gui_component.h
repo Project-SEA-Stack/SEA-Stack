@@ -12,6 +12,7 @@
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/scene_model.h>
 #include <seastack/viz_core/simulation_pacer.h>
+#include <seastack/viz_core/viewer_preferences.h>
 #include <seastack/viz_core/visual_theme.h>
 
 #include <cstddef>
@@ -152,6 +153,19 @@ struct AnalysisState {
     int plot_force_request = kNone;
 };
 
+/// Inspector panel and which of its sections are expanded (saved in the
+/// viewer preferences).
+struct InspectorLayout {
+    bool visible = true;
+    bool scene = true;
+    bool selected = true;
+    bool loads = true;
+    bool sea_state = true;
+    bool connectors = true;
+    bool changes = true;
+    bool display = false;
+};
+
 /// Runtime-adjustable water visualization settings.
 ///
 /// Allows tuning water appearance without recompiling. Owned by GUIImplVSG
@@ -200,6 +214,12 @@ struct ViewerSettings {
     // --- Theme ---
     VisualTheme theme = VisualTheme::kDark;
     bool theme_changed = true;  ///< Scene theme needs (re)applying by GUIImplVSG
+    /// The theme was set by simulation.visualization.theme: it wins over the
+    /// saved preference and is not saved unless changed in the GUI.
+    bool theme_from_model = false;
+
+    // --- Inspector ---
+    InspectorLayout inspector;
 
     // --- Camera ---
     // Requests set by the GUI and consumed by GUIImplVSG on the next frame.
@@ -225,6 +245,13 @@ struct ViewerSettings {
     // --- Force vectors, trajectories, plots (SEA-Stack viewer) ---
     AnalysisState analysis;
 };
+
+/// The remembered subset of the settings (theme, water grid, inspector layout, ...).
+ViewerPreferences PreferencesFromSettings(const ViewerSettings& settings);
+
+/// Apply preferences to the settings. The theme is kept when
+/// settings->theme_from_model; flags a theme or water grid change.
+void ApplyPreferences(const ViewerPreferences& prefs, ViewerSettings* settings);
 
 /// Unused file path `<directory>/screenshot_YYYYMMDD_HHMMSS[_n].png`;
 /// an empty directory means the working directory. Creates the directory.
@@ -257,6 +284,9 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// Draw the toolbar and panels; call inside an ImGui frame. Used directly
     /// by viewers that are not a Chrono visual system (vsys == nullptr).
     void Draw();
+
+    /// Saves any preference change not yet written.
+    ~SeastackGuiComponent() override;
 
     /// Display scale for panel sizes (e.g. 1.5 at 150 %); 1 by default.
     void SetUiScale(float scale);
@@ -303,6 +333,13 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// The value is requested when the slider is released (or a typed value entered).
     void RenderParameterSlider(const std::string& key, const std::vector<const ParameterRow*>& members);
     void RenderColorBar();
+    /// Preferences to save now: the theme loaded from file is kept unless
+    /// the GUI changed a theme that came from the model YAML.
+    ViewerPreferences CurrentPreferences() const;
+    /// Write changed preferences once they have stayed changed for a second
+    /// (so a dragged slider is written once), or at once when `now_or_never`.
+    /// Calls ImGui only when !now_or_never.
+    void SavePreferencesIfChanged(bool now_or_never);
 
     ::chrono::vsg3d::ChVisualSystemVSG* vsys_;
     // Toolbar readouts averaged over short intervals (see RenderToolbar).
@@ -313,8 +350,12 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     double shown_fps_ = 0.0;  ///< Frames drawn per second of the last interval [Hz]
     bool behind_shown_ = false;  ///< "Cannot keep up" warning currently shown
     float status_width_ = 0.0f;  ///< Widest run-status readout so far [px]; it never shrinks
-    bool show_inspector_ = true;
     ScreenRect scene_rect_;
+    // Viewer preferences: loaded at construction, saved shortly after a change.
+    std::string prefs_path_;          ///< Empty = not saved
+    ViewerPreferences saved_prefs_;   ///< As last read from or written to prefs_path_
+    VisualTheme start_theme_ = VisualTheme::kDark;
+    double prefs_changed_time_ = -1.0;  ///< ImGui time the settings first differed [s]; < 0 = same
     bool& pressed_;
     double& playback_speed_;
     double last_finite_speed_ = 1.0;  ///< Speed restored when "Max" is switched off [-]

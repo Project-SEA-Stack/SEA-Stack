@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
+#include <iostream>
 #include <iterator>
 #include <limits>
 
@@ -51,6 +52,13 @@ constexpr ImGuiWindowFlags kDockedFlags = ImGuiWindowFlags_NoMove | ImGuiWindowF
 
 double ClampSpeed(double speed) {
     return std::clamp(speed, static_cast<double>(kMinSpeed), static_cast<double>(kMaxSpeed));
+}
+
+/// Collapsing header whose open state is kept in `*open` (saved in the preferences).
+bool Section(const char* label, bool* open) {
+    ImGui::SetNextItemOpen(*open, ImGuiCond_Always);
+    *open = ImGui::CollapsingHeader(label);
+    return *open;
 }
 
 }  // namespace
@@ -82,7 +90,97 @@ SeastackGuiComponent::SeastackGuiComponent(::chrono::vsg3d::ChVisualSystemVSG* v
                                            ViewerSettings* settings,
                                            MooringLinesViz* mooring_viz)
     : vsys_(vsys), pressed_(button_pressed), playback_speed_(playback_speed),
-      run_status_(run_status), settings_(settings), mooring_viz_(mooring_viz) {}
+      run_status_(run_status), settings_(settings), mooring_viz_(mooring_viz) {
+    if (!settings_) return;
+    prefs_path_ = DefaultViewerPreferencesPath();
+    if (!prefs_path_.empty()) {
+        saved_prefs_ = LoadViewerPreferences(prefs_path_);
+        ApplyPreferences(saved_prefs_, settings_);
+        settings_->resolution_changed = false;  // no water mesh yet; it is built at the loaded size
+    }
+    start_theme_ = settings_->theme;
+}
+
+SeastackGuiComponent::~SeastackGuiComponent() {
+    SavePreferencesIfChanged(true);
+}
+
+ViewerPreferences PreferencesFromSettings(const ViewerSettings& s) {
+    ViewerPreferences p;
+    p.theme = s.theme;
+    p.water_wireframe = s.show_water_grid;
+    p.water_grid = s.grid_resolution;
+    p.update_hz = s.update_hz;
+    p.smooth_slow_motion = s.timeline.smooth_slow_motion;
+    p.mooring_colours = s.show_mooring_colors;
+    p.show_inspector = s.inspector.visible;
+    p.show_moments = s.analysis.show_moments;
+    p.show_total_force = s.analysis.show_total;
+    p.trail_seconds = s.analysis.trail_seconds;
+    p.open_scene = s.inspector.scene;
+    p.open_selected = s.inspector.selected;
+    p.open_loads = s.inspector.loads;
+    p.open_sea_state = s.inspector.sea_state;
+    p.open_connectors = s.inspector.connectors;
+    p.open_changes = s.inspector.changes;
+    p.open_display = s.inspector.display;
+    return p;
+}
+
+void ApplyPreferences(const ViewerPreferences& p, ViewerSettings* s) {
+    if (!s->theme_from_model && s->theme != p.theme) {
+        s->theme = p.theme;
+        s->theme_changed = true;
+    }
+    s->show_water_grid = p.water_wireframe;
+    if (s->grid_resolution != p.water_grid) {
+        s->grid_resolution = p.water_grid;
+        s->resolution_changed = true;
+    }
+    s->update_hz = p.update_hz;
+    s->timeline.smooth_slow_motion = p.smooth_slow_motion;
+    s->show_mooring_colors = p.mooring_colours;
+    s->inspector.visible = p.show_inspector;
+    s->analysis.show_moments = p.show_moments;
+    s->analysis.show_total = p.show_total_force;
+    s->analysis.trail_seconds = p.trail_seconds;
+    s->inspector.scene = p.open_scene;
+    s->inspector.selected = p.open_selected;
+    s->inspector.loads = p.open_loads;
+    s->inspector.sea_state = p.open_sea_state;
+    s->inspector.connectors = p.open_connectors;
+    s->inspector.changes = p.open_changes;
+    s->inspector.display = p.open_display;
+}
+
+ViewerPreferences SeastackGuiComponent::CurrentPreferences() const {
+    ViewerPreferences p = PreferencesFromSettings(*settings_);
+    if (settings_->theme_from_model && p.theme == start_theme_) {
+        p.theme = saved_prefs_.theme;
+    }
+    return p;
+}
+
+void SeastackGuiComponent::SavePreferencesIfChanged(bool now_or_never) {
+    if (!settings_ || prefs_path_.empty()) return;
+    const ViewerPreferences p = CurrentPreferences();
+    if (p == saved_prefs_) {
+        prefs_changed_time_ = -1.0;
+        return;
+    }
+    if (!now_or_never) {
+        const double now = ImGui::GetTime();
+        if (prefs_changed_time_ < 0.0) prefs_changed_time_ = now;
+        if (now - prefs_changed_time_ < 1.0) return;
+    }
+    if (!SaveViewerPreferences(prefs_path_, p)) {
+        std::cerr << "[viz] Could not save viewer preferences to " << prefs_path_ << std::endl;
+        prefs_path_.clear();  // do not retry every frame
+        return;
+    }
+    saved_prefs_ = p;
+    prefs_changed_time_ = -1.0;
+}
 
 void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& size) {
     bool unlimited = playback_speed_ <= 0.0;
@@ -257,7 +355,7 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
 
     if (settings_) {
         ImGui::SameLine(ImGui::GetWindowWidth() - style.WindowPadding.x - (toggle_w - group_gap));
-        ImGui::Checkbox("Inspector", &show_inspector_);
+        ImGui::Checkbox("Inspector", &settings_->inspector.visible);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Show or hide the settings panel.");
         }
@@ -466,7 +564,7 @@ void SeastackGuiComponent::Draw() {
     if (settings_ && settings_->timeline.available) {
         bar_h += ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
     }
-    const float inspector_w = (settings_ && show_inspector_) ? kInspectorWidth * ui_scale_ : 0.0f;
+    const float inspector_w = (settings_ && settings_->inspector.visible) ? kInspectorWidth * ui_scale_ : 0.0f;
     scene_rect_.x = vp->WorkPos.x;
     scene_rect_.y = vp->WorkPos.y;
     scene_rect_.w = std::max(vp->WorkSize.x - inspector_w, 1.0f);
@@ -485,6 +583,7 @@ void SeastackGuiComponent::Draw() {
     if (settings_ && settings_->timeline.available && !settings_->capturing_frame) {
         RenderTimelineBanner();
     }
+    SavePreferencesIfChanged(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +610,7 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
 }
 
 void SeastackGuiComponent::RenderDisplayPanel() {
-    if (ImGui::CollapsingHeader("Display")) {
+    if (Section("Display", &settings_->inspector.display)) {
         bool dark = settings_->theme == VisualTheme::kDark;
         if (ImGui::Checkbox("Dark mode", &dark)) {
             settings_->theme = dark ? VisualTheme::kDark : VisualTheme::kLight;
@@ -519,7 +618,7 @@ void SeastackGuiComponent::RenderDisplayPanel() {
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Dark studio background, or light theme with sky.\n"
-                              "Visual only; set the start-up theme with\n"
+                              "Visual only; remembered between runs unless the model sets\n"
                               "simulation.visualization.theme: dark | light");
         }
         if (settings_->timeline.available && !settings_->timeline.replay) {
@@ -550,6 +649,15 @@ void SeastackGuiComponent::RenderDisplayPanel() {
                                 settings_->show_water ? "ON" : "OFF",
                                 settings_->grid_resolution,
                                 settings_->update_hz);
+        }
+        if (ImGui::SmallButton("Reset viewer preferences")) {
+            ApplyPreferences(ViewerPreferences{}, settings_);
+            settings_->inspector.display = true;  // keep the section being used open
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Theme, water grid, panel layout and force display are\n"
+                              "remembered between runs%s%s.\nThis restores the defaults.",
+                              prefs_path_.empty() ? "" : " in\n", prefs_path_.c_str());
         }
     }
 }
@@ -943,7 +1051,7 @@ void SeastackGuiComponent::RenderSeaStatePanel() {
         if (row.field == "height" || row.field == "height_scale") height = &row;
         if (row.field == "period") period = &row;
     }
-    if (!any_wave || !ImGui::CollapsingHeader("Sea state", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (!any_wave || !Section("Sea state", &settings_->inspector.sea_state)) return;
 
     for (const ParameterRow& row : panel.rows) {
         if (row.element == "waves") RenderParameterSlider(row.id, {&row});
@@ -1008,7 +1116,7 @@ void SeastackGuiComponent::RenderConnectorsPanel() {
         }
     };
 
-    if (links.empty() || !ImGui::CollapsingHeader("PTO and connectors", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (links.empty() || !Section("PTO and connectors", &settings_->inspector.connectors)) return;
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Spring-damper links (TSDA, RSDA): PTOs, rams and springs.");
     }
@@ -1090,7 +1198,7 @@ void SeastackGuiComponent::RenderChangesPanel() {
     ParametersPanelState& panel = settings_->parameters;
     char heading[64];
     std::snprintf(heading, sizeof(heading), "Changes (%zu)###changes", panel.event_lines.size());
-    if (!ImGui::CollapsingHeader(heading, ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!Section(heading, &settings_->inspector.changes)) {
         // Rejections must stay visible with the section closed.
         if (!panel.status.empty()) {
             ImGui::PushTextWrapPos(0.0f);
@@ -1247,7 +1355,7 @@ void SourceSwatch(int source) {
 }  // namespace
 
 void SeastackGuiComponent::RenderScenePanel() {
-    if (!settings_ || !ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (!settings_ || !Section("Scene", &settings_->inspector.scene)) return;
     ModelState& m = settings_->model;
     const int n = static_cast<int>(m.body_names.size());
 
@@ -1379,7 +1487,7 @@ void SeastackGuiComponent::RenderSelectionPanel() {
     char heading[160];
     std::snprintf(heading, sizeof(heading), "Selected: %s###selected",
                   has ? (m.body_names[m.selected].empty() ? "(unnamed)" : m.body_names[m.selected].c_str()) : "none");
-    if (!ImGui::CollapsingHeader(heading, ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (!Section(heading, &settings_->inspector.selected)) return;
     if (!has) {
         ImGui::TextDisabled("Click a body in the 3D view or in Scene.");
         return;
@@ -1471,7 +1579,7 @@ void SeastackGuiComponent::RenderSelectionPanel() {
 }
 
 void SeastackGuiComponent::RenderLoadsPanel() {
-    if (!ImGui::CollapsingHeader("Loads and motion", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (!Section("Loads and motion", &settings_->inspector.loads)) return;
     AnalysisState& a = settings_->analysis;
     ModelState& m = settings_->model;
     std::vector<char> moving(m.body_fixed.size(), 1);

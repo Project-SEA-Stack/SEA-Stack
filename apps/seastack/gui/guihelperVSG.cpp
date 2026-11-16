@@ -235,6 +235,7 @@ void GUIImplVSG::Init(UI& ui, ::chrono::ChSystem* system, const char* title) {
     pVis->EnableShadows(false);
     if (viewer_settings_) {
         viewer_settings_->theme = options_.theme;
+        viewer_settings_->theme_from_model = options_.theme_from_model;
         viewer_settings_->theme_changed = true;
     }
 

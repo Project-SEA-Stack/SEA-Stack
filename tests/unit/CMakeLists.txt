@@ -127,6 +127,10 @@ build_unit_test(test_scene_framing)
 target_link_libraries(test_scene_framing PRIVATE SEAStack::VizCore)
 set_tests_properties(test_scene_framing PROPERTIES LABELS "unit;chrono-free")
 
+build_unit_test(test_viewer_preferences)
+target_link_libraries(test_viewer_preferences PRIVATE SEAStack::VizCore)
+set_tests_properties(test_viewer_preferences PROPERTIES LABELS "unit;chrono-free")
+
 build_unit_test(test_mesh_normals)
 target_link_libraries(test_mesh_normals PRIVATE SEAStack::VizCore)
 set_tests_properties(test_mesh_normals PROPERTIES LABELS "unit;chrono-free")

@@ -112,6 +112,7 @@ const SceneDescription& GUIImplSeastack::Scene() const {
 void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
     ui_ = &ui;
     viewer_settings_->theme = options_.theme;
+    viewer_settings_->theme_from_model = options_.theme_from_model;
     viewer_settings_->theme_changed = true;
     mooring_viz_ = std::make_unique<MooringLinesViz>();
     gui_ = std::make_unique<SeastackGuiComponent>(nullptr, ui.simulationStarted, ui.playbackSpeed, ui.runStatus,

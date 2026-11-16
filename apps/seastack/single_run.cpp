@@ -750,7 +750,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     const YAML::Node vis = sim_yaml["simulation"]["visualization"];
                     if (vis["theme"]) {
                         const std::string theme = vis["theme"].as<std::string>();
-                        if (!seastack::viz::ParseVisualTheme(theme, &viewer_options.theme)) {
+                        if (seastack::viz::ParseVisualTheme(theme, &viewer_options.theme)) {
+                            viewer_options.theme_from_model = true;
+                        } else {
                             seastack::infra::cli::LogWarning("Unknown visualization.theme '" + theme +
                                                              "' (expected dark or light); using dark");
                         }
