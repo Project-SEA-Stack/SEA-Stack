@@ -1,9 +1,10 @@
 // =============================================================================
 // SEA-Stack VSG Water Shader
 // =============================================================================
-// Shading for the water surface in the SEA-Stack viewer: Fresnel reflection
-// of a sky gradient, GGX sun glint, a deep / scatter colour palette by crest
-// height, view-angle opacity and soft patch edges.
+// Shading for the water surface in the SEA-Stack viewer, and the sky it
+// reflects: Fresnel reflection of a procedural sky (also drawn as the
+// backdrop, CreateSkyNode), GGX sun glint, a deep / scatter colour palette
+// by crest height, view-angle opacity and soft patch edges.
 //
 // Two ways to draw the surface:
 //  - CreateNode: the shape (vertex positions and normals) comes from the wave
@@ -55,6 +56,10 @@ class WaterShader {
     /// paths; e.g. DisplayElevationScale).
     void SetElevationScale(float elevation_scale);
 
+    /// Sky dome drawn at the far plane with the same sky model the water
+    /// reflects (SetSky, SetSun). Add it to the scene before the bodies.
+    vsg::ref_ptr<vsg::Node> CreateSkyNode();
+
     /// GPU grid lines every `cells_per_line` cells; 0 hides them.
     void SetGridLines(float cells_per_line);
 
@@ -65,8 +70,10 @@ class WaterShader {
     /// and its linear colour times intensity.
     void SetSun(const vsg::vec3& towards_sun, const vsg::vec3& color);
 
-    /// Sky the water reflects (linear colours): zenith and horizon.
-    void SetSky(const vsg::vec3& zenith, const vsg::vec3& horizon);
+    /// Sky model (linear colours): zenith, horizon, below the horizon
+    /// (distant sea and ground), and the strength of the haze around the sun
+    /// (0 = none, e.g. a studio backdrop).
+    void SetSky(const vsg::vec3& zenith, const vsg::vec3& horizon, const vsg::vec3& ground, float sun_haze);
 
     /// Linear water body colours: deep (troughs, looking straight down) and
     /// scatter (crests, where light passes through thin water).

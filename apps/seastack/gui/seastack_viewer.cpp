@@ -11,7 +11,6 @@
 #include "seastack_viewer.h"
 
 #include "vsg_config.h"
-#include "vsg_skybox.h"
 
 #include <seastack/viz_core/mesh_normals.h>
 #include <seastack/viz_core/primitive_meshes.h>
@@ -242,12 +241,10 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
 
     // ---- Scene: sky, lights and bodies ----
     scene_root_ = vsg::Group::create();
+    // Procedural sky, the same one the water reflects; colours set by
+    // ApplySceneTheme. Resolution independent, unlike a cubemap.
     sky_switch_ = vsg::Switch::create();
-    if (!options.skybox_path.empty()) {
-        if (auto sky = CreateSkybox(options.skybox_path)) {
-            sky_switch_->addChild(false, sky);  // shown by ApplySceneTheme
-        }
-    }
+    sky_switch_->addChild(true, water_shader_.CreateSkyNode());
     scene_root_->addChild(sky_switch_);
     ambient_light_ = vsg::AmbientLight::create();
     ambient_light_->name = "ambient";
@@ -962,9 +959,6 @@ void SeastackViewer::ApplySceneTheme(const SceneTheme& theme) {
         clear.float32[3] = 1.0f;
         render_graph_->setClearValues(clear);
     }
-    if (sky_switch_) {
-        sky_switch_->setAllChildren(theme.show_sky);
-    }
     if (ambient_light_) {
         ambient_light_->intensity = theme.ambient_intensity;
     }
@@ -977,7 +971,8 @@ void SeastackViewer::ApplySceneTheme(const SceneTheme& theme) {
     auto linear = [](const std::array<float, 3>& srgb) {
         return vsg::vec3(SrgbToLinear(srgb[0]), SrgbToLinear(srgb[1]), SrgbToLinear(srgb[2]));
     };
-    water_shader_.SetSky(linear(theme.sky_zenith_srgb), linear(theme.sky_horizon_srgb));
+    water_shader_.SetSky(linear(theme.sky_zenith_srgb), linear(theme.sky_horizon_srgb), linear(theme.sky_ground_srgb),
+                         theme.sky_sun_haze);
     water_shader_.SetWaterColors(linear(theme.water_deep_srgb), linear(theme.water_scatter_srgb));
 }
 

@@ -12,17 +12,20 @@ namespace seastack::viz {
 SceneTheme GetSceneTheme(VisualTheme theme) {
     SceneTheme t{};
     if (theme == VisualTheme::kLight) {
-        // Skybox backdrop; light-grey clear colour only shows if the skybox
-        // texture failed to load.
+        // Chrono viewer: skybox backdrop; the light-grey clear colour only
+        // shows if the skybox texture failed to load.
         t.background_srgb = {0.78f, 0.82f, 0.87f};
         t.show_sky = true;
         t.ambient_intensity = 0.22f;
         t.fill_intensity = 0.40f;
         t.rim_intensity = 0.20f;
-        // Clear day: blue overhead, pale at the horizon. The water is a
-        // deeper, more saturated blue than both, so it stands apart.
+        // Clear day: blue overhead, pale at the horizon, a grey-blue distant
+        // sea below it. The water is a deeper, more saturated blue than all
+        // three, so it stands apart from the sky.
         t.sky_zenith_srgb = {0.30f, 0.50f, 0.76f};
         t.sky_horizon_srgb = {0.74f, 0.81f, 0.88f};
+        t.sky_ground_srgb = {0.34f, 0.40f, 0.46f};
+        t.sky_sun_haze = 0.25f;
         t.water_deep_srgb = {0.03f, 0.17f, 0.28f};
         t.water_scatter_srgb = {0.08f, 0.40f, 0.46f};
         return t;
@@ -34,11 +37,13 @@ SceneTheme GetSceneTheme(VisualTheme theme) {
     t.ambient_intensity = 0.18f;
     t.fill_intensity = 0.38f;
     t.rim_intensity = 0.45f;
-    // Studio: a dark reflected sky with a faint light band at the horizon.
-    // The water is a mid-tone teal-blue, lighter than it, so it reads
-    // against the dark background.
+    // Studio backdrop: dark overhead, a faint light band at the horizon and
+    // a darker floor, no sun glow. The water is a mid-tone teal-blue, lighter
+    // than all of it, so it reads against the dark.
     t.sky_zenith_srgb = {0.07f, 0.08f, 0.10f};
     t.sky_horizon_srgb = {0.17f, 0.19f, 0.23f};
+    t.sky_ground_srgb = {0.055f, 0.065f, 0.08f};
+    t.sky_sun_haze = 0.0f;
     t.water_deep_srgb = {0.04f, 0.22f, 0.32f};
     t.water_scatter_srgb = {0.12f, 0.46f, 0.52f};
     return t;

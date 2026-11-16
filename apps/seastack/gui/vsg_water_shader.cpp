@@ -14,10 +14,10 @@ namespace seastack::viz {
 
 namespace {
 
-// Uniform block layout (vec4 each).
+// Uniform block layout (vec4 each), shared by the water and the sky dome.
 enum Param : uint32_t {
     kEye = 0,           // xyz: camera position [m, world]
-    kSunDir = 1,        // xyz: unit vector towards the key light
+    kSunDir = 1,        // xyz: unit vector towards the key light; w: sun haze strength in the sky
     kSunColor = 2,      // rgb: key light colour x intensity
     kSkyZenith = 3,     // rgb
     kSkyHorizon = 4,    // rgb
@@ -26,18 +26,32 @@ enum Param : uint32_t {
     kWaves = 7,         // x: GPU component count; y: elevation scale for crest shading [m];
                         // z: grid cells per drawn grid line (0 = no lines)
     kWaterScatter = 8,  // rgb: water body colour on crests (light scattered in thin water)
-    kParamCount = 9,
+    kSkyGround = 9,     // rgb: below the horizon (distant sea and ground)
+    kParamCount = 10,
 };
 
 const char* kParamBlock = R"(
-layout(set = 0, binding = 0) uniform WaterParams { vec4 p[9]; } u;
+layout(set = 0, binding = 0) uniform WaterParams { vec4 p[10]; } u;
 )";
 
-// Sky radiance reflected along unit direction `d` (world, z up): a gradient
-// from the horizon to the zenith; the horizon colour below it.
+// Sky radiance seen along unit direction `d` (world, z up): a gradient from
+// the horizon to the zenith above, the ground colour below with a narrow
+// haze band at the horizon, and a glow around the sun. The sky dome draws
+// it and the water reflects it, so reflections match the backdrop.
 const char* kSkyFunction = R"(
 vec3 SkyColor(vec3 d) {
-    return mix(u.p[4].rgb, u.p[3].rgb, pow(max(d.z, 0.0), 0.5));
+    vec3 zenith = u.p[3].rgb;
+    vec3 horizon = u.p[4].rgb;
+    vec3 ground = u.p[9].rgb;
+    vec3 c;
+    if (d.z >= 0.0) {
+        c = mix(horizon, zenith, pow(d.z, 0.5));
+    } else {
+        c = mix(horizon, ground, smoothstep(0.0, 0.06, -d.z));
+    }
+    float towards_sun = max(dot(d, normalize(u.p[1].xyz)), 0.0);
+    c += u.p[1].w * u.p[2].rgb * pow(towards_sun, 8.0) * smoothstep(-0.05, 0.05, d.z);
+    return c;
 }
 )";
 
@@ -160,7 +174,7 @@ void main() {
     float cos_f = clamp(dot(n_fresnel, v), 0.0, 1.0);
     float fresnel = kF0 + (1.0 - kF0) * pow(1.0 - cos_f, 5.0);
 
-    // Reflected sky.
+    // Reflected sky (the same sky the dome draws).
     vec3 sky = kSkyReflection * SkyColor(reflect(-v, n));
 
     // Water body: deep colour in troughs, towards the scatter colour on
@@ -213,9 +227,48 @@ void main() {
 }
 )";
 
+// Sky dome: a unit cube around the camera, drawn at the far plane.
+const char* kSkyVert = R"(
+layout(push_constant) uniform PushConstants {
+    mat4 projection;
+    mat4 modelView;
+} pc;
+
+layout(location = 0) in vec3 vsg_Vertex;
+layout(location = 0) out vec3 direction;
+
+out gl_PerVertex { vec4 gl_Position; };
+
+void main() {
+    direction = vsg_Vertex;
+    // Remove translation so the sky stays at infinity.
+    mat4 modelView = pc.modelView;
+    modelView[3] = vec4(0.0, 0.0, 0.0, 1.0);
+    vec4 pos = pc.projection * modelView * vec4(vsg_Vertex, 1.0);
+    gl_Position = vec4(pos.xy, 0.0, pos.w);  // depth 0 = far plane (reversed depth)
+}
+)";
+
+const char* kSkyFrag = R"(
+layout(location = 0) in vec3 direction;
+layout(location = 0) out vec4 out_color;
+
+const float kSunCos = 0.99996;  // cos(0.5 deg): angular radius of the drawn sun disc
+
+void main() {
+    vec3 d = normalize(direction);
+    vec3 c = SkyColor(d);
+    float disc = smoothstep(kSunCos - 2e-5, kSunCos, dot(d, normalize(u.p[1].xyz)));
+    c += u.p[1].w * disc * u.p[2].rgb * 4.0;
+    out_color = vec4(c, 1.0);
+}
+)";
+
 std::string WaterVertSource() { return kVersion + kWaterVert; }
 std::string WaterGpuVertSource() { return kVersion + kParamBlock + kWaterGpuVert; }
 std::string WaterFragSource() { return kVersion + kParamBlock + kSkyFunction + kWaterFrag; }
+std::string SkyVertSource() { return kVersion + kSkyVert; }
+std::string SkyFragSource() { return kVersion + kParamBlock + kSkyFunction + kSkyFrag; }
 
 /// Pipeline, descriptor set and `draw` in one state group. Both water
 /// pipelines share the fragment shader, blending and depth state; they
@@ -283,6 +336,7 @@ WaterShader::WaterShader()
     (*params_)[kWaterDeep] = vsg::vec4(0.004f, 0.04f, 0.09f, 0.0f);
     (*params_)[kWaves] = vsg::vec4(0.0f, 1.0f, 0.0f, 0.0f);
     (*params_)[kWaterScatter] = vsg::vec4(0.02f, 0.17f, 0.22f, 0.0f);
+    (*params_)[kSkyGround] = vsg::vec4(0.005f, 0.007f, 0.01f, 0.0f);
     components_->properties.dataVariance = vsg::DataVariance::DYNAMIC_DATA;
 }
 
@@ -394,15 +448,81 @@ void WaterShader::SetEye(const vsg::dvec3& eye) {
 }
 
 void WaterShader::SetSun(const vsg::vec3& towards_sun, const vsg::vec3& color) {
-    (*params_)[kSunDir] = vsg::vec4(towards_sun.x, towards_sun.y, towards_sun.z, 0.0f);
+    const float haze = (*params_)[kSunDir].w;
+    (*params_)[kSunDir] = vsg::vec4(towards_sun.x, towards_sun.y, towards_sun.z, haze);
     (*params_)[kSunColor] = vsg::vec4(color.x, color.y, color.z, 0.0f);
     params_->dirty();
 }
 
-void WaterShader::SetSky(const vsg::vec3& zenith, const vsg::vec3& horizon) {
+void WaterShader::SetSky(const vsg::vec3& zenith, const vsg::vec3& horizon, const vsg::vec3& ground,
+                         float sun_haze) {
     (*params_)[kSkyZenith] = vsg::vec4(zenith.x, zenith.y, zenith.z, 0.0f);
     (*params_)[kSkyHorizon] = vsg::vec4(horizon.x, horizon.y, horizon.z, 0.0f);
+    (*params_)[kSkyGround] = vsg::vec4(ground.x, ground.y, ground.z, 0.0f);
+    (*params_)[kSunDir].w = std::max(sun_haze, 0.0f);
     params_->dirty();
+}
+
+vsg::ref_ptr<vsg::Node> WaterShader::CreateSkyNode() {
+    const vsg::ShaderStages shaders{vsg::ShaderStage::create(VK_SHADER_STAGE_VERTEX_BIT, "main", SkyVertSource()),
+                                    vsg::ShaderStage::create(VK_SHADER_STAGE_FRAGMENT_BIT, "main", SkyFragSource())};
+    auto descriptor_set_layout = vsg::DescriptorSetLayout::create(vsg::DescriptorSetLayoutBindings{
+        {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr}});
+    const vsg::PushConstantRanges push_constant_ranges{{VK_SHADER_STAGE_VERTEX_BIT, 0, 128}};
+
+    const vsg::VertexInputState::Bindings vertex_bindings{
+        VkVertexInputBindingDescription{0, sizeof(vsg::vec3), VK_VERTEX_INPUT_RATE_VERTEX}};
+    const vsg::VertexInputState::Attributes vertex_attributes{
+        VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0}};
+
+    // Seen from inside the cube; drawn from either side so winding does not matter.
+    auto raster_state = vsg::RasterizationState::create();
+    raster_state->cullMode = VK_CULL_MODE_NONE;
+
+    // Depth 0 is the far plane (VSG uses reversed depth): drawn only where
+    // nothing else is, and never hides anything.
+    auto depth_state = vsg::DepthStencilState::create();
+    depth_state->depthTestEnable = VK_TRUE;
+    depth_state->depthWriteEnable = VK_FALSE;
+    depth_state->depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
+
+    const vsg::GraphicsPipelineStates pipeline_states{
+        vsg::VertexInputState::create(vertex_bindings, vertex_attributes),
+        vsg::InputAssemblyState::create(),
+        raster_state,
+        vsg::MultisampleState::create(),
+        vsg::ColorBlendState::create(),
+        depth_state};
+
+    auto pipeline_layout =
+        vsg::PipelineLayout::create(vsg::DescriptorSetLayouts{descriptor_set_layout}, push_constant_ranges);
+    auto pipeline = vsg::GraphicsPipeline::create(pipeline_layout, shaders, pipeline_states);
+    auto uniform = vsg::DescriptorBuffer::create(params_, 0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+    auto descriptor_set = vsg::DescriptorSet::create(descriptor_set_layout, vsg::Descriptors{uniform});
+
+    auto root = vsg::StateGroup::create();
+    root->add(vsg::BindGraphicsPipeline::create(pipeline));
+    root->add(vsg::BindDescriptorSet::create(VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, 0, descriptor_set));
+
+    // Unit cube in world axes (z up); the vertex shader drops the translation.
+    auto vertices = vsg::vec3Array::create({{-1.0f, -1.0f, -1.0f},
+                                            {1.0f, -1.0f, -1.0f},
+                                            {1.0f, 1.0f, -1.0f},
+                                            {-1.0f, 1.0f, -1.0f},
+                                            {-1.0f, -1.0f, 1.0f},
+                                            {1.0f, -1.0f, 1.0f},
+                                            {1.0f, 1.0f, 1.0f},
+                                            {-1.0f, 1.0f, 1.0f}});
+    auto indices = vsg::ushortArray::create({0, 1, 2, 0, 2, 3,    // bottom
+                                             4, 6, 5, 4, 7, 6,    // top
+                                             0, 5, 1, 0, 4, 5,    // -y
+                                             3, 2, 6, 3, 6, 7,    // +y
+                                             0, 3, 7, 0, 7, 4,    // -x
+                                             1, 5, 6, 1, 6, 2});  // +x
+    root->addChild(vsg::BindVertexBuffers::create(0, vsg::DataList{vertices}));
+    root->addChild(vsg::BindIndexBuffer::create(indices));
+    root->addChild(vsg::DrawIndexed::create(static_cast<uint32_t>(indices->size()), 1, 0, 0, 0));
+    return root;
 }
 
 }  // namespace seastack::viz
