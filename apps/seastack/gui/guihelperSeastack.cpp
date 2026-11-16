@@ -27,8 +27,11 @@
 #include <chrono/core/ChDataPath.h>
 
 #include <seastack/adapters/chrono/runtime_controls.h>
+#include <seastack/viz_core/frame_series.h>
+#include <seastack/viz_core/scene_picking.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -123,14 +126,18 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
     options.skybox_path = ::chrono::GetChronoDataFile("vsg/textures/vsg_skybox.ktx");  // as the Chrono viewer
     auto draw_gui = [this]() {
         gui_->Draw();
+        HandlePicking();
         DrawBodyLabels();
+        const ModelState& model = viewer_settings_->model;
         if (history_ && !viewer_settings_->capturing_frame) {
+            DrawSelection();
             analysis_->DrawSceneOverlays(Scene(), *history_, last_frame_, *viewer_, gui_->SceneRect(),
-                                         model_bounds_.Radius(), viewer_->UiScale(), &viewer_settings_->analysis);
+                                         model_bounds_.Radius(), viewer_->UiScale(), model.body_visible,
+                                         &viewer_settings_->analysis);
         }
         if (history_) {
             analysis_->DrawPlots(Scene(), *history_, last_frame_, gui_->SceneRect(), viewer_->UiScale(),
-                                 &viewer_settings_->analysis);
+                                 model.selected, &viewer_settings_->analysis);
         }
     };
     if (!viewer_->Initialize(Scene(), options, draw_gui)) {
@@ -138,7 +145,16 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
     }
     gui_->SetUiScale(viewer_->UiScale());
     mooring_group_ = vsg::Group::create();
-    viewer_->OverlayScene()->addChild(mooring_group_);  // before the water is added
+    lines_switch_ = vsg::Switch::create();
+    lines_switch_->addChild(true, mooring_group_);
+    viewer_->OverlayScene()->addChild(lines_switch_);  // before the water is added
+
+    ModelState& model = viewer_settings_->model;
+    for (const BodyDescription& body : Scene().bodies) {
+        model.body_names.push_back(body.name);
+        model.body_fixed.push_back(body.fixed ? 1 : 0);
+    }
+    model.body_visible.assign(Scene().bodies.size(), 1);
 
     viewer_->SetCameraPose(
         FrameBounds(model_bounds_, CameraView::kIsometric, kCameraFovDeg, viewer_->GetViewportAspect()));
@@ -251,6 +267,17 @@ void GUIImplSeastack::UpdateClipPlanes() {
 void GUIImplSeastack::HandleCameraRequests() {
     constexpr double kViewTransition = 0.5;  // [s] animated move between views
     const double aspect = viewer_->GetViewportAspect();
+    ModelState& model = viewer_settings_->model;
+    if (model.frame_selected_requested) {
+        model.frame_selected_requested = false;
+        if (model.selected >= 0) {
+            const Bounds3 bounds = BodyWorldBounds(static_cast<size_t>(model.selected), last_frame_);
+            if (bounds.IsValid()) {
+                viewer_->SetCameraPose(FrameBounds(bounds, viewer_->GetViewDirection(), kCameraFovDeg, aspect),
+                                       kViewTransition);
+            }
+        }
+    }
     if (viewer_settings_->camera_view_requested) {
         viewer_settings_->camera_view_requested = false;
         viewer_settings_->camera_fit_requested = false;
@@ -293,10 +320,14 @@ void GUIImplSeastack::DrawBodyLabels() {
     const ImU32 text_color = IM_COL32(255, 255, 255, 255);
     const ImU32 shadow_color = IM_COL32(0, 0, 0, 200);
     const float marker_r = 3.0f * viewer_->UiScale();
+    const std::vector<char>& visible = viewer_settings_->model.body_visible;
     for (size_t i = 0; i < scene.bodies.size(); ++i) {
         const std::string& name = scene.bodies[i].name;
         float x = 0.0f;
         float y = 0.0f;
+        if (i < visible.size() && !visible[i]) {
+            continue;
+        }
         if (name.empty() || !viewer_->ProjectToWindow(last_frame_.bodies[i].com_position, &x, &y)) {
             continue;
         }
@@ -307,6 +338,121 @@ void GUIImplSeastack::DrawBodyLabels() {
         dl->AddText(pos, text_color, name.c_str());
     }
     dl->PopClipRect();
+}
+
+Bounds3 GUIImplSeastack::BodyWorldBounds(size_t i, const VizFrame& frame) const {
+    Bounds3 world;
+    if (i >= frame.bodies.size() || i >= Scene().bodies.size()) {
+        return world;
+    }
+    const BodyState& state = frame.bodies[i];
+    world.Extend(state.com_position);
+    const Bounds3& b = Scene().bodies[i].local_bounds;
+    if (b.IsValid()) {
+        for (int c = 0; c < 8; ++c) {
+            world.Extend(Transform(state.pose, {(c & 1) ? b.max[0] : b.min[0], (c & 2) ? b.max[1] : b.min[1],
+                                                (c & 4) ? b.max[2] : b.min[2]}));
+        }
+    }
+    return world;
+}
+
+void GUIImplSeastack::HandlePicking() {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.WantCaptureMouse || viewer_settings_->capturing_frame) {
+        return;
+    }
+    const ScreenRect rect = gui_->SceneRect();
+    const ImVec2 p = io.MousePos;
+    if (p.x < rect.x || p.y < rect.y || p.x > rect.x + rect.w || p.y > rect.y + rect.h) {
+        return;
+    }
+    // A click, not the end of a camera drag.
+    const float click_px = 4.0f * viewer_->UiScale();
+    const bool double_click = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left);
+    const bool click = ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+                       io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] < click_px * click_px;
+    if (!click && !double_click) {
+        return;
+    }
+    Ray ray;
+    if (!viewer_->WindowRay(p.x, p.y, &ray)) {
+        return;
+    }
+    ModelState& model = viewer_settings_->model;
+    const int hit = PickBody(Scene(), last_frame_, ray, model.body_visible);
+    if (double_click) {
+        if (hit >= 0) {
+            model.selected = hit;
+            model.frame_selected_requested = true;
+        }
+    } else {
+        model.selected = hit;  // empty space clears the selection
+    }
+}
+
+void GUIImplSeastack::DrawSelection() {
+    const ModelState& model = viewer_settings_->model;
+    const SceneDescription& scene = Scene();
+    const int i = model.selected;
+    if (i < 0 || i >= static_cast<int>(scene.bodies.size()) || i >= static_cast<int>(last_frame_.bodies.size()) ||
+        (i < static_cast<int>(model.body_visible.size()) && !model.body_visible[i])) {
+        return;
+    }
+    const Bounds3& b = scene.bodies[i].local_bounds;
+    if (!b.IsValid()) {
+        return;
+    }
+    // Box around the body's shapes, in its own frame.
+    std::array<ImVec2, 8> corners;
+    for (int c = 0; c < 8; ++c) {
+        const Vec3 world = Transform(last_frame_.bodies[i].pose, {(c & 1) ? b.max[0] : b.min[0],
+                                                                  (c & 2) ? b.max[1] : b.min[1],
+                                                                  (c & 4) ? b.max[2] : b.min[2]});
+        if (!viewer_->ProjectToWindow(world, &corners[c].x, &corners[c].y)) {
+            return;
+        }
+    }
+    const ScreenRect rect = gui_->SceneRect();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    dl->PushClipRect(ImVec2(rect.x, rect.y), ImVec2(rect.x + rect.w, rect.y + rect.h), true);
+    const ImU32 color = IM_COL32(255, 200, 40, 230);
+    const float thickness = 1.5f * viewer_->UiScale();
+    for (int c = 0; c < 8; ++c) {
+        for (int bit : {1, 2, 4}) {
+            if (!(c & bit)) {
+                dl->AddLine(corners[c], corners[c | bit], color, thickness);
+            }
+        }
+    }
+    const std::string& name = scene.bodies[i].name;
+    float x = 0.0f, y = 0.0f;
+    if (!viewer_settings_->show_body_labels && !name.empty() &&
+        viewer_->ProjectToWindow(last_frame_.bodies[i].com_position, &x, &y)) {
+        const ImVec2 size = ImGui::CalcTextSize(name.c_str());
+        dl->AddText(ImVec2(x - 0.5f * size.x + 1.0f, y - size.y + 1.0f), IM_COL32(0, 0, 0, 200), name.c_str());
+        dl->AddText(ImVec2(x - 0.5f * size.x, y - size.y), color, name.c_str());
+    }
+    dl->PopClipRect();
+}
+
+void GUIImplSeastack::SyncModel(const VizFrame& frame) {
+    ModelState& model = viewer_settings_->model;
+    const SceneDescription& scene = Scene();
+    model.has_lines = !scene.mooring_lines.empty() || !scene.cable_lines.empty();
+    for (size_t i = 0; i < model.body_visible.size(); ++i) {
+        viewer_->SetBodyVisible(i, model.body_visible[i] != 0);
+    }
+    lines_switch_->setAllChildren(model.lines_visible);
+    if (model.selected >= 0 && model.selected < static_cast<int>(frame.bodies.size())) {
+        const BodyState& s = frame.bodies[static_cast<size_t>(model.selected)];
+        model.selected_com = s.com_position;
+        model.selected_velocity = s.linear_velocity;
+        model.selected_rotation = CardanAnglesXYZ(s.pose.rotation);
+        for (double& a : model.selected_rotation) {
+            a *= 180.0 / 3.14159265358979323846;
+        }
+    }
 }
 
 void GUIImplSeastack::HandleScreenshot() {
@@ -557,6 +703,7 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     const VizFrame& frame = last_frame_;
     viewer_->SetFrame(frame);
     viewer_->SetShowBodyFrames(viewer_settings_->show_body_frames);
+    SyncModel(frame);
     HandleScreenshot();
     SyncParameters();
     UpdateMooring(frame);

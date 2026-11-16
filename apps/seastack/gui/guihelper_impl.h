@@ -170,6 +170,14 @@ class GUIImplSeastack : public GUIImpl {
     void UpdateMooring(const VizFrame& frame);
     /// Body names at their centres of mass (ImGui, inside the GUI frame).
     void DrawBodyLabels();
+    /// Select the body under a click in the 3D view (double-click also frames
+    /// it) and outline the selection. ImGui, inside the GUI frame.
+    void HandlePicking();
+    void DrawSelection();
+    /// Apply the model panel (visibility) and fill its readout from `frame`.
+    void SyncModel(const VizFrame& frame);
+    /// World bounds of body i at `frame` [m].
+    Bounds3 BodyWorldBounds(size_t i, const VizFrame& frame) const;
     /// Pass a GUI screenshot request to the viewer and show the last result.
     void HandleScreenshot();
     /// Add the live frame to the timeline history if simulated time advanced.
@@ -209,6 +217,7 @@ class GUIImplSeastack : public GUIImpl {
     std::unique_ptr<MooringLinesViz> tsda_spring_viz_;
     /// Drawn before the water so opaque lines show through the translucent surface.
     vsg::ref_ptr<vsg::Group> mooring_group_;
+    vsg::ref_ptr<vsg::Switch> lines_switch_;  ///< Parent of mooring_group_ (show / hide)
     double mooring_line_radius_m_ = -1.0;         ///< YAML override [m]; < 0 = model-scaled default
     double mooring_endpoint_radius_m_ = -1.0;     ///< YAML override [m]; < 0 = model-scaled default
     double mooring_node_marker_radius_m_ = -1.0;  ///< YAML override [m]; < 0 = model-scaled default

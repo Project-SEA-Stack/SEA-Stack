@@ -13,6 +13,7 @@
 
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/scene_model.h>
+#include <seastack/viz_core/scene_picking.h>
 
 #include <vsg/all.h>
 
@@ -73,9 +74,16 @@ class SeastackViewer : public OverlayBuilder {
     /// reference frame, long enough to reach outside the body's shapes.
     void SetShowBodyFrames(bool show);
 
+    /// Show or hide scene body i (its shapes and frame triad).
+    void SetBodyVisible(size_t i, bool visible);
+
     /// Map a world point [m] to window pixels (origin top-left) through the
     /// current camera. Returns false if the point is behind the camera.
     bool ProjectToWindow(const Vec3& world, float* x_px, float* y_px) const;
+
+    /// Camera ray (world) through window pixel (x_px, y_px), origin top-left.
+    /// Returns false if the pixel is outside the 3D view.
+    bool WindowRay(float x_px, float y_px, Ray* ray) const;
 
     /// Save the 3D view (the scene viewport, without the docked panels) as an
     /// opaque PNG at `path` after the next rendered frame.
@@ -156,6 +164,9 @@ class SeastackViewer : public OverlayBuilder {
 
     /// One transform per scene body, in scene order (world <- body ref frame).
     std::vector<vsg::ref_ptr<vsg::MatrixTransform>> body_transforms_;
+    /// Child i = body_transforms_[i]; masks follow SetBodyVisible.
+    vsg::ref_ptr<vsg::Switch> body_switch_;
+    std::vector<char> body_visible_;
     /// Axis triads (hidden by default), drawn after everything else; one
     /// transform per body, posed like body_transforms_.
     vsg::ref_ptr<vsg::Switch> frame_switch_;

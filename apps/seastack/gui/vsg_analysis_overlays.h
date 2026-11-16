@@ -13,6 +13,7 @@
 #include <seastack/viz_core/scene_model.h>
 
 #include <cstddef>
+#include <vector>
 
 namespace seastack::viz {
 
@@ -23,21 +24,25 @@ class AnalysisOverlays {
     /// Force / moment arrows and centre-of-mass trails over the 3D view, with
     /// the arrow legend. Call inside the ImGui frame. `shown` is the frame
     /// drawn; `history` the recorded frames; `model_radius` [m] sets the
-    /// arrow length. Updates the scales in `state`.
+    /// arrow length. Bodies with body_visible[i] == 0 are skipped. Updates
+    /// the scales in `state`.
     void DrawSceneOverlays(const SceneDescription& scene, const FrameHistory& history, const VizFrame& shown,
                            const SeastackViewer& viewer, const ScreenRect& scene_rect, double model_radius,
-                           float ui_scale, AnalysisState* state);
+                           float ui_scale, const std::vector<char>& body_visible, AnalysisState* state);
 
     /// Plot window (when state->show_plots): one quantity of one body over a
-    /// time window ending at the frame shown.
+    /// time window ending at the frame shown. The plotted body follows
+    /// `selected_body` (scene index, -1 = none) when the selection changes.
     void DrawPlots(const SceneDescription& scene, const FrameHistory& history, const VizFrame& shown,
-                   const ScreenRect& scene_rect, float ui_scale, AnalysisState* state);
+                   const ScreenRect& scene_rect, float ui_scale, int selected_body, AnalysisState* state);
 
   private:
-    /// Update state->force_scale and moment_scale from the loads of the last
-    /// 30 s of recorded frames (unless locked).
+    /// Update state->force_scale and moment_scale from the loads on visible
+    /// bodies over the last 30 s of recorded frames (unless locked).
     void UpdateScales(const SceneDescription& scene, const FrameHistory& history, const VizFrame& shown,
-                      double model_radius, AnalysisState* state);
+                      double model_radius, const std::vector<char>& body_visible, AnalysisState* state);
+
+    int last_selected_ = -1;  ///< Selection seen by the last DrawPlots
 
     int plot_body_ = -1;      ///< Scene body index; < 0 = first moving body
     int plot_quantity_ = 0;   ///< See kQuantities in the .cpp

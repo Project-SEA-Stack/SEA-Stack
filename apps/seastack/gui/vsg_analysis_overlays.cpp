@@ -118,7 +118,8 @@ constexpr std::array<Quantity, 6> kQuantities = {{
 }  // namespace
 
 void AnalysisOverlays::UpdateScales(const SceneDescription& scene, const FrameHistory& history,
-                                    const VizFrame& shown, double model_radius, AnalysisState* state) {
+                                    const VizFrame& shown, double model_radius,
+                                    const std::vector<char>& body_visible, AnalysisState* state) {
     if (state->lock_scale && state->force_scale > 0.0) {
         return;
     }
@@ -130,6 +131,9 @@ void AnalysisOverlays::UpdateScales(const SceneDescription& scene, const FrameHi
             return;
         }
         for (size_t b = 0; b < frame.bodies.size(); ++b) {
+            if (b < body_visible.size() && !body_visible[b]) {
+                continue;
+            }
             for (size_t s = 0; s < n_sources; ++s) {
                 if (s < state->source_shown.size() && state->source_shown[s]) {
                     const Wrench w = BodyWrench(frame, s, b);
@@ -156,7 +160,8 @@ void AnalysisOverlays::UpdateScales(const SceneDescription& scene, const FrameHi
 void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const FrameHistory& history,
                                          const VizFrame& shown, const SeastackViewer& viewer,
                                          const ScreenRect& scene_rect, double model_radius, float ui_scale,
-                                         AnalysisState* state) {
+                                         const std::vector<char>& body_visible, AnalysisState* state) {
+    auto hidden = [&](size_t b) { return b < body_visible.size() && !body_visible[b]; };
     state->force_sources = scene.force_sources;
     if (state->source_shown.size() != scene.force_sources.size()) {
         state->source_shown.assign(scene.force_sources.size(), 1);
@@ -175,7 +180,7 @@ void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const Fr
         const float thickness = 2.0f * ui_scale;
         std::vector<ImVec2> points;
         for (size_t b = 0; b < scene.bodies.size(); ++b) {
-            if (scene.bodies[b].fixed) {
+            if (scene.bodies[b].fixed || hidden(b)) {
                 continue;
             }
             points.clear();
@@ -202,7 +207,7 @@ void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const Fr
     const size_t n_sources = scene.force_sources.size();
     const bool have_forces = n_sources > 0 && shown.body_wrenches.size() == n_sources * shown.bodies.size();
     if (state->show_forces && have_forces) {
-        UpdateScales(scene, history, shown, model_radius, state);
+        UpdateScales(scene, history, shown, model_radius, body_visible, state);
         const float thickness = 2.5f * ui_scale;
         const ImU32 total_color = ImGui::GetColorU32(ImGuiCol_Text);
         auto draw = [&](const Vec3& origin, const Vec3& v, double scale, ImU32 color, bool moment) {
@@ -215,6 +220,9 @@ void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const Fr
             }
         };
         for (size_t b = 0; b < shown.bodies.size(); ++b) {
+            if (hidden(b)) {
+                continue;
+            }
             const Vec3& com = shown.bodies[b].com_position;
             for (size_t s = 0; s < n_sources; ++s) {
                 if (s < state->source_shown.size() && state->source_shown[s]) {
@@ -285,7 +293,14 @@ void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const Fr
 }
 
 void AnalysisOverlays::DrawPlots(const SceneDescription& scene, const FrameHistory& history, const VizFrame& shown,
-                                 const ScreenRect& scene_rect, float ui_scale, AnalysisState* state) {
+                                 const ScreenRect& scene_rect, float ui_scale, int selected_body,
+                                 AnalysisState* state) {
+    if (selected_body != last_selected_) {
+        last_selected_ = selected_body;
+        if (selected_body >= 0) {
+            plot_body_ = selected_body;
+        }
+    }
     if (!state->show_plots || scene.bodies.empty()) {
         return;
     }

@@ -510,6 +510,11 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
         }
     }
 
+    // ---- Model (SEA-Stack viewer) ----
+    if (!vsys_) {
+        RenderModelPanel();
+    }
+
     // ---- Waves ----
     if (ImGui::CollapsingHeader("Waves", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Show Water", &settings_->show_water);
@@ -1136,6 +1141,89 @@ void SeastackGuiComponent::RenderMooringPanel() {
 }
 
 // ---------------------------------------------------------------------------
+
+void SeastackGuiComponent::RenderModelPanel() {
+    ModelState& m = settings_->model;
+    if (m.body_names.empty() || !ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    const int n = static_cast<int>(m.body_names.size());
+    if (m.selected >= n) m.selected = -1;
+
+    // A long body list scrolls inside the panel.
+    constexpr int kMaxRows = 8;
+    const bool scroll = n > kMaxRows;
+    if (scroll) {
+        ImGui::BeginChild("##bodies", ImVec2(0.0f, kMaxRows * ImGui::GetFrameHeightWithSpacing()), true);
+    }
+    for (int i = 0; i < n && i < static_cast<int>(m.body_visible.size()); ++i) {
+        ImGui::PushID(i);
+        bool visible = m.body_visible[i] != 0;
+        if (ImGui::Checkbox("##visible", &visible)) {
+            m.body_visible[i] = visible ? 1 : 0;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Show / hide (visual only)");
+        }
+        ImGui::SameLine();
+        std::string label = m.body_names[i].empty() ? "(unnamed)" : m.body_names[i];
+        if (i < static_cast<int>(m.body_fixed.size()) && m.body_fixed[i]) {
+            label += " (fixed)";
+        }
+        if (ImGui::Selectable(label.c_str(), m.selected == i, ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                m.selected = i;
+                m.frame_selected_requested = true;
+            } else {
+                m.selected = (m.selected == i) ? -1 : i;
+            }
+        }
+        ImGui::PopID();
+    }
+    if (scroll) {
+        ImGui::EndChild();
+    }
+    if (m.has_lines) {
+        ImGui::Checkbox("Mooring lines and cables", &m.lines_visible);
+    }
+
+    const bool has_selection = m.selected >= 0;
+    ImGui::BeginDisabled(!has_selection);
+    if (ImGui::Button("Isolate")) {
+        for (int i = 0; i < static_cast<int>(m.body_visible.size()); ++i) {
+            m.body_visible[i] = (i == m.selected) ? 1 : 0;
+        }
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Show only the selected body.");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Frame")) {
+        m.frame_selected_requested = true;
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Move the camera to the selected body (or double-click it).");
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Show all")) {
+        std::fill(m.body_visible.begin(), m.body_visible.end(), static_cast<char>(1));
+        m.lines_visible = true;
+    }
+
+    if (has_selection) {
+        const Vec3& p = m.selected_com;
+        const Vec3& r = m.selected_rotation;
+        const Vec3& v = m.selected_velocity;
+        ImGui::Text("COM       %9.3f %9.3f %9.3f m", p[0], p[1], p[2]);
+        ImGui::Text("Rotation  %9.2f %9.2f %9.2f deg", r[0], r[1], r[2]);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Roll, pitch, yaw: Cardan angles X-Y'-Z''\n"
+                              "(as euler_xyz in the HDF5 output).");
+        }
+        ImGui::Text("Velocity  %9.3f %9.3f %9.3f m/s", v[0], v[1], v[2]);
+    } else {
+        ImGui::TextDisabled("Click a body to select it.");
+    }
+}
 
 void SeastackGuiComponent::RenderAnalysisPanel() {
     if (!ImGui::CollapsingHeader("Analysis", ImGuiTreeNodeFlags_DefaultOpen)) return;

@@ -265,6 +265,9 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     shared_objects_ = vsg::SharedObjects::create();
     num_bodies_ = scene.bodies.size();
     body_transforms_.clear();
+    body_switch_ = vsg::Switch::create();
+    body_visible_.assign(num_bodies_, 1);
+    scene_root_->addChild(body_switch_);
     for (const BodyDescription& body : scene.bodies) {
         auto transform = vsg::MatrixTransform::create();
         for (const VisualShape& shape : body.shapes) {
@@ -282,7 +285,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
             local->addChild(node);
             transform->addChild(local);
         }
-        scene_root_->addChild(transform);
+        body_switch_->addChild(true, transform);
         body_transforms_.push_back(transform);
     }
     overlay_root_ = vsg::Group::create();
@@ -533,8 +536,43 @@ void SeastackViewer::SetShowBodyFrames(bool show) {
     }
     show_body_frames_ = show;
     if (frame_switch_) {
-        frame_switch_->setAllChildren(show);
+        for (size_t i = 0; i < frame_switch_->children.size(); ++i) {
+            frame_switch_->children[i].mask = vsg::boolToMask(show && i < body_visible_.size() && body_visible_[i]);
+        }
     }
+}
+
+void SeastackViewer::SetBodyVisible(size_t i, bool visible) {
+    if (i >= body_visible_.size() || (body_visible_[i] != 0) == visible) {
+        return;
+    }
+    body_visible_[i] = visible ? 1 : 0;
+    body_switch_->children[i].mask = vsg::boolToMask(visible);
+    if (frame_switch_ && i < frame_switch_->children.size()) {
+        frame_switch_->children[i].mask = vsg::boolToMask(visible && show_body_frames_);
+    }
+}
+
+bool SeastackViewer::WindowRay(float x_px, float y_px, Ray* ray) const {
+    if (!camera_ || !look_at_ || !ray) {
+        return false;
+    }
+    const auto* perspective = dynamic_cast<const vsg::Perspective*>(camera_->projectionMatrix.get());
+    const VkViewport vp = camera_->getViewport();
+    if (!perspective || vp.width <= 0.0f || vp.height <= 0.0f) {
+        return false;
+    }
+    const double ndc_x = 2.0 * (x_px - vp.x) / vp.width - 1.0;
+    const double ndc_y = 2.0 * (y_px - vp.y) / vp.height - 1.0;
+    if (std::abs(ndc_x) > 1.0 || std::abs(ndc_y) > 1.0) {
+        return false;
+    }
+    const vsg::dvec3& e = look_at_->eye;
+    const vsg::dvec3& c = look_at_->center;
+    const vsg::dvec3& u = look_at_->up;
+    *ray = CameraRay({e.x, e.y, e.z}, {c.x, c.y, c.z}, {u.x, u.y, u.z}, perspective->fieldOfViewY,
+                     perspective->aspectRatio, ndc_x, ndc_y);
+    return true;
 }
 
 bool SeastackViewer::ProjectToWindow(const Vec3& world, float* x_px, float* y_px) const {

@@ -94,6 +94,24 @@ struct ParametersPanelState {
     std::string status;  ///< Last rejected edit or export result; empty = none
 };
 
+/// Model tree, selection and visibility (SEA-Stack viewer). Visual only.
+struct ModelState {
+    // --- Written by the viewer ---
+    std::vector<std::string> body_names;  ///< Scene order
+    std::vector<char> body_fixed;
+    bool has_lines = false;  ///< The scene has mooring lines or cables
+    /// Selected body readout from the frame shown (world frame, SI).
+    Vec3 selected_com{0.0, 0.0, 0.0};       ///< [m]
+    Vec3 selected_rotation{0.0, 0.0, 0.0};  ///< Cardan XYZ roll, pitch, yaw [deg]
+    Vec3 selected_velocity{0.0, 0.0, 0.0};  ///< Of the centre of mass [m/s]
+
+    // --- Written by the GUI and by picking in the 3D view ---
+    std::vector<char> body_visible;  ///< Sized by the viewer (all visible)
+    bool lines_visible = true;       ///< Mooring lines and cables
+    int selected = -1;               ///< Scene body index; -1 = none
+    bool frame_selected_requested = false;  ///< Move the camera to frame the selected body
+};
+
 /// Force vectors, trajectories and live plots (SEA-Stack viewer). Visual
 /// only: everything is read from the recorded frames, so it follows the
 /// timeline in playback.
@@ -180,6 +198,9 @@ struct ViewerSettings {
     // --- Runtime parameters (SEA-Stack viewer) ---
     ParametersPanelState parameters;
 
+    // --- Model tree and selection (SEA-Stack viewer) ---
+    ModelState model;
+
     // --- Force vectors, trajectories, plots (SEA-Stack viewer) ---
     AnalysisState analysis;
 };
@@ -241,6 +262,8 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     void RenderMooringPanel();
     /// Force vectors, trajectories and the plot window (SEA-Stack viewer).
     void RenderAnalysisPanel();
+    /// Bodies with show / hide, selection, isolate, and the selected body's state.
+    void RenderModelPanel();
     /// TSDA/RSDA parameters: edit, reset, owner, and the log of applied changes.
     void RenderParametersPanel();
     /// One slider that sets `field` on every editable member (one row per member).
