@@ -14,6 +14,7 @@
 #include <seastack/viz_core/simulation_pacer.h>
 #include <seastack/viz_core/viewer_preferences.h>
 #include <seastack/viz_core/visual_theme.h>
+#include <seastack/viz_core/water_colormap.h>
 
 #include <cstddef>
 #include <map>
@@ -198,6 +199,13 @@ struct ViewerSettings {
     double water_cell_m = 0.0;
     double water_wavelength_m = 0.0;
     bool water_gpu = false;
+    /// How the water is drawn, if the viewer has a water shader
+    /// (water_style_available, written by the viewer with water_legend).
+    WaterStyle water_style = WaterStyle::kElevation;
+    WaterPalette water_palette = WaterPalette::kDeep;  ///< Elevation style colour map
+    bool water_contours = false;                       ///< Elevation style contour lines
+    bool water_style_available = false;
+    ElevationLegend water_legend;
 
     // --- Grid Extent ---
     // Values <= 0 use defaults (100m x 100m centered at origin).
@@ -338,7 +346,10 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// One slider that sets `field` on every editable member (one row per member).
     /// The value is requested when the slider is released (or a typed value entered).
     void RenderParameterSlider(const std::string& key, const std::vector<const ParameterRow*>& members);
-    void RenderColorBar();
+    /// Mooring tension legend; returns the bottom of its panel [px] (0 if not drawn).
+    float RenderColorBar();
+    /// Water elevation legend (elevation style), below `top_y` [px] if > 0.
+    void RenderWaterLegend(float top_y);
     /// Preferences to save now: the theme loaded from file is kept unless
     /// the GUI changed a theme that came from the model YAML.
     ViewerPreferences CurrentPreferences() const;

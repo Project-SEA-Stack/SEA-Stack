@@ -662,6 +662,7 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
             InitializeInternal(builder, resolution, settings);
         }
     }
+    UpdateStyle(wave, t, settings);
     if (gpu_) {
         UpdateGpu(wave, t, settings);
         return;
@@ -736,8 +737,8 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     // point and then copying to the soup, we avoid redundant wave calculations.
     //
     // For irregular sea states with ~1000 frequency components:
-    //   - Without optimization: ~24,000 ï¿½ 1000 = 24M trig operations/frame
-    //   - With optimization:     ~4,000 ï¿½ 1000 = 4M trig operations/frame
+    //   - Without optimization: ~24,000 × 1000 = 24M trig operations/frame
+    //   - With optimization:     ~4,000 × 1000 = 4M trig operations/frame
     // -------------------------------------------------------------------------
     std::vector<float> grid_eta(orig_verts.size(), 0.0f);
 
@@ -934,6 +935,35 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     }
 }
 
+void AnimatedWaterSurface::UpdateStyle(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t,
+                                       const ViewerSettings* settings) {
+    if (!initialized_ || !builder_) {
+        return;
+    }
+    // Elevation scale of the full sea at the visual scale, without the
+    // start-up ramp, so the legend does not step up while the sea builds.
+    // Without discrete components: the CPU path's running range.
+    const double visual_scale = settings ? settings->wave_visual_scale : 1.0;
+    double scale = 0.0;
+    double peak = 0.0;
+    if (wave && CollectDisplayWaveComponents(*wave, t, kVizFrequencyLimit, visual_scale, &legend_components_)) {
+        scale = DisplayElevationScale(legend_components_);
+        for (const DisplayWaveComponent& c : legend_components_) {
+            peak += std::abs(c.amplitude);
+        }
+    } else if (adaptive_range_initialized_) {
+        scale = 0.5 * (adaptive_eta_max_ - adaptive_eta_min_);
+        peak = std::max(std::abs(adaptive_eta_max_), std::abs(adaptive_eta_min_));
+    }
+    legend_ = ComputeElevationLegend(scale, peak);
+    const bool elevation = settings && settings->water_style == WaterStyle::kElevation;
+    const bool contours = settings && settings->water_contours;
+    const WaterPalette palette = settings ? settings->water_palette : WaterPalette::kDeep;
+    has_elevation_style_ = builder_->SetWaterElevationStyle(
+        elevation, static_cast<float>(legend_.range_m), contours ? static_cast<float>(legend_.contour_m) : 0.0f,
+        palette);
+}
+
 void AnimatedWaterSurface::UpdateGpu(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t,
                                      const ViewerSettings* settings) {
     if (!initialized_ || !builder_ || !visible_) {
@@ -1073,6 +1103,8 @@ void UpdateWaterReadouts(const AnimatedWaterSurface& water, const WaveBase* wave
     settings->water_counts = water.GetGridCounts();
     settings->water_cell_m = water.GetCellSize();
     settings->water_gpu = water.IsGpu();
+    settings->water_legend = water.GetElevationLegend();
+    settings->water_style_available = water.HasElevationStyle();
     settings->water_wavelength_m = 0.0;
     if (wave && wave->GetWaveMode() != WaveMode::kNoWave) {
         settings->water_wavelength_m = DeepWaterWavelength(wave->GetCharacteristicPeriod(), wave->GetGravity());

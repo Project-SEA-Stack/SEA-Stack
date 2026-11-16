@@ -9,6 +9,7 @@
 #pragma once
 
 #include <seastack/viz_core/scene_model.h>
+#include <seastack/viz_core/water_colormap.h>
 
 #include <vector>
 
@@ -61,6 +62,13 @@ class OverlayBuilder {
     /// Elevation [m] at which a viewer with its own water shader draws crests
     /// in the full crest colour (either path); ignored otherwise.
     virtual void SetWaterElevationScale(float /*elevation_scale*/) {}
+
+    /// Draw the water in the elevation style (colour by eta over -range_m ..
+    /// +range_m in `palette`, contours every contour_m [m], 0 = none) or the shaded one. Returns
+    /// false if this viewer has no such style.
+    virtual bool SetWaterElevationStyle(bool /*on*/, float /*range_m*/, float /*contour_m*/, WaterPalette /*palette*/) {
+        return false;
+    }
 
     /// GPU water grid lines every `cells_per_line` cells; 0 hides them.
     virtual void SetGpuWaterGridLines(float /*cells_per_line*/) {}

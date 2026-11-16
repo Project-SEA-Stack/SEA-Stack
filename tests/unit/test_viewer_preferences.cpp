@@ -26,7 +26,9 @@ int main() {
         p.theme = VisualTheme::kLight;
         p.water_wireframe = false;
         p.water_detail = WaterDetail::kFine;
-
+        p.water_style = WaterStyle::kShaded;
+        p.water_palette = WaterPalette::kViridis;
+        p.water_contours = true;
         p.update_hz = 45;
         p.smooth_slow_motion = false;
         p.mooring_colours = false;

@@ -9,6 +9,7 @@
 
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/visual_theme.h>
+#include <seastack/viz_core/water_colormap.h>
 
 #include <cstdlib>
 #include <filesystem>
@@ -23,6 +24,9 @@ struct ViewerPreferences {
     VisualTheme theme = VisualTheme::kDark;
     bool water_wireframe = true;
     WaterDetail water_detail = WaterDetail::kNormal;  ///< Grid points per wavelength
+    WaterStyle water_style = WaterStyle::kElevation;
+    WaterPalette water_palette = WaterPalette::kDeep;
+    bool water_contours = false;
     int update_hz = 30;            ///< Water update rate [Hz], 10-60
     bool smooth_slow_motion = true;
     bool mooring_colours = true;   ///< Colour lines by tension
@@ -41,6 +45,8 @@ struct ViewerPreferences {
 
     bool operator==(const ViewerPreferences& o) const {
         return theme == o.theme && water_wireframe == o.water_wireframe && water_detail == o.water_detail &&
+               water_style == o.water_style && water_palette == o.water_palette &&
+               water_contours == o.water_contours &&
                update_hz == o.update_hz && smooth_slow_motion == o.smooth_slow_motion &&
                mooring_colours == o.mooring_colours && show_inspector == o.show_inspector &&
                show_moments == o.show_moments && show_total_force == o.show_total_force &&
@@ -122,6 +128,28 @@ inline bool ParseWaterDetail(const std::string& v, WaterDetail* out) {
     return false;
 }
 
+inline const char* WaterPaletteName(WaterPalette p) {
+    switch (p) {
+        case WaterPalette::kViridis:
+            return "viridis";
+        case WaterPalette::kBalance:
+            return "balance";
+        case WaterPalette::kDeep:
+        default:
+            return "deep";
+    }
+}
+
+/// "deep", "viridis" or "balance" (lower case); false otherwise.
+inline bool ParseWaterPalette(const std::string& v, WaterPalette* out) {
+    for (WaterPalette p : {WaterPalette::kDeep, WaterPalette::kViridis, WaterPalette::kBalance}) {
+        if (v == WaterPaletteName(p)) {
+            *out = p;
+            return true;
+        }
+    }
+    return false;
+}
 
 /// Read preferences from text; starts from the defaults.
 inline ViewerPreferences ParseViewerPreferences(const std::string& text) {
@@ -142,6 +170,13 @@ inline ViewerPreferences ParseViewerPreferences(const std::string& text) {
             ParseBool(value, &p.water_wireframe);
         } else if (key == "water_detail") {
             ParseWaterDetail(value, &p.water_detail);
+        } else if (key == "water_style") {
+            if (value == "elevation") p.water_style = WaterStyle::kElevation;
+            if (value == "shaded" || value == "realistic") p.water_style = WaterStyle::kShaded;
+        } else if (key == "water_palette") {
+            ParseWaterPalette(value, &p.water_palette);
+        } else if (key == "water_contours") {
+            ParseBool(value, &p.water_contours);
         } else if (key == "update_hz") {
             ParseInt(value, 10, 60, &p.update_hz);
         } else if (key == "smooth_slow_motion") {
@@ -183,7 +218,9 @@ inline std::string FormatViewerPreferences(const ViewerPreferences& p) {
         << "theme = " << VisualThemeName(p.theme) << "\n"
         << "water_wireframe = " << b(p.water_wireframe) << "\n"
         << "water_detail = " << WaterDetailName(p.water_detail) << "\n"
-
+        << "water_style = " << (p.water_style == WaterStyle::kShaded ? "shaded" : "elevation") << "\n"
+        << "water_palette = " << WaterPaletteName(p.water_palette) << "\n"
+        << "water_contours = " << b(p.water_contours) << "\n"
         << "update_hz = " << p.update_hz << "\n"
         << "smooth_slow_motion = " << b(p.smooth_slow_motion) << "\n"
         << "mooring_colours = " << b(p.mooring_colours) << "\n"

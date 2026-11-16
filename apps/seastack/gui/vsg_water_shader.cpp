@@ -7,7 +7,10 @@
 
 #include "vsg_water_shader.h"
 
+#include <seastack/viz_core/water_colormap.h>
+
 #include <algorithm>
+#include <sstream>
 #include <string>
 
 namespace seastack::viz {
@@ -27,11 +30,16 @@ enum Param : uint32_t {
                         // z: grid cells per drawn grid line (0 = no lines)
     kWaterScatter = 8,  // rgb: water body colour on crests (light scattered in thin water)
     kSkyGround = 9,     // rgb: below the horizon (distant sea and ground)
-    kParamCount = 10,
+    kStyle = 10,        // x: 0 shaded, 1 elevation; y: legend range [m]; z: contour interval [m] (0 = none)
+    kColormap = 11,     // rgb, kColormapStops slots: elevation colour map stops (sRGB), t = 0 .. 1
+    kParamCount = 16,
 };
 
+static_assert(static_cast<int>(kColormap) + kColormapStops <= static_cast<int>(kParamCount),
+              "colour map stops overflow the parameter block");
+
 const char* kParamBlock = R"(
-layout(set = 0, binding = 0) uniform WaterParams { vec4 p[10]; } u;
+layout(set = 0, binding = 0) uniform WaterParams { vec4 p[16]; } u;
 )";
 
 // Sky radiance seen along unit direction `d` (world, z up): a gradient from
@@ -155,6 +163,9 @@ const float kGridLineDarken = 0.5;  // lines are the surface colour this much da
 // changes do not streak the crests.
 const float kSkyReflection = 0.6;
 const float kFresnelFlatten = 0.4;
+const float kSciAmbient = 0.7;   // elevation style: share of the colour lit without the sun
+const float kSciOpacity = 0.85;  // elevation style: same from every angle
+const float kContourDarken = 0.4;  // contour lines are the surface colour this much darker
 
 void main() {
     vec3 eye = u.p[0].xyz;
@@ -204,6 +215,24 @@ void main() {
     // More opaque at grazing angles, where the surface mostly reflects.
     float alpha = mix(kBodyOpacity, kMaxOpacity, fresnel);
     alpha = clamp(alpha + kGlintOpacity * glint, 0.0, 1.0);
+
+    // Elevation style: colour by eta over the legend range, contour lines,
+    // soft shading for shape, constant opacity (no Fresnel glare or glint).
+    if (u.p[10].x > 0.5) {
+        float range = max(u.p[10].y, 1e-6);
+        rgb = ElevationColor(0.5 + 0.5 * world_pos.z / range);
+        rgb *= kSciAmbient + (1.0 - kSciAmbient) * max(dot(n, to_sun), 0.0);
+        alpha = kSciOpacity;
+        float dz = u.p[10].z;
+        if (dz > 0.0) {
+            float q = world_pos.z / dz;              // contours at integer q
+            float q_per_pixel = max(fwidth(q), 1e-6);
+            float dist = abs(fract(q + 0.5) - 0.5) / q_per_pixel;  // pixels to the nearest contour
+            float line = 1.0 - smoothstep(0.0, 1.0, dist);          // about one pixel wide
+            line *= 1.0 - smoothstep(0.25, 0.5, q_per_pixel);       // fade where contours crowd
+            rgb = mix(rgb, (1.0 - kContourDarken) * rgb, line);
+        }
+    }
 
     // Grid lines (GPU grid): about one pixel wide at any distance, fading out
     // where cells are under a few pixels so far water does not turn solid.
@@ -264,9 +293,29 @@ void main() {
 }
 )";
 
+/// GLSL ElevationColor(t): the colour map in the kColormap slots (sRGB),
+/// interpolated in sRGB as the legend is and returned linear.
+std::string ElevationColorFunction() {
+    std::ostringstream s;
+    s << "vec3 SrgbToLinear(vec3 c) {\n"
+         "    return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));\n"
+         "}\n"
+         "vec3 ElevationColor(float t) {\n"
+         "    float x = clamp(t, 0.0, 1.0) * "
+      << (kColormapStops - 1) << ".0;\n"
+         "    int i = min(int(x), " << (kColormapStops - 2) << ");\n"
+         "    vec3 a = u.p[" << kColormap << " + i].rgb;\n"
+         "    vec3 b = u.p[" << kColormap << " + i + 1].rgb;\n"
+         "    return SrgbToLinear(mix(a, b, x - float(i)));\n"
+         "}\n";
+    return s.str();
+}
+
 std::string WaterVertSource() { return kVersion + kWaterVert; }
 std::string WaterGpuVertSource() { return kVersion + kParamBlock + kWaterGpuVert; }
-std::string WaterFragSource() { return kVersion + kParamBlock + kSkyFunction + kWaterFrag; }
+std::string WaterFragSource() {
+    return kVersion + kParamBlock + kSkyFunction + ElevationColorFunction() + kWaterFrag;
+}
 std::string SkyVertSource() { return kVersion + kSkyVert; }
 std::string SkyFragSource() { return kVersion + kParamBlock + kSkyFunction + kSkyFrag; }
 
@@ -343,6 +392,15 @@ WaterShader::WaterShader()
 void WaterShader::SetWaterColors(const vsg::vec3& deep, const vsg::vec3& scatter) {
     (*params_)[kWaterDeep] = vsg::vec4(deep.x, deep.y, deep.z, 0.0f);
     (*params_)[kWaterScatter] = vsg::vec4(scatter.x, scatter.y, scatter.z, 0.0f);
+    params_->dirty();
+}
+
+void WaterShader::SetElevationStyle(bool on, float range_m, float contour_m, WaterPalette palette) {
+    (*params_)[kStyle] = vsg::vec4(on ? 1.0f : 0.0f, range_m, contour_m, 0.0f);
+    const ColormapStops& stops = PaletteStops(palette);
+    for (int i = 0; i < kColormapStops; ++i) {
+        (*params_)[kColormap + i] = vsg::vec4(stops[i][0], stops[i][1], stops[i][2], 0.0f);
+    }
     params_->dirty();
 }
 

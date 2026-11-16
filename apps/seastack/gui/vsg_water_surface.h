@@ -12,6 +12,7 @@
 
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/scene_model.h>
+#include <seastack/viz_core/water_colormap.h>
 
 #include <vsg/all.h>
 
@@ -66,6 +67,10 @@ class AnimatedWaterSurface {
     int GetGridResolution() const { return current_resolution_; }
     /// True if the surface is displaced on the GPU now.
     bool IsGpu() const { return gpu_; }
+    /// Elevation-style legend now (range and contour interval [m]), and
+    /// whether the viewer draws that style at all.
+    const ElevationLegend& GetElevationLegend() const { return legend_; }
+    bool HasElevationStyle() const { return has_elevation_style_; }
     /// Vertices along X and Y (about GetGridResolution()^2 in total).
     WaterGridCounts GetGridCounts() const { return counts_; }
     /// Grid cell size [m] (cells are near-square; the larger side is returned).
@@ -85,6 +90,8 @@ class AnimatedWaterSurface {
     /// Flat grid_ at z = 0 for `resolution` and the current extent; sets counts_.
     void BuildFlatGrid(int resolution);
     void UpdateGpu(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t, const ViewerSettings* settings);
+    /// Legend from the full sea (without the start-up ramp) and the style to draw.
+    void UpdateStyle(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t, const ViewerSettings* settings);
 
     TriangleMesh grid_;  ///< Flat grid at z = 0: vertex positions [m] and faces
     vsg::ref_ptr<vsg::vec3Array> vsg_vertices_;
@@ -102,6 +109,9 @@ class AnimatedWaterSurface {
     bool gpu_ = false;        ///< The grid drawn is the GPU one
     bool gpu_capacity_logged_ = false;
     std::vector<DisplayWaveComponent> display_components_;  ///< Scratch for the GPU path
+    std::vector<DisplayWaveComponent> legend_components_;   ///< Scratch for the legend
+    ElevationLegend legend_;
+    bool has_elevation_style_ = false;
     bool initialized_ = false;
     bool visible_ = true;
     mutable int frame_count_ = 0;

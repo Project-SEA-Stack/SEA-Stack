@@ -19,6 +19,8 @@
 
 #include <vsg/all.h>
 
+#include <seastack/viz_core/water_colormap.h>
+
 #include "water_display_components.h"
 
 namespace seastack::viz {
@@ -55,6 +57,11 @@ class WaterShader {
     /// Elevation [m] at which crests take the full scatter colour (both
     /// paths; e.g. DisplayElevationScale).
     void SetElevationScale(float elevation_scale);
+
+    /// Elevation style (on) instead of the shaded one: colour by eta over
+    /// -range_m .. +range_m [m] (water_colormap.h), contours every contour_m
+    /// [m] (0 = none), no reflections.
+    void SetElevationStyle(bool on, float range_m, float contour_m, WaterPalette palette);
 
     /// Sky dome drawn at the far plane with the same sky model the water
     /// reflects (SetSky, SetSun). Add it to the scene before the bodies.

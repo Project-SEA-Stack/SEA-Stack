@@ -131,6 +131,10 @@ build_unit_test(test_viewer_preferences)
 target_link_libraries(test_viewer_preferences PRIVATE SEAStack::VizCore)
 set_tests_properties(test_viewer_preferences PROPERTIES LABELS "unit;chrono-free")
 
+build_unit_test(test_water_colormap)
+target_link_libraries(test_water_colormap PRIVATE SEAStack::VizCore)
+set_tests_properties(test_water_colormap PROPERTIES LABELS "unit;chrono-free")
+
 build_unit_test(test_mesh_normals)
 target_link_libraries(test_mesh_normals PRIVATE SEAStack::VizCore)
 set_tests_properties(test_mesh_normals PROPERTIES LABELS "unit;chrono-free")

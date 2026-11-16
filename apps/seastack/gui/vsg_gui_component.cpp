@@ -112,6 +112,9 @@ ViewerPreferences PreferencesFromSettings(const ViewerSettings& s) {
     p.theme = s.theme;
     p.water_wireframe = s.show_water_grid;
     p.water_detail = s.water_detail;
+    p.water_style = s.water_style;
+    p.water_palette = s.water_palette;
+    p.water_contours = s.water_contours;
     p.update_hz = s.update_hz;
     p.smooth_slow_motion = s.timeline.smooth_slow_motion;
     p.mooring_colours = s.show_mooring_colors;
@@ -135,6 +138,9 @@ void ApplyPreferences(const ViewerPreferences& p, ViewerSettings* s) {
         s->theme_changed = true;
     }
     s->show_water_grid = p.water_wireframe;
+    s->water_style = p.water_style;
+    s->water_palette = p.water_palette;
+    s->water_contours = p.water_contours;
     if (s->water_detail != p.water_detail) {
         s->water_detail = p.water_detail;
         s->water_detail_changed = true;
@@ -581,7 +587,7 @@ void SeastackGuiComponent::Draw() {
     ImGui::PopStyleVar();
 
     RenderViewToolbar();
-    RenderColorBar();
+    RenderWaterLegend(RenderColorBar());
     if (settings_ && settings_->timeline.available && !settings_->capturing_frame) {
         RenderTimelineBanner();
     }
@@ -727,6 +733,43 @@ void SeastackGuiComponent::RenderWaterRows() {
             ImGui::TextDisabled("%d x %d %s, %.2g m cells", nx, ny, where, settings_->water_cell_m);
         }
         ImGui::Unindent();
+    }
+
+    if (settings_->water_style_available) {
+        int style = (settings_->water_style == WaterStyle::kElevation) ? 0 : 1;
+        ImGui::TextUnformatted("Style");
+        ImGui::SameLine();
+        ImGui::RadioButton("Elevation", &style, 0);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Colour by surface elevation, with contour lines and a\n"
+                              "legend in metres; the still-water level is the bold line.\n"
+                              "No reflections, so the sea reads the same from any angle.");
+        }
+        ImGui::SameLine();
+        ImGui::RadioButton("Shaded", &style, 1);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Sky reflection, sun glint and water colours:\n"
+                              "a lit look rather than colouring by elevation.");
+        }
+        settings_->water_style = (style == 0) ? WaterStyle::kElevation : WaterStyle::kShaded;
+        if (settings_->water_style == WaterStyle::kElevation) {
+            const char* palettes[] = {"Deep", "Viridis", "Balance"};
+            int palette = static_cast<int>(settings_->water_palette);
+            ImGui::SetNextItemWidth(110.0f * ui_scale_);
+            if (ImGui::Combo("Colours", &palette, palettes, IM_ARRAYSIZE(palettes))) {
+                settings_->water_palette = static_cast<WaterPalette>(palette);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Deep: navy troughs to pale crests (cmocean).\n"
+                                  "Viridis: purple troughs to yellow crests (matplotlib).\n"
+                                  "Balance: blue troughs, white still water, red crests (cmocean).");
+            }
+            ImGui::SameLine();
+            ImGui::Checkbox("Contours", &settings_->water_contours);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Lines of equal elevation, at the interval shown in the legend.");
+            }
+        }
     }
 
     ImGui::Checkbox("Radiated waves (approx.)", &settings_->show_radiation_viz);
@@ -1670,9 +1713,9 @@ void SeastackGuiComponent::RenderLoadsPanel() {
     }
 }
 
-void SeastackGuiComponent::RenderColorBar() {
-    if (!settings_ || !settings_->show_mooring_colors) return;
-    if (!mooring_viz_ || !mooring_viz_->IsInitialized()) return;
+float SeastackGuiComponent::RenderColorBar() {
+    if (!settings_ || !settings_->show_mooring_colors) return 0.0f;
+    if (!mooring_viz_ || !mooring_viz_->IsInitialized()) return 0.0f;
 
     const float bar_w = 14.0f * ui_scale_;
     const float bar_h = 180.0f * ui_scale_;
@@ -1743,6 +1786,103 @@ void SeastackGuiComponent::RenderColorBar() {
     dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(min_label).x, y0 + bar_h - line_h), text_color,
                 min_label);
     dl->AddText(ImVec2(x0 + bar_w - title_w, y0 - line_h - label_gap), text_color, title);
+    return panel_y1;
+}
+
+void SeastackGuiComponent::RenderWaterLegend(float top_y) {
+    if (!settings_ || !settings_->show_water || !settings_->water_style_available ||
+        settings_->water_style != WaterStyle::kElevation) {
+        return;
+    }
+    const ElevationLegend& legend = settings_->water_legend;
+    if (!(legend.range_m > 0.0)) {
+        return;
+    }
+
+    const float bar_w = 14.0f * ui_scale_;
+    const float bar_h = 140.0f * ui_scale_;
+    const float margin = kOverlayMargin * ui_scale_;
+    const float label_gap = 6.0f * ui_scale_;
+    const float tick_w = 4.0f * ui_scale_;
+    const float pad = 8.0f * ui_scale_;
+    const float line_h = ImGui::GetTextLineHeight();
+
+    // Top-right of the scene, under the tension legend if it is shown.
+    const float panel_top = (top_y > 0.0f) ? top_y + margin : scene_rect_.y + margin;
+    const float x0 = scene_rect_.x + scene_rect_.w - margin - pad - bar_w;
+    const float y0 = panel_top + pad + line_h + 2.0f * label_gap;
+
+    // Labels at +range, 0 and -range; "m" or "cm" so lab-scale seas read well.
+    const bool centimetres = legend.range_m < 0.2;
+    const double unit = centimetres ? 0.01 : 1.0;
+    const char* unit_name = centimetres ? "cm" : "m";
+    char top_label[32];
+    char mid_label[32];
+    char bottom_label[32];
+    char contour_label[48];
+    std::snprintf(top_label, sizeof(top_label), "+%.3g %s", legend.range_m / unit, unit_name);
+    std::snprintf(mid_label, sizeof(mid_label), "0");
+    std::snprintf(bottom_label, sizeof(bottom_label), "-%.3g %s", legend.range_m / unit, unit_name);
+    std::snprintf(contour_label, sizeof(contour_label), "contours %.3g %s", legend.contour_m / unit, unit_name);
+    const char* title = "Elevation";
+    const float label_w = std::max(ImGui::CalcTextSize(top_label).x, ImGui::CalcTextSize(bottom_label).x);
+    const float footer_w = ImGui::CalcTextSize(contour_label).x;
+    const float title_w = ImGui::CalcTextSize(title).x;
+
+    const float panel_x0 =
+        std::min({x0 - label_gap - label_w, x0 + bar_w - title_w, x0 + bar_w - footer_w}) - pad;
+    const float panel_y0 = panel_top;
+    const float panel_x1 = x0 + bar_w + pad;
+    const float panel_y1 = y0 + bar_h + label_gap + line_h + pad;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    dl->AddRectFilled(ImVec2(panel_x0, panel_y0), ImVec2(panel_x1, panel_y1),
+                      ImGui::GetColorU32(ImGuiCol_WindowBg), style.WindowRounding);
+    dl->AddRect(ImVec2(panel_x0, panel_y0), ImVec2(panel_x1, panel_y1), ImGui::GetColorU32(ImGuiCol_Border),
+                style.WindowRounding);
+    const ImU32 text_color = ImGui::GetColorU32(ImGuiCol_Text);
+
+    // The surface's colour map. ImGui colours are linear (sRGB swapchain).
+    const WaterPalette palette = settings_->water_palette;
+    auto to_im = [palette](float t) -> ImU32 {
+        const std::array<float, 3> c = PaletteColor(palette, t);
+        auto lin = [](float v) {
+            return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+        };
+        return IM_COL32(static_cast<int>(lin(c[0]) * 255.0f + 0.5f), static_cast<int>(lin(c[1]) * 255.0f + 0.5f),
+                        static_cast<int>(lin(c[2]) * 255.0f + 0.5f), 255);
+    };
+    constexpr int kStrips = 64;
+    const float strip_h = bar_h / kStrips;
+    for (int i = 0; i < kStrips; ++i) {
+        const ImU32 top = to_im(1.0f - static_cast<float>(i) / kStrips);
+        const ImU32 bottom = to_im(1.0f - static_cast<float>(i + 1) / kStrips);
+        dl->AddRectFilledMultiColor(ImVec2(x0, y0 + i * strip_h), ImVec2(x0 + bar_w, y0 + (i + 1) * strip_h), top,
+                                    top, bottom, bottom);
+    }
+    dl->AddRect(ImVec2(x0, y0), ImVec2(x0 + bar_w, y0 + bar_h), ImGui::GetColorU32(ImGuiCol_Border));
+
+    // Contour ticks, the still-water one across the bar.
+    const bool contours = settings_->water_contours && legend.contour_m > 0.0;
+    if (contours) {
+        const int n = static_cast<int>(std::floor(legend.range_m / legend.contour_m + 1e-9));
+        for (int k = -n; k <= n; ++k) {
+            const float y = y0 + bar_h * (0.5f - 0.5f * static_cast<float>(k * legend.contour_m / legend.range_m));
+            const float x_start = (k == 0) ? x0 : x0 + bar_w - tick_w;
+            dl->AddLine(ImVec2(x_start, y), ImVec2(x0 + bar_w, y), IM_COL32(0, 0, 0, 160), 1.0f * ui_scale_);
+        }
+    }
+
+    dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(top_label).x, y0), text_color, top_label);
+    dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(mid_label).x, y0 + 0.5f * (bar_h - line_h)), text_color,
+                mid_label);
+    dl->AddText(ImVec2(x0 - label_gap - ImGui::CalcTextSize(bottom_label).x, y0 + bar_h - line_h), text_color,
+                bottom_label);
+    dl->AddText(ImVec2(x0 + bar_w - title_w, y0 - line_h - label_gap), text_color, title);
+    if (contours) {
+        dl->AddText(ImVec2(x0 + bar_w - footer_w, y0 + bar_h + label_gap),
+                    ImGui::GetColorU32(ImGuiCol_TextDisabled), contour_label);
+    }
 }
 
 }  // namespace seastack::viz

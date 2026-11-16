@@ -113,7 +113,10 @@ class SeastackViewer : public OverlayBuilder {
         return water_shader_.SetWaves(components);
     }
     void SetWaterElevationScale(float elevation_scale) override { water_shader_.SetElevationScale(elevation_scale); }
-
+    bool SetWaterElevationStyle(bool on, float range_m, float contour_m, WaterPalette palette) override {
+        water_shader_.SetElevationStyle(on, range_m, contour_m, palette);
+        return true;
+    }
     void SetGpuWaterGridLines(float cells_per_line) override { water_shader_.SetGridLines(cells_per_line); }
     vsg::ref_ptr<vsg::Node> CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) override;
     vsg::ref_ptr<vsg::Node> CreateSphereOverlay(const OverlayMaterial& material,
