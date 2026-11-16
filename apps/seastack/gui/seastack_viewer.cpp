@@ -299,6 +299,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
         frame_switch_->addChild(false, transform);
         frame_transforms_.push_back(transform);
     }
+    body_axes_.assign(num_bodies_, 0);
     scene_root_->addChild(frame_switch_);
 
     // ---- Camera ----
@@ -531,14 +532,24 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreateAxisTriad(double length) {
 }
 
 void SeastackViewer::SetShowBodyFrames(bool show) {
-    if (show == show_body_frames_) {
+    for (size_t i = 0; i < body_axes_.size(); ++i) {
+        SetBodyFrameVisible(i, show);
+    }
+}
+
+void SeastackViewer::SetBodyFrameVisible(size_t i, bool show) {
+    if (i >= body_axes_.size() || (body_axes_[i] != 0) == show) {
         return;
     }
-    show_body_frames_ = show;
-    if (frame_switch_) {
-        for (size_t i = 0; i < frame_switch_->children.size(); ++i) {
-            frame_switch_->children[i].mask = vsg::boolToMask(show && i < body_visible_.size() && body_visible_[i]);
-        }
+    body_axes_[i] = show ? 1 : 0;
+    UpdateFrameMask(i);
+}
+
+void SeastackViewer::UpdateFrameMask(size_t i) {
+    if (frame_switch_ && i < frame_switch_->children.size()) {
+        const bool visible = i < body_visible_.size() && body_visible_[i];
+        const bool axes = i < body_axes_.size() && body_axes_[i];
+        frame_switch_->children[i].mask = vsg::boolToMask(visible && axes);
     }
 }
 
@@ -548,9 +559,7 @@ void SeastackViewer::SetBodyVisible(size_t i, bool visible) {
     }
     body_visible_[i] = visible ? 1 : 0;
     body_switch_->children[i].mask = vsg::boolToMask(visible);
-    if (frame_switch_ && i < frame_switch_->children.size()) {
-        frame_switch_->children[i].mask = vsg::boolToMask(visible && show_body_frames_);
-    }
+    UpdateFrameMask(i);
 }
 
 bool SeastackViewer::WindowRay(float x_px, float y_px, Ray* ray) const {

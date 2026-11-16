@@ -179,6 +179,7 @@ void AnimatedWaterSurface::Reset() {
     visible_ = true;
     num_triangles_ = 0;
     current_resolution_ = 0;
+    counts_ = WaterGridCounts{};
     last_update_time_ = -1.0;
 
     // Reset adaptive height-shading range.
@@ -264,36 +265,37 @@ void AnimatedWaterSurface::InitializeInternal(OverlayBuilder* builder, int resol
         return;
     }
 
-    const int n = resolution;
-
     // Use custom grid extent if specified, otherwise use defaults.
     const double grid_size_x = (grid_width_ > 0) ? grid_width_ : kWaterGridSize;
     const double grid_size_y = (grid_length_ > 0) ? grid_length_ : kWaterGridSize;
+    counts_ = ComputeWaterGridCounts(grid_size_x, grid_size_y, resolution);
+    const int nx = counts_.nx;
+    const int ny = counts_.ny;
     const double half_size_x = grid_size_x / 2.0;
     const double half_size_y = grid_size_y / 2.0;
-    const double spacing_x = grid_size_x / (n - 1);
-    const double spacing_y = grid_size_y / (n - 1);
+    const double spacing_x = grid_size_x / (nx - 1);
+    const double spacing_y = grid_size_y / (ny - 1);
 
-    // Create vertices (n x n grid centered at custom center).
+    // Create vertices (nx x ny grid centered at custom center).
     std::vector<Vec3>& verts = grid_.vertices;
-    verts.resize(static_cast<size_t>(n * n));
-    for (int j = 0; j < n; ++j) {
-        for (int i = 0; i < n; ++i) {
+    verts.resize(static_cast<size_t>(nx * ny));
+    for (int j = 0; j < ny; ++j) {
+        for (int i = 0; i < nx; ++i) {
             double x = grid_center_x_ - half_size_x + i * spacing_x;
             double y = grid_center_y_ - half_size_y + j * spacing_y;
-            verts[static_cast<size_t>(j * n + i)] = Vec3{x, y, 0.0};
+            verts[static_cast<size_t>(j * nx + i)] = Vec3{x, y, 0.0};
         }
     }
 
     // Create triangle faces (two triangles per grid cell).
     std::vector<std::array<int, 3>>& faces = grid_.faces;
-    faces.reserve(static_cast<size_t>(2 * (n - 1) * (n - 1)));
-    for (int j = 0; j < n - 1; ++j) {
-        for (int i = 0; i < n - 1; ++i) {
-            int v00 = j * n + i;
-            int v10 = j * n + i + 1;
-            int v01 = (j + 1) * n + i;
-            int v11 = (j + 1) * n + i + 1;
+    faces.reserve(static_cast<size_t>(2 * (nx - 1) * (ny - 1)));
+    for (int j = 0; j < ny - 1; ++j) {
+        for (int i = 0; i < nx - 1; ++i) {
+            int v00 = j * nx + i;
+            int v10 = j * nx + i + 1;
+            int v01 = (j + 1) * nx + i;
+            int v11 = (j + 1) * nx + i + 1;
             // Two triangles per quad.
             faces.push_back({v00, v10, v11});
             faces.push_back({v00, v11, v01});
@@ -349,8 +351,8 @@ void AnimatedWaterSurface::InitializeInternal(OverlayBuilder* builder, int resol
     const double extent_x = (grid_width_ > 0) ? grid_width_ : kWaterGridSize;
     const double extent_y = (grid_length_ > 0) ? grid_length_ : kWaterGridSize;
 
-    std::cout << "[WaterSurface] Created: " << resolution << "x" << resolution
-              << " grid, " << extent_x << " x " << extent_y << " m";
+    std::cout << "[WaterSurface] Created: " << nx << "x" << ny << " grid, " << extent_x << " x " << extent_y
+              << " m";
     if (grid_center_x_ != 0.0 || grid_center_y_ != 0.0) {
         std::cout << ", center: (" << grid_center_x_ << ", " << grid_center_y_ << ")";
     }
@@ -438,8 +440,9 @@ void AnimatedWaterSurface::InitializeWireframe() {
         return;
     }
 
-    const int n = current_resolution_;
-    if (n < 2) {
+    const int nx = counts_.nx;
+    const int ny = counts_.ny;
+    if (nx < 2 || ny < 2) {
         return;
     }
 
@@ -451,8 +454,8 @@ void AnimatedWaterSurface::InitializeWireframe() {
     const double grid_size_y = (grid_length_ > 0) ? grid_length_ : kWaterGridSize;
     const double half_size_x = grid_size_x / 2.0;
     const double half_size_y = grid_size_y / 2.0;
-    const double spacing_x = grid_size_x / (n - 1);
-    const double spacing_y = grid_size_y / (n - 1);
+    const double spacing_x = grid_size_x / (nx - 1);
+    const double spacing_y = grid_size_y / (ny - 1);
     const double line_half_width = WireframeHalfWidth(spacing_x, spacing_y);
 
     std::vector<Vec3>& verts = wireframe_mesh.vertices;
@@ -461,9 +464,9 @@ void AnimatedWaterSurface::InitializeWireframe() {
     int vertex_idx = 0;
 
     // Horizontal segments (along X, one per grid edge).
-    for (int j = 0; j < n; ++j) {
+    for (int j = 0; j < ny; ++j) {
         double y = grid_center_y_ - half_size_y + j * spacing_y;
-        for (int i = 0; i < n - 1; ++i) {
+        for (int i = 0; i < nx - 1; ++i) {
             double x0 = grid_center_x_ - half_size_x + i * spacing_x;
             double x1 = grid_center_x_ - half_size_x + (i + 1) * spacing_x;
 
@@ -479,9 +482,9 @@ void AnimatedWaterSurface::InitializeWireframe() {
     }
 
     // Vertical segments (along Y, one per grid edge).
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < nx; ++i) {
         double x = grid_center_x_ - half_size_x + i * spacing_x;
-        for (int j = 0; j < n - 1; ++j) {
+        for (int j = 0; j < ny - 1; ++j) {
             double y0 = grid_center_y_ - half_size_y + j * spacing_y;
             double y1 = grid_center_y_ - half_size_y + (j + 1) * spacing_y;
 
@@ -521,35 +524,36 @@ void AnimatedWaterSurface::UpdateWireframe() {
         return;
     }
 
-    const int n = current_resolution_;
-    if (n < 2) {
+    const int nx = counts_.nx;
+    const int ny = counts_.ny;
+    if (nx < 2 || ny < 2) {
         return;
     }
 
     // Get Z at grid position (i, j) from the water surface soup mesh.
     auto get_z_at_grid = [&](int i, int j) -> float {
-        i = std::max(0, std::min(i, n - 1));
-        j = std::max(0, std::min(j, n - 1));
+        i = std::max(0, std::min(i, nx - 1));
+        j = std::max(0, std::min(j, ny - 1));
 
         // Try as v00 of cell (i, j).
-        if (i < n - 1 && j < n - 1) {
-            size_t cell_idx = static_cast<size_t>(j * (n - 1) + i);
+        if (i < nx - 1 && j < ny - 1) {
+            size_t cell_idx = static_cast<size_t>(j * (nx - 1) + i);
             size_t idx = cell_idx * 6;
             if (idx < vsg_vertices_->size()) {
                 return (*vsg_vertices_)[idx].z;
             }
         }
         // Try as v10 of cell (i-1, j).
-        if (i > 0 && j < n - 1) {
-            size_t cell_idx = static_cast<size_t>(j * (n - 1) + (i - 1));
+        if (i > 0 && j < ny - 1) {
+            size_t cell_idx = static_cast<size_t>(j * (nx - 1) + (i - 1));
             size_t idx = cell_idx * 6 + 1;
             if (idx < vsg_vertices_->size()) {
                 return (*vsg_vertices_)[idx].z;
             }
         }
         // Try as v01 of cell (i, j-1).
-        if (i < n - 1 && j > 0) {
-            size_t cell_idx = static_cast<size_t>((j - 1) * (n - 1) + i);
+        if (i < nx - 1 && j > 0) {
+            size_t cell_idx = static_cast<size_t>((j - 1) * (nx - 1) + i);
             size_t idx = cell_idx * 6 + 5;
             if (idx < vsg_vertices_->size()) {
                 return (*vsg_vertices_)[idx].z;
@@ -557,7 +561,7 @@ void AnimatedWaterSurface::UpdateWireframe() {
         }
         // Try as v11 of cell (i-1, j-1).
         if (i > 0 && j > 0) {
-            size_t cell_idx = static_cast<size_t>((j - 1) * (n - 1) + (i - 1));
+            size_t cell_idx = static_cast<size_t>((j - 1) * (nx - 1) + (i - 1));
             size_t idx = cell_idx * 6 + 2;
             if (idx < vsg_vertices_->size()) {
                 return (*vsg_vertices_)[idx].z;
@@ -571,17 +575,17 @@ void AnimatedWaterSurface::UpdateWireframe() {
     const double grid_size_y = (grid_length_ > 0) ? grid_length_ : kWaterGridSize;
     const double half_size_x = grid_size_x / 2.0;
     const double half_size_y = grid_size_y / 2.0;
-    const double spacing_x = grid_size_x / (n - 1);
-    const double spacing_y = grid_size_y / (n - 1);
+    const double spacing_x = grid_size_x / (nx - 1);
+    const double spacing_y = grid_size_y / (ny - 1);
     const double line_half_width = WireframeHalfWidth(spacing_x, spacing_y);
     const float z_offset = 0.02f;
 
     size_t soup_idx = 0;
 
     // Update horizontal segments.
-    for (int j = 0; j < n; ++j) {
+    for (int j = 0; j < ny; ++j) {
         double y = grid_center_y_ - half_size_y + j * spacing_y;
-        for (int i = 0; i < n - 1; ++i) {
+        for (int i = 0; i < nx - 1; ++i) {
             double x0 = grid_center_x_ - half_size_x + i * spacing_x;
             double x1 = grid_center_x_ - half_size_x + (i + 1) * spacing_x;
             float z0 = get_z_at_grid(i, j) + z_offset;
@@ -600,9 +604,9 @@ void AnimatedWaterSurface::UpdateWireframe() {
     }
 
     // Update vertical segments.
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < nx; ++i) {
         double x = grid_center_x_ - half_size_x + i * spacing_x;
-        for (int j = 0; j < n - 1; ++j) {
+        for (int j = 0; j < ny - 1; ++j) {
             double y0 = grid_center_y_ - half_size_y + j * spacing_y;
             double y1 = grid_center_y_ - half_size_y + (j + 1) * spacing_y;
             float z0 = get_z_at_grid(i, j) + z_offset;
@@ -903,6 +907,15 @@ bool AnimatedWaterSurface::IsInitializedFor(const OverlayBuilder* builder) const
     return initialized_ && builder_ == builder;
 }
 
+double AnimatedWaterSurface::GetCellSize() const {
+    if (!initialized_ || counts_.nx < 2 || counts_.ny < 2) {
+        return 0.0;
+    }
+    const double grid_size_x = (grid_width_ > 0) ? grid_width_ : kWaterGridSize;
+    const double grid_size_y = (grid_length_ > 0) ? grid_length_ : kWaterGridSize;
+    return std::max(grid_size_x / (counts_.nx - 1), grid_size_y / (counts_.ny - 1));
+}
+
 std::string AnimatedWaterSurface::GetStatusString() const {
     std::ostringstream ss;
     ss << "Water: " << (initialized_ ? "ANIM" : "OFF");
@@ -960,6 +973,17 @@ void ApplyWaterSettings(AnimatedWaterSurface* water, ViewerSettings* settings) {
         water->Reinitialize(settings->grid_resolution, settings);
         settings->resolution_changed = false;
         settings->grid_extent_changed = false;
+    }
+}
+
+void UpdateWaterReadouts(const AnimatedWaterSurface& water, const WaveBase* wave, ViewerSettings* settings) {
+    if (!settings) {
+        return;
+    }
+    settings->water_cell_m = water.GetCellSize();
+    settings->water_wavelength_m = 0.0;
+    if (wave && wave->GetWaveMode() != WaveMode::kNoWave) {
+        settings->water_wavelength_m = DeepWaterWavelength(wave->GetCharacteristicPeriod(), wave->GetGravity());
     }
 }
 

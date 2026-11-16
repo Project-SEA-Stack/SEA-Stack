@@ -448,6 +448,9 @@ bool GUIImplVSG::IsRunning(double timestep) {
     }
 
     ApplyWaterSettings(animated_water_.get(), viewer_settings_.get());
+    if (animated_water_) {
+        UpdateWaterReadouts(*animated_water_, wave_model_.get(), viewer_settings_.get());
+    }
 
     // Update animated water surface if wave model is set (or forced static).
     // VSG vertex buffers are marked dirty() in Update() for GPU re-upload.

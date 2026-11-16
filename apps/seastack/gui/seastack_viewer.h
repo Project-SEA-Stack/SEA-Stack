@@ -74,6 +74,9 @@ class SeastackViewer : public OverlayBuilder {
     /// reference frame, long enough to reach outside the body's shapes.
     void SetShowBodyFrames(bool show);
 
+    /// Show or hide the axis triad of scene body i (drawn only while the body is visible).
+    void SetBodyFrameVisible(size_t i, bool show);
+
     /// Show or hide scene body i (its shapes and frame triad).
     void SetBodyVisible(size_t i, bool visible);
 
@@ -171,7 +174,9 @@ class SeastackViewer : public OverlayBuilder {
     /// transform per body, posed like body_transforms_.
     vsg::ref_ptr<vsg::Switch> frame_switch_;
     std::vector<vsg::ref_ptr<vsg::MatrixTransform>> frame_transforms_;
-    bool show_body_frames_ = false;
+    std::vector<char> body_axes_;  ///< Per body: triad requested (SetBodyFrameVisible)
+    /// Triad i is drawn when body i is visible and its axes are requested.
+    void UpdateFrameMask(size_t i);
     size_t num_bodies_ = 0;
     float ui_scale_ = 1.0f;
     vsg::ref_ptr<vsg::Options> io_options_;  ///< Image writers (vsgXchange)

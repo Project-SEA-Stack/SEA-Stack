@@ -113,6 +113,30 @@ int main() {
         const Bounds3 slender = Box({0, -1.5, -2}, {180, 1.5, 2});
         TEST_NEAR(ComputeWaterExtent(slender, 0.0).width, kWaterModelFactor * 180.0, 1e-9,
                   "slender model in still water: length term still covers the device");
+
+        // Slender model in waves (5SA-like, 180 m x 10 m, 79 m waves): the patch
+        // follows the device, and the short side is capped at kWaterMinAspect.
+        const Bounds3 attenuator = Box({0, -5, -3}, {180, 5, 3});
+        const WaterExtent a = ComputeWaterExtent(attenuator, 79.0);
+        TEST_NEAR(a.width, kWaterModelFactor * 180.0, 1e-9, "slender in waves: long side covers the device");
+        TEST_NEAR(a.length, kWaterMinAspect * a.width, 1e-9, "slender in waves: short side at the aspect limit");
+        const WaterExtent a_long = ComputeWaterExtent(attenuator, 200.0);
+        TEST_NEAR(a_long.length, 300.0, 1e-9, "long waves: each side at least 1.5 wavelengths");
+    }
+
+    // Grid counts: about resolution^2 vertices with near-square cells.
+    {
+        const WaterGridCounts square = ComputeWaterGridCounts(100.0, 100.0, 64);
+        TEST_ASSERT(square.nx == 64 && square.ny == 64, "square patch keeps resolution x resolution");
+        const WaterGridCounts rect = ComputeWaterGridCounts(315.0, 126.0, 64);
+        TEST_ASSERT(rect.nx == 101 && rect.ny == 41, "5SA patch: 101 x 41 vertices");
+        const double dx = 315.0 / (rect.nx - 1);
+        const double dy = 126.0 / (rect.ny - 1);
+        TEST_NEAR(dx / dy, 1.0, 0.03, "near-square cells");
+        const double total = static_cast<double>(rect.nx) * rect.ny;
+        TEST_NEAR(total / (64.0 * 64.0), 1.0, 0.05, "same vertex budget as the square grid");
+        const WaterGridCounts bad = ComputeWaterGridCounts(0.0, 50.0, 32);
+        TEST_ASSERT(bad.nx == 32 && bad.ny == 32, "no extent falls back to square counts");
     }
 
     // Clip planes scale with the view.

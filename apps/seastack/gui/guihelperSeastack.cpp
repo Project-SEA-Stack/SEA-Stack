@@ -132,7 +132,7 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
         if (history_ && !viewer_settings_->capturing_frame) {
             DrawSelection();
             analysis_->DrawSceneOverlays(Scene(), *history_, last_frame_, *viewer_, gui_->SceneRect(),
-                                         model_bounds_.Radius(), viewer_->UiScale(), model.body_visible,
+                                         model_bounds_.Radius(), viewer_->UiScale(), model,
                                          &viewer_settings_->analysis);
         }
         if (history_) {
@@ -154,7 +154,12 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
         model.body_names.push_back(body.name);
         model.body_fixed.push_back(body.fixed ? 1 : 0);
     }
-    model.body_visible.assign(Scene().bodies.size(), 1);
+    const size_t n_bodies = Scene().bodies.size();
+    model.body_visible.assign(n_bodies, 1);
+    model.body_label.assign(n_bodies, 0);
+    model.body_axes.assign(n_bodies, 0);
+    model.body_forces.assign(n_bodies, 0);
+    model.body_trail.assign(n_bodies, 0);
 
     viewer_->SetCameraPose(
         FrameBounds(model_bounds_, CameraView::kIsometric, kCameraFovDeg, viewer_->GetViewportAspect()));
@@ -197,6 +202,7 @@ void GUIImplSeastack::UpdateWater(const VizFrame& frame) {
         return;
     }
     ApplyWaterSettings(water_.get(), viewer_settings_.get());
+    UpdateWaterReadouts(*water_, wave_model_.get(), viewer_settings_.get());
     if (viewer_settings_->timeline.playback) {
         // The radiation overlay keeps per-source state from live frames; it
         // is hidden while recorded frames are shown.
@@ -306,7 +312,8 @@ void GUIImplSeastack::UpdateSceneViewport() {
 }
 
 void GUIImplSeastack::DrawBodyLabels() {
-    if (!viewer_settings_->show_body_labels || (!extractor_ && !replay_)) {
+    const std::vector<char>& labelled = viewer_settings_->model.body_label;
+    if (std::find(labelled.begin(), labelled.end(), 1) == labelled.end() || (!extractor_ && !replay_)) {
         return;
     }
     const SceneDescription& scene = Scene();
@@ -325,7 +332,7 @@ void GUIImplSeastack::DrawBodyLabels() {
         const std::string& name = scene.bodies[i].name;
         float x = 0.0f;
         float y = 0.0f;
-        if (i < visible.size() && !visible[i]) {
+        if ((i < visible.size() && !visible[i]) || i >= labelled.size() || !labelled[i]) {
             continue;
         }
         if (name.empty() || !viewer_->ProjectToWindow(last_frame_.bodies[i].com_position, &x, &y)) {
@@ -427,7 +434,8 @@ void GUIImplSeastack::DrawSelection() {
     }
     const std::string& name = scene.bodies[i].name;
     float x = 0.0f, y = 0.0f;
-    if (!viewer_settings_->show_body_labels && !name.empty() &&
+    const bool labelled = i < static_cast<int>(model.body_label.size()) && model.body_label[i];
+    if (!labelled && !name.empty() &&
         viewer_->ProjectToWindow(last_frame_.bodies[i].com_position, &x, &y)) {
         const ImVec2 size = ImGui::CalcTextSize(name.c_str());
         dl->AddText(ImVec2(x - 0.5f * size.x + 1.0f, y - size.y + 1.0f), IM_COL32(0, 0, 0, 200), name.c_str());
@@ -443,14 +451,26 @@ void GUIImplSeastack::SyncModel(const VizFrame& frame) {
     for (size_t i = 0; i < model.body_visible.size(); ++i) {
         viewer_->SetBodyVisible(i, model.body_visible[i] != 0);
     }
+    for (size_t i = 0; i < model.body_axes.size(); ++i) {
+        viewer_->SetBodyFrameVisible(i, model.body_axes[i] != 0);
+    }
     lines_switch_->setAllChildren(model.lines_visible);
+    model.selected_wrenches.clear();
     if (model.selected >= 0 && model.selected < static_cast<int>(frame.bodies.size())) {
-        const BodyState& s = frame.bodies[static_cast<size_t>(model.selected)];
+        const size_t b = static_cast<size_t>(model.selected);
+        const BodyState& s = frame.bodies[b];
         model.selected_com = s.com_position;
         model.selected_velocity = s.linear_velocity;
         model.selected_rotation = CardanAnglesXYZ(s.pose.rotation);
         for (double& a : model.selected_rotation) {
             a *= 180.0 / 3.14159265358979323846;
+        }
+        const size_t n_sources = scene.force_sources.size();
+        if (n_sources > 0 && frame.body_wrenches.size() == n_sources * frame.bodies.size()) {
+            for (size_t src = 0; src < n_sources; ++src) {
+                model.selected_wrenches.push_back(BodyWrench(frame, src, b));
+            }
+            model.selected_wrenches.push_back(TotalWrench(frame, b));
         }
     }
 }
@@ -702,7 +722,6 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     }
     const VizFrame& frame = last_frame_;
     viewer_->SetFrame(frame);
-    viewer_->SetShowBodyFrames(viewer_settings_->show_body_frames);
     SyncModel(frame);
     HandleScreenshot();
     SyncParameters();

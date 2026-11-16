@@ -53,6 +53,10 @@ class AnimatedWaterSurface {
     bool IsInitialized() const;
     bool IsInitializedFor(const OverlayBuilder* builder) const;
     int GetGridResolution() const { return current_resolution_; }
+    /// Vertices along X and Y (about GetGridResolution()^2 in total).
+    WaterGridCounts GetGridCounts() const { return counts_; }
+    /// Grid cell size [m] (cells are near-square; the larger side is returned).
+    double GetCellSize() const;
     std::string GetStatusString() const;
 
     RadiationSurfaceViz& GetRadiationViz() { return radiation_viz_; }
@@ -76,6 +80,7 @@ class AnimatedWaterSurface {
     OverlayBuilder* builder_ = nullptr;
     size_t num_triangles_ = 0;
     int current_resolution_ = 0;
+    WaterGridCounts counts_;  ///< Vertices along X and Y for current_resolution_ and the extent
     bool initialized_ = false;
     bool visible_ = true;
     mutable int frame_count_ = 0;
@@ -114,6 +119,11 @@ bool AutoSizeWaterGrid(ViewerSettings* settings, const Bounds3& model_bounds,
 /// Apply panel settings: visibility, and a rebuild after a resolution or
 /// extent change.
 void ApplyWaterSettings(AnimatedWaterSurface* water, ViewerSettings* settings);
+
+/// Panel readouts: grid cell size, and the deep-water wavelength of the
+/// wave's characteristic period now (0 for no waves).
+void UpdateWaterReadouts(const AnimatedWaterSurface& water, const seastack::hydro::WaveBase* wave,
+                         ViewerSettings* settings);
 
 /// Feed the radiation overlay: wave parameters, and every moving, named body
 /// of `frame` as a source. Visual only; never affects physics.

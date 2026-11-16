@@ -38,14 +38,21 @@ constexpr size_t kTrailSamples = 2000;    // points per trail
 constexpr size_t kPlotSamples = 4000;     // points per plotted line
 constexpr double kArrowFraction = 0.6;    // largest load = this fraction of the model radius
 
-/// Colour of force source s (Total uses the text colour).
-ImU32 SourceColor(size_t s) {
-    static constexpr std::array<ImU32, 8> kPalette = {
-        IM_COL32(86, 180, 233, 255),  IM_COL32(230, 159, 0, 255),   IM_COL32(0, 158, 115, 255),
-        IM_COL32(204, 121, 167, 255), IM_COL32(240, 228, 66, 255),  IM_COL32(213, 94, 0, 255),
-        IM_COL32(0, 114, 178, 255),   IM_COL32(170, 170, 170, 255),
-    };
-    return kPalette[s % kPalette.size()];
+constexpr float kFadedAlpha = 0.18f;  // arrows of other components while one is highlighted
+
+ImU32 WithAlpha(ImU32 color, float alpha) {
+    const auto a = static_cast<ImU32>(std::clamp(alpha, 0.0f, 1.0f) * 255.0f);
+    return (color & ~IM_COL32_A_MASK) | (a << IM_COL32_A_SHIFT);
+}
+
+/// Distance [px] from p to the segment a-b.
+float SegmentDistance(const ImVec2& p, const ImVec2& a, const ImVec2& b) {
+    const float dx = b.x - a.x, dy = b.y - a.y;
+    const float len2 = dx * dx + dy * dy;
+    float t = len2 > 0.0f ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2 : 0.0f;
+    t = std::clamp(t, 0.0f, 1.0f);
+    const float ex = a.x + t * dx - p.x, ey = a.y + t * dy - p.y;
+    return std::sqrt(ex * ex + ey * ey);
 }
 
 ImU32 BodyColor(const BodyDescription& body, float alpha) {
@@ -56,20 +63,6 @@ ImU32 BodyColor(const BodyDescription& body, float alpha) {
     // Lighten towards white so dark hulls still give a visible trail.
     auto channel = [](float v) { return static_cast<int>(255.0f * (0.35f + 0.65f * std::clamp(v, 0.0f, 1.0f))); };
     return IM_COL32(channel(c[0]), channel(c[1]), channel(c[2]), static_cast<int>(255.0f * alpha));
-}
-
-/// "12.3 kN"-style label of value [unit].
-std::string FormatSi(double value, const char* unit) {
-    static constexpr std::array<const char*, 5> kPrefix = {"", "k", "M", "G", "T"};
-    size_t p = 0;
-    double v = std::abs(value);
-    while (v >= 1000.0 && p + 1 < kPrefix.size()) {
-        v /= 1000.0;
-        ++p;
-    }
-    char text[48];
-    std::snprintf(text, sizeof(text), "%.3g %s%s", value < 0.0 ? -v : v, kPrefix[p], unit);
-    return text;
 }
 
 /// Line from a to b with a head at b (and at the middle for a moment).
@@ -117,9 +110,34 @@ constexpr std::array<Quantity, 6> kQuantities = {{
 
 }  // namespace
 
+ImU32 ForceSourceColor(int source) {
+    static constexpr std::array<ImU32, 8> kPalette = {
+        IM_COL32(86, 180, 233, 255),  IM_COL32(230, 159, 0, 255),   IM_COL32(0, 158, 115, 255),
+        IM_COL32(204, 121, 167, 255), IM_COL32(240, 228, 66, 255),  IM_COL32(213, 94, 0, 255),
+        IM_COL32(0, 114, 178, 255),   IM_COL32(170, 170, 170, 255),
+    };
+    if (source < 0) {
+        return ImGui::GetColorU32(ImGuiCol_Text);
+    }
+    return kPalette[static_cast<size_t>(source) % kPalette.size()];
+}
+
+std::string FormatSi(double value, const char* unit) {
+    static constexpr std::array<const char*, 5> kPrefix = {"", "k", "M", "G", "T"};
+    size_t p = 0;
+    double v = std::abs(value);
+    while (v >= 1000.0 && p + 1 < kPrefix.size()) {
+        v /= 1000.0;
+        ++p;
+    }
+    char text[48];
+    std::snprintf(text, sizeof(text), "%.3g %s%s", value < 0.0 ? -v : v, kPrefix[p], unit);
+    return text;
+}
+
 void AnalysisOverlays::UpdateScales(const SceneDescription& scene, const FrameHistory& history,
                                     const VizFrame& shown, double model_radius,
-                                    const std::vector<char>& body_visible, AnalysisState* state) {
+                                    const std::vector<char>& with_arrows, AnalysisState* state) {
     if (state->lock_scale && state->force_scale > 0.0) {
         return;
     }
@@ -131,7 +149,7 @@ void AnalysisOverlays::UpdateScales(const SceneDescription& scene, const FrameHi
             return;
         }
         for (size_t b = 0; b < frame.bodies.size(); ++b) {
-            if (b < body_visible.size() && !body_visible[b]) {
+            if (b >= with_arrows.size() || !with_arrows[b]) {
                 continue;
             }
             for (size_t s = 0; s < n_sources; ++s) {
@@ -160,8 +178,9 @@ void AnalysisOverlays::UpdateScales(const SceneDescription& scene, const FrameHi
 void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const FrameHistory& history,
                                          const VizFrame& shown, const SeastackViewer& viewer,
                                          const ScreenRect& scene_rect, double model_radius, float ui_scale,
-                                         const std::vector<char>& body_visible, AnalysisState* state) {
-    auto hidden = [&](size_t b) { return b < body_visible.size() && !body_visible[b]; };
+                                         const ModelState& model, AnalysisState* state) {
+    auto on = [](const std::vector<char>& flags, size_t b) { return b < flags.size() && flags[b] != 0; };
+    auto visible = [&](size_t b) { return b >= model.body_visible.size() || model.body_visible[b] != 0; };
     state->force_sources = scene.force_sources;
     if (state->source_shown.size() != scene.force_sources.size()) {
         state->source_shown.assign(scene.force_sources.size(), 1);
@@ -174,13 +193,15 @@ void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const Fr
                      true);
 
     // ---- Trajectories ----
-    if (state->show_trajectories && !history.Empty()) {
+    bool any_trail = false;
+    for (size_t b = 0; b < scene.bodies.size(); ++b) any_trail = any_trail || on(model.body_trail, b);
+    if (any_trail && !history.Empty()) {
         const double t0 = shown.time - static_cast<double>(state->trail_seconds);
         const std::vector<size_t> indices = SampleIndices(history, t0, shown.time, kTrailSamples);
         const float thickness = 2.0f * ui_scale;
         std::vector<ImVec2> points;
         for (size_t b = 0; b < scene.bodies.size(); ++b) {
-            if (scene.bodies[b].fixed || hidden(b)) {
+            if (scene.bodies[b].fixed || !visible(b) || !on(model.body_trail, b)) {
                 continue;
             }
             points.clear();
@@ -206,90 +227,171 @@ void AnalysisOverlays::DrawSceneOverlays(const SceneDescription& scene, const Fr
     // ---- Force and moment arrows ----
     const size_t n_sources = scene.force_sources.size();
     const bool have_forces = n_sources > 0 && shown.body_wrenches.size() == n_sources * shown.bodies.size();
-    if (state->show_forces && have_forces) {
-        UpdateScales(scene, history, shown, model_radius, body_visible, state);
-        const float thickness = 2.5f * ui_scale;
-        const ImU32 total_color = ImGui::GetColorU32(ImGuiCol_Text);
-        auto draw = [&](const Vec3& origin, const Vec3& v, double scale, ImU32 color, bool moment) {
-            if (scale <= 0.0 || Magnitude(v) * scale < 1e-9) {
-                return;
-            }
-            float ax = 0.0f, ay = 0.0f, bx = 0.0f, by = 0.0f;
-            if (viewer.ProjectToWindow(origin, &ax, &ay) && viewer.ProjectToWindow(Add(origin, v, scale), &bx, &by)) {
-                DrawArrow(dl, ImVec2(ax, ay), ImVec2(bx, by), color, thickness, moment);
-            }
-        };
-        for (size_t b = 0; b < shown.bodies.size(); ++b) {
-            if (hidden(b)) {
-                continue;
-            }
-            const Vec3& com = shown.bodies[b].com_position;
-            for (size_t s = 0; s < n_sources; ++s) {
-                if (s < state->source_shown.size() && state->source_shown[s]) {
-                    const Wrench w = BodyWrench(shown, s, b);
-                    draw(com, w.force, state->force_scale, SourceColor(s), false);
-                    if (state->show_moments) {
-                        draw(com, w.moment, state->moment_scale, SourceColor(s), true);
-                    }
-                }
-            }
-            if (state->show_total) {
-                const Wrench w = TotalWrench(shown, b);
-                draw(com, w.force, state->force_scale, total_color, false);
-                if (state->show_moments) {
-                    draw(com, w.moment, state->moment_scale, total_color, true);
-                }
-            }
-        }
+    std::vector<char> with_arrows(scene.bodies.size(), 0);
+    bool any_arrows = false;
+    for (size_t b = 0; b < scene.bodies.size(); ++b) {
+        with_arrows[b] = (visible(b) && on(model.body_forces, b)) ? 1 : 0;
+        any_arrows = any_arrows || with_arrows[b];
+    }
+    if (!have_forces || !any_arrows) {
+        legend_hovered_ = arrow_hovered_ = AnalysisState::kNone;
+        dl->PopClipRect();
+        return;
+    }
 
-        // Legend, bottom-left of the scene.
-        std::vector<std::pair<std::string, ImU32>> rows;
+    // One component is highlighted while hovered in the panel, the legend
+    // or the view; the others fade, and its arrows carry their magnitude.
+    int highlight = state->hovered_source;
+    if (highlight == AnalysisState::kNone) highlight = legend_hovered_;
+    if (highlight == AnalysisState::kNone) highlight = arrow_hovered_;
+
+    UpdateScales(scene, history, shown, model_radius, with_arrows, state);
+    const float thickness = 2.5f * ui_scale;
+    struct DrawnArrow {
+        ImVec2 a, b;
+        size_t body;
+        int source;
+        bool moment;
+        Vec3 value;
+    };
+    std::vector<DrawnArrow> drawn;
+    std::vector<std::pair<ImVec2, std::string>> tip_labels;
+    auto draw = [&](size_t body, int source, const Vec3& v, bool moment) {
+        const double scale = moment ? state->moment_scale : state->force_scale;
+        if (scale <= 0.0 || Magnitude(v) * scale < 1e-9) {
+            return;
+        }
+        const Vec3& origin = shown.bodies[body].com_position;
+        float ax = 0.0f, ay = 0.0f, bx = 0.0f, by = 0.0f;
+        if (!viewer.ProjectToWindow(origin, &ax, &ay) || !viewer.ProjectToWindow(Add(origin, v, scale), &bx, &by)) {
+            return;
+        }
+        const bool faded = highlight != AnalysisState::kNone && highlight != source;
+        const ImU32 color = WithAlpha(ForceSourceColor(source), faded ? kFadedAlpha : 1.0f);
+        DrawArrow(dl, ImVec2(ax, ay), ImVec2(bx, by), color, highlight == source ? 1.4f * thickness : thickness,
+                  moment);
+        drawn.push_back({ImVec2(ax, ay), ImVec2(bx, by), body, source, moment, v});
+        if (highlight == source) {
+            tip_labels.emplace_back(ImVec2(bx, by), FormatSi(Magnitude(v), moment ? "N m" : "N"));
+        }
+    };
+    for (size_t b = 0; b < shown.bodies.size(); ++b) {
+        if (!with_arrows[b]) {
+            continue;
+        }
         for (size_t s = 0; s < n_sources; ++s) {
-            if (s < state->source_shown.size() && state->source_shown[s]) {
-                rows.emplace_back(scene.force_sources[s], SourceColor(s));
+            const int source = static_cast<int>(s);
+            // A hidden component is previewed while it is highlighted.
+            if ((s < state->source_shown.size() && state->source_shown[s]) || highlight == source) {
+                const Wrench w = BodyWrench(shown, s, b);
+                draw(b, source, w.force, false);
+                if (state->show_moments) draw(b, source, w.moment, true);
             }
         }
-        if (state->show_total) {
-            rows.emplace_back("Total", total_color);
+        if (state->show_total || highlight == AnalysisState::kTotal) {
+            const Wrench w = TotalWrench(shown, b);
+            draw(b, AnalysisState::kTotal, w.force, false);
+            if (state->show_moments) draw(b, AnalysisState::kTotal, w.moment, true);
         }
-        std::vector<std::string> scale_lines;
-        if (state->force_scale > 0.0) {
-            scale_lines.push_back("Force: 1 m = " + FormatSi(1.0 / state->force_scale, "N"));
+    }
+    for (const auto& [tip, text] : tip_labels) {
+        const ImVec2 pos(tip.x + 4.0f * ui_scale, tip.y - ImGui::GetTextLineHeight());
+        dl->AddText(ImVec2(pos.x + 1.0f, pos.y + 1.0f), IM_COL32(0, 0, 0, 200), text.c_str());
+        dl->AddText(pos, IM_COL32(255, 255, 255, 255), text.c_str());
+    }
+
+    // Arrow under the mouse: tooltip with its values; highlights its component next frame.
+    arrow_hovered_ = AnalysisState::kNone;
+    const ImGuiIO& io = ImGui::GetIO();
+    const ImVec2 mouse = io.MousePos;
+    const bool mouse_in_scene = mouse.x >= scene_rect.x && mouse.y >= scene_rect.y &&
+                                mouse.x <= scene_rect.x + scene_rect.w && mouse.y <= scene_rect.y + scene_rect.h;
+    if (!io.WantCaptureMouse && mouse_in_scene && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        const float pick_px = 6.0f * ui_scale;
+        const DrawnArrow* nearest = nullptr;
+        float best = pick_px;
+        for (const DrawnArrow& d : drawn) {
+            const float dist = SegmentDistance(mouse, d.a, d.b);
+            if (dist < best) {
+                best = dist;
+                nearest = &d;
+            }
         }
-        if (state->show_moments && state->moment_scale > 0.0) {
-            scale_lines.push_back("Moment: 1 m = " + FormatSi(1.0 / state->moment_scale, "N m"));
-        }
-        scale_lines.push_back(state->lock_scale ? "Scale locked" : "Scale: largest load, last 30 s");
-        const float pad = 8.0f * ui_scale;
-        const float line_h = ImGui::GetTextLineHeightWithSpacing();
-        const float swatch = 0.7f * ImGui::GetTextLineHeight();
-        float width = 0.0f;
-        for (const auto& [name, color] : rows) {
-            width = std::max(width, swatch + pad + ImGui::CalcTextSize(name.c_str()).x);
-        }
-        for (const auto& line : scale_lines) {
-            width = std::max(width, ImGui::CalcTextSize(line.c_str()).x);
-        }
-        const float height = line_h * static_cast<float>(rows.size() + scale_lines.size());
-        const float margin = 10.0f * ui_scale;
-        const ImVec2 p0(scene_rect.x + margin, scene_rect.y + scene_rect.h - margin - height - 2.0f * pad);
-        const ImVec2 p1(p0.x + width + 2.0f * pad, p0.y + height + 2.0f * pad);
-        dl->AddRectFilled(p0, p1, ImGui::GetColorU32(ImGuiCol_WindowBg), ImGui::GetStyle().WindowRounding);
-        dl->AddRect(p0, p1, ImGui::GetColorU32(ImGuiCol_Border), ImGui::GetStyle().WindowRounding);
-        float y = p0.y + pad;
-        const ImU32 text_color = ImGui::GetColorU32(ImGuiCol_Text);
-        for (const auto& [name, color] : rows) {
-            const float sy = y + 0.5f * (ImGui::GetTextLineHeight() - swatch);
-            dl->AddRectFilled(ImVec2(p0.x + pad, sy), ImVec2(p0.x + pad + swatch, sy + swatch), color);
-            dl->AddText(ImVec2(p0.x + 2.0f * pad + swatch, y), text_color, name.c_str());
-            y += line_h;
-        }
-        for (const auto& line : scale_lines) {
-            dl->AddText(ImVec2(p0.x + pad, y), ImGui::GetColorU32(ImGuiCol_TextDisabled), line.c_str());
-            y += line_h;
+        if (nearest) {
+            arrow_hovered_ = nearest->source;
+            const std::string& body = scene.bodies[nearest->body].name;
+            const char* source = nearest->source == AnalysisState::kTotal
+                                     ? "Total"
+                                     : scene.force_sources[static_cast<size_t>(nearest->source)].c_str();
+            const Vec3& v = nearest->value;
+            ImGui::SetTooltip("%s on %s: %s %s\n%s = %10.4g %10.4g %10.4g %s (world)", source, body.c_str(),
+                              nearest->moment ? "moment" : "force",
+                              FormatSi(Magnitude(v), nearest->moment ? "N m" : "N").c_str(),
+                              nearest->moment ? "M" : "F", v[0], v[1], v[2], nearest->moment ? "N m" : "N");
         }
     }
     dl->PopClipRect();
+
+    DrawLegend(scene, scene_rect, ui_scale, state);
+}
+
+void AnalysisOverlays::DrawLegend(const SceneDescription& scene, const ScreenRect& scene_rect, float ui_scale,
+                                  AnalysisState* state) {
+    const size_t n_sources = scene.force_sources.size();
+    const float margin = 10.0f * ui_scale;
+    ImGui::SetNextWindowPos(ImVec2(scene_rect.x + margin, scene_rect.y + scene_rect.h - margin), ImGuiCond_Always,
+                            ImVec2(0.0f, 1.0f));
+    ImGui::SetNextWindowBgAlpha(0.85f);
+    legend_hovered_ = AnalysisState::kNone;
+    if (!ImGui::Begin("##force_legend", nullptr,
+                      ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                          ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
+                          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+                          ImGuiWindowFlags_NoScrollbar)) {
+        ImGui::End();
+        return;
+    }
+    // Each entry toggles its component; hovering highlights its arrows.
+    const float swatch = ImGui::GetTextLineHeight();
+    for (size_t s = 0; s <= n_sources; ++s) {
+        const bool total = s == n_sources;
+        const int source = total ? AnalysisState::kTotal : static_cast<int>(s);
+        const bool shown = total ? state->show_total : (s < state->source_shown.size() && state->source_shown[s]);
+        ImGui::PushID(static_cast<int>(s));
+        const ImVec4 color = ImGui::ColorConvertU32ToFloat4(WithAlpha(ForceSourceColor(source), shown ? 1.0f : 0.25f));
+        ImGui::ColorButton("##swatch", color,
+                           ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoDragDrop,
+                           ImVec2(swatch, swatch));
+        bool clicked = ImGui::IsItemClicked();
+        bool hovered = ImGui::IsItemHovered();
+        ImGui::SameLine();
+        if (!shown) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        clicked = ImGui::Selectable(total ? "Total" : scene.force_sources[s].c_str(), false,
+                                    ImGuiSelectableFlags_None) || clicked;
+        hovered = hovered || ImGui::IsItemHovered();
+        if (!shown) ImGui::PopStyleColor();
+        if (clicked) {
+            if (total) {
+                state->show_total = !state->show_total;
+            } else if (s < state->source_shown.size()) {
+                state->source_shown[s] = state->source_shown[s] ? 0 : 1;
+            }
+        }
+        if (hovered) {
+            legend_hovered_ = source;
+            ImGui::SetTooltip("%s", shown ? "Click to hide" : "Click to show (previewed while hovered)");
+        }
+        ImGui::PopID();
+    }
+    ImGui::Separator();
+    if (state->force_scale > 0.0) {
+        ImGui::TextDisabled("Force: 1 m = %s", FormatSi(1.0 / state->force_scale, "N").c_str());
+    }
+    if (state->show_moments && state->moment_scale > 0.0) {
+        ImGui::TextDisabled("Moment: 1 m = %s", FormatSi(1.0 / state->moment_scale, "N m").c_str());
+    }
+    ImGui::TextDisabled(state->lock_scale ? "Scale locked" : "Scale: largest load, last 30 s");
+    ImGui::End();
 }
 
 void AnalysisOverlays::DrawPlots(const SceneDescription& scene, const FrameHistory& history, const VizFrame& shown,
@@ -300,6 +402,16 @@ void AnalysisOverlays::DrawPlots(const SceneDescription& scene, const FrameHisto
         if (selected_body >= 0) {
             plot_body_ = selected_body;
         }
+    }
+    if (state->plot_force_request != AnalysisState::kNone) {
+        constexpr int kForceQuantity = 4;  // index of "Force (world)" in kQuantities
+        plot_quantity_ = kForceQuantity;
+        plot_source_ = state->plot_force_request == AnalysisState::kTotal ? -1 : state->plot_force_request;
+        if (selected_body >= 0) {
+            plot_body_ = selected_body;
+        }
+        state->plot_force_request = AnalysisState::kNone;
+        state->show_plots = true;
     }
     if (!state->show_plots || scene.bodies.empty()) {
         return;
@@ -318,8 +430,10 @@ void AnalysisOverlays::DrawPlots(const SceneDescription& scene, const FrameHisto
     }
     const float margin = 10.0f * ui_scale;
     const ImVec2 size(560.0f * ui_scale, 320.0f * ui_scale);
-    ImGui::SetNextWindowPos(ImVec2(scene_rect.x + margin, scene_rect.y + scene_rect.h - size.y - margin),
-                           ImGuiCond_FirstUseEver);
+    // Bottom-right of the scene, clear of the force legend at the bottom-left.
+    ImGui::SetNextWindowPos(
+        ImVec2(scene_rect.x + scene_rect.w - size.x - margin, scene_rect.y + scene_rect.h - size.y - margin),
+        ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Plots", &state->show_plots, ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::End();

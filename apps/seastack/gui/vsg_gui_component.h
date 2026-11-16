@@ -10,6 +10,7 @@
 #include <chrono_vsg/ChVisualSystemVSG.h>
 
 #include <seastack/viz_core/scene_framing.h>
+#include <seastack/viz_core/scene_model.h>
 #include <seastack/viz_core/simulation_pacer.h>
 #include <seastack/viz_core/visual_theme.h>
 
@@ -94,7 +95,7 @@ struct ParametersPanelState {
     std::string status;  ///< Last rejected edit or export result; empty = none
 };
 
-/// Model tree, selection and visibility (SEA-Stack viewer). Visual only.
+/// Model tree, selection and per-body display (SEA-Stack viewer). Visual only.
 struct ModelState {
     // --- Written by the viewer ---
     std::vector<std::string> body_names;  ///< Scene order
@@ -104,9 +105,18 @@ struct ModelState {
     Vec3 selected_com{0.0, 0.0, 0.0};       ///< [m]
     Vec3 selected_rotation{0.0, 0.0, 0.0};  ///< Cardan XYZ roll, pitch, yaw [deg]
     Vec3 selected_velocity{0.0, 0.0, 0.0};  ///< Of the centre of mass [m/s]
+    /// Loads on the selected body in the frame shown: one per force source
+    /// (AnalysisState::force_sources order), then the total. World frame,
+    /// moments about the centre of mass. Empty = no force data.
+    std::vector<Wrench> selected_wrenches;
 
     // --- Written by the GUI and by picking in the 3D view ---
-    std::vector<char> body_visible;  ///< Sized by the viewer (all visible)
+    // Per body, scene order; sized by the viewer.
+    std::vector<char> body_visible;  ///< Shapes drawn (all on)
+    std::vector<char> body_label;    ///< Name at the centre of mass (all off)
+    std::vector<char> body_axes;     ///< Reference-frame axis triad (all off)
+    std::vector<char> body_forces;   ///< Force / moment arrows (all off)
+    std::vector<char> body_trail;    ///< Centre-of-mass trail (all off; moving bodies only)
     bool lines_visible = true;       ///< Mooring lines and cables
     int selected = -1;               ///< Scene body index; -1 = none
     bool frame_selected_requested = false;  ///< Move the camera to frame the selected body
@@ -114,23 +124,32 @@ struct ModelState {
 
 /// Force vectors, trajectories and live plots (SEA-Stack viewer). Visual
 /// only: everything is read from the recorded frames, so it follows the
-/// timeline in playback.
+/// timeline in playback. Which bodies get arrows or trails is per body, in
+/// ModelState.
 struct AnalysisState {
+    /// Highlight / plot index for the total, as opposed to source s >= 0.
+    static constexpr int kTotal = -2;
+    static constexpr int kNone = -1;
+
     // --- Written by the viewer every frame ---
     std::vector<std::string> force_sources;  ///< Empty = no force data (replay, or no hydro model)
     double force_scale = 0.0;   ///< Arrow length per unit force in use [m/N]
     double moment_scale = 0.0;  ///< Arrow length per unit moment in use [m/(N m)]
 
     // --- Written by the GUI ---
-    bool show_forces = false;   ///< Force arrows at each centre of mass
     bool show_moments = false;  ///< Moment arrows (double head, right-hand rule)
     /// Per force source, same order as force_sources; the viewer sizes it (all on).
     std::vector<char> source_shown;
     bool show_total = false;    ///< Also draw the sum of all sources
     bool lock_scale = false;    ///< Keep the arrow scale instead of following the loads
-    bool show_trajectories = false;  ///< Centre-of-mass trails of moving bodies
     float trail_seconds = 30.0f;     ///< Trail length [s of simulated time]
     bool show_plots = false;         ///< Plot window
+    /// Component hovered in the panel this frame (source index, kTotal or
+    /// kNone); its arrows are highlighted. Reset at the start of each frame.
+    int hovered_source = kNone;
+    /// Plot this component's force on the selected body (source index or
+    /// kTotal); kNone = no request. Consumed by the plot window.
+    int plot_force_request = kNone;
 };
 
 /// Runtime-adjustable water visualization settings.
@@ -140,7 +159,7 @@ struct AnalysisState {
 struct ViewerSettings {
     // --- Display Options ---
     bool show_water = true;           ///< Toggle water surface visibility
-    bool show_water_grid = false;     ///< Show wireframe overlay on water surface
+    bool show_water_grid = true;      ///< Show wireframe overlay on water surface
     bool show_water_status = false;   ///< Show status line in overlay
 
     // --- Wave Rendering ---
@@ -148,8 +167,14 @@ struct ViewerSettings {
     int update_hz = 30;               ///< Maximum update rate [Hz], range 10-60
 
     // --- Grid Resolution ---
-    int grid_resolution = 64;         ///< Vertices per side (32, 64, 96, or 128)
+    /// About grid_resolution^2 vertices in total (32, 64, 96, or 128); a
+    /// rectangular patch spreads them over near-square cells.
+    int grid_resolution = 64;
     bool resolution_changed = false;  ///< Triggers mesh rebuild when resolution changes
+    /// Readouts written by the viewer: grid cell size [m] (0 = no grid) and the
+    /// deep-water wavelength of the current characteristic period [m] (0 = none).
+    double water_cell_m = 0.0;
+    double water_wavelength_m = 0.0;
 
     static constexpr int kResolutionOptions[] = {32, 64, 96, 128};
     static constexpr int kResolutionCount = 4;
@@ -171,10 +196,6 @@ struct ViewerSettings {
 
     // --- Mooring Colour Mapping ---
     bool show_mooring_colors = true;       ///< Colour lines by tension magnitude
-
-    // --- Body Annotations (SEA-Stack viewer) ---
-    bool show_body_frames = false;  ///< Axis triad at each body reference frame
-    bool show_body_labels = false;  ///< Body name at each centre of mass
 
     // --- Theme ---
     VisualTheme theme = VisualTheme::kDark;
@@ -259,13 +280,25 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     void TogglePlay();
     void RenderInspector(const ImVec2& pos, const ImVec2& size);
     void RenderViewToolbar();
-    void RenderMooringPanel();
-    /// Force vectors, trajectories and the plot window (SEA-Stack viewer).
-    void RenderAnalysisPanel();
-    /// Bodies with show / hide, selection, isolate, and the selected body's state.
-    void RenderModelPanel();
-    /// TSDA/RSDA parameters: edit, reset, owner, and the log of applied changes.
-    void RenderParametersPanel();
+    /// Tension colour mode and range for mooring lines (under the Scene lines row).
+    void RenderMooringColours();
+    /// Scene: one row per body (show, label, axes, forces, trail), then the
+    /// mooring lines and the water surface.
+    void RenderScenePanel();
+    /// Water surface rows of the Scene section (show, wireframe, grid, radiation preview).
+    void RenderWaterRows();
+    /// Selected body: state readout, isolate / frame, and its load breakdown.
+    void RenderSelectionPanel();
+    /// Force components, moments, arrow scale, trail length and plots (SEA-Stack viewer).
+    void RenderLoadsPanel();
+    /// Wave height, period and direction, with the wavelength and steepness.
+    void RenderSeaStatePanel();
+    /// TSDA/RSDA parameters: edit, reset and owner.
+    void RenderConnectorsPanel();
+    /// Log of applied changes and the schedule export.
+    void RenderChangesPanel();
+    /// Theme, slow-motion smoothing, update rate, status line.
+    void RenderDisplayPanel();
     /// One slider that sets `field` on every editable member (one row per member).
     /// The value is requested when the slider is released (or a typed value entered).
     void RenderParameterSlider(const std::string& key, const std::vector<const ParameterRow*>& members);

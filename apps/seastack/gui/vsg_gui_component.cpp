@@ -10,6 +10,7 @@
 #endif
 
 #include "vsg_gui_component.h"
+#include "vsg_analysis_overlays.h"
 #include "vsg_mooring_lines.h"
 #include "vsg_theme.h"
 
@@ -19,7 +20,10 @@
 #pragma warning(pop)
 #endif
 
+#include <seastack/viz_core/frame_series.h>
+
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
@@ -37,7 +41,7 @@ constexpr float kMinSpeed = 0.05f;
 constexpr float kMaxSpeed = 20.0f;
 
 // Docked layout sizes [px at 100 % display scale; multiplied by the UI scale].
-constexpr float kInspectorWidth = 300.0f;
+constexpr float kInspectorWidth = 340.0f;
 constexpr float kOverlayMargin = 10.0f;  // gap between scene overlays and the scene edge
 
 // Docked panels fill a fixed slot of the window; the user cannot move them.
@@ -443,6 +447,9 @@ void SeastackGuiComponent::Draw() {
         imgui_theme_ = settings_->theme;
         imgui_theme_applied_ = true;
     }
+    if (settings_) {
+        settings_->analysis.hovered_source = AnalysisState::kNone;  // set again below while hovered
+    }
     if (settings_ && !ImGui::GetIO().WantCaptureKeyboard) {
         if (ImGui::IsKeyPressed(ImGuiKey_F, false)) {
             settings_->camera_fit_requested = true;
@@ -488,8 +495,23 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
     ImGui::SetNextWindowBgAlpha(1.0f);
     ImGui::Begin("Inspector", nullptr, kDockedFlags);
 
-    // ---- View ----
-    if (ImGui::CollapsingHeader("View", ImGuiTreeNodeFlags_DefaultOpen)) {
+    // Ordered as the work goes: what is shown, the body picked, its loads,
+    // then the inputs that change the run, then appearance.
+    RenderScenePanel();
+    if (!vsys_) {
+        RenderSelectionPanel();
+        RenderLoadsPanel();
+    }
+    RenderSeaStatePanel();
+    RenderConnectorsPanel();
+    RenderChangesPanel();
+    RenderDisplayPanel();
+
+    ImGui::End();
+}
+
+void SeastackGuiComponent::RenderDisplayPanel() {
+    if (ImGui::CollapsingHeader("Display")) {
         bool dark = settings_->theme == VisualTheme::kDark;
         if (ImGui::Checkbox("Dark mode", &dark)) {
             settings_->theme = dark ? VisualTheme::kDark : VisualTheme::kLight;
@@ -508,76 +530,10 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
                                   "one step). Visual only; results are not changed.");
             }
         }
-    }
-
-    // ---- Model (SEA-Stack viewer) ----
-    if (!vsys_) {
-        RenderModelPanel();
-    }
-
-    // ---- Waves ----
-    if (ImGui::CollapsingHeader("Waves", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Show Water", &settings_->show_water);
-
-        ImGui::Checkbox("Show Wireframe", &settings_->show_water_grid);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Show mesh edges on water surface.\n"
-                              "Helps visualize wave motion and ripples.");
-        }
-
-        {
-            const char* resolution_labels[] = {"32x32", "64x64", "96x96", "128x128"};
-            int current_idx = 0;
-            for (int i = 0; i < ViewerSettings::kResolutionCount; ++i) {
-                if (ViewerSettings::kResolutionOptions[i] == settings_->grid_resolution) {
-                    current_idx = i;
-                    break;
-                }
-            }
-            int prev_idx = current_idx;
-            if (ImGui::Combo("Grid Resolution", &current_idx, resolution_labels, ViewerSettings::kResolutionCount)) {
-                if (current_idx != prev_idx) {
-                    settings_->grid_resolution = ViewerSettings::kResolutionOptions[current_idx];
-                    settings_->resolution_changed = true;
-                }
-            }
-        }
-
-        ImGui::Checkbox("Radiation (approx.)", &settings_->show_radiation_viz);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Qualitative visual approximation of radiated waves.\n"
-                              "Heights are empirical - not a quantitative result.\n"
-                              "Does NOT affect physics - for feedback only.");
-        }
-
-        if (settings_->show_radiation_viz) {
-            ImGui::Indent();
-            ImGui::SliderFloat("Visual Scale##rad", &settings_->radiation_visual_scale, 0.1f, 5.0f, "%.1fx");
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Visual amplification for inspection.\n"
-                                  "1.0x = baseline, increase to see small ripples.\n"
-                                  "Does NOT affect physics.");
-            }
-            ImGui::TextDisabled("Wavelength/speed derived from wave period");
-            ImGui::Unindent();
-        }
-    }
-
-    // ---- Mooring ----
-    RenderMooringPanel();
-
-    // ---- Analysis (SEA-Stack viewer) ----
-    if (!vsys_) {
-        RenderAnalysisPanel();
-    }
-
-    // ---- Parameters ----
-    RenderParametersPanel();
-
-    // ---- Display ----
-    if (ImGui::CollapsingHeader("Display")) {
         ImGui::SliderInt("Update Hz", &settings_->update_hz, 10, 60, "%d Hz");
-
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Most water-surface updates per second of wall time.");
+        }
         if (vsys_) {
             bool chrono_panel = vsys_->IsBaseGuiVisible();
             if (ImGui::Checkbox("Chrono debug panel", &chrono_panel)) {
@@ -587,18 +543,7 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
                 ImGui::SetTooltip("Chrono's own panel: body/COM/link frames, labels,\n"
                                   "collision shapes. Its wall clock includes pauses.");
             }
-        } else {
-            ImGui::Checkbox("Body frames", &settings_->show_body_frames);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Axes of each body reference frame:\n"
-                                  "x red, y green, z blue.");
-            }
-            ImGui::Checkbox("Body labels", &settings_->show_body_labels);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Body names, placed at each centre of mass.");
-            }
         }
-
         ImGui::Checkbox("Show Status", &settings_->show_water_status);
         if (settings_->show_water_status) {
             ImGui::TextDisabled("Water: %s | Grid: %d | Hz: %d",
@@ -607,8 +552,76 @@ void SeastackGuiComponent::RenderInspector(const ImVec2& pos, const ImVec2& size
                                 settings_->update_hz);
         }
     }
+}
 
-    ImGui::End();
+void SeastackGuiComponent::RenderWaterRows() {
+    ImGui::Checkbox("Water", &settings_->show_water);
+    ImGui::SameLine();
+    ImGui::Checkbox("Wireframe", &settings_->show_water_grid);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Mesh edges on the water surface: shows the wave\n"
+                          "shape and how finely the surface is drawn.");
+    }
+    ImGui::SameLine();
+    const char* resolution_labels[] = {"32", "64", "96", "128"};
+    int current_idx = 0;
+    for (int i = 0; i < ViewerSettings::kResolutionCount; ++i) {
+        if (ViewerSettings::kResolutionOptions[i] == settings_->grid_resolution) {
+            current_idx = i;
+            break;
+        }
+    }
+    ImGui::SetNextItemWidth(ImGui::CalcTextSize("1288").x + ImGui::GetFrameHeight() +
+                            2.0f * ImGui::GetStyle().FramePadding.x);
+    if (ImGui::Combo("##grid", &current_idx, resolution_labels, ViewerSettings::kResolutionCount) &&
+        ViewerSettings::kResolutionOptions[current_idx] != settings_->grid_resolution) {
+        settings_->grid_resolution = ViewerSettings::kResolutionOptions[current_idx];
+        settings_->resolution_changed = true;
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Water grid: about N x N points, spread over square cells\n"
+                          "on the patch. Finer is smoother but costs more each frame\n"
+                          "(the wave is evaluated at every point).");
+    }
+    if (settings_->water_cell_m > 0.0) {
+        ImGui::Indent();
+        if (settings_->water_wavelength_m > 0.0) {
+            const double per_wave = settings_->water_wavelength_m / settings_->water_cell_m;
+            // Below about 20 points per wavelength the crests look faceted.
+            constexpr double kCoarsePointsPerWave = 20.0;
+            if (per_wave < kCoarsePointsPerWave) {
+                ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.25f, 1.0f), "%.2g m cells, %.0f per wave: coarse",
+                                   settings_->water_cell_m, per_wave);
+            } else {
+                ImGui::TextDisabled("%.2g m cells, %.0f per wave", settings_->water_cell_m, per_wave);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Grid cell size, and grid points per deep-water wavelength\n"
+                                  "(%.3g m) at the characteristic wave period. Visual only.",
+                                  settings_->water_wavelength_m);
+            }
+        } else {
+            ImGui::TextDisabled("%.2g m cells", settings_->water_cell_m);
+        }
+        ImGui::Unindent();
+    }
+
+    ImGui::Checkbox("Radiated waves (approx.)", &settings_->show_radiation_viz);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Qualitative visual approximation of radiated waves.\n"
+                          "Heights are empirical - not a quantitative result.\n"
+                          "Does NOT affect physics - for feedback only.");
+    }
+    if (settings_->show_radiation_viz) {
+        ImGui::Indent();
+        ImGui::SliderFloat("Visual Scale##rad", &settings_->radiation_visual_scale, 0.1f, 5.0f, "%.1fx");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Visual amplification for inspection.\n"
+                              "1.0x = baseline, increase to see small ripples.\n"
+                              "Does NOT affect physics.");
+        }
+        ImGui::Unindent();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -767,12 +780,31 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
     const bool editing = (param_edit_key_ == key);
     double v = editing ? param_edit_value_ : current(ref);
     ImGui::BeginDisabled(editable.empty() || panel.run_finished);
-    ImGui::SetNextItemWidth(slider_w);
+    // Fill the row, leaving room for the units and the Reset button.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float trailing_w = ImGui::CalcTextSize(first.units.c_str()).x + ImGui::CalcTextSize("Reset").x +
+                             2.0f * style.FramePadding.x + 2.0f * style.ItemSpacing.x;
+    ImGui::SetNextItemWidth(std::max(slider_w, ImGui::GetContentRegionAvail().x - trailing_w));
     bool changed_now = false;
+    // Sea-state sliders step in 0.1 m / 0.1 s / 1 deg; a typed value (Ctrl+click) is kept as entered.
+    double drag_step = 0.0;
+    const char* value_format = "%.4g";
+    if (first.element == "waves") {
+        if (first.field == "height" || first.field == "period") {
+            drag_step = 0.1;
+            value_format = "%.1f";
+        } else if (first.field == "direction") {
+            drag_step = 1.0;
+            value_format = "%.0f";
+        }
+    }
     if (slider) {
-        const char* format = (mixed && !editing) ? "mixed" : "%.4g";
+        const char* format = (mixed && !editing) ? "mixed" : value_format;
         changed_now = ImGui::SliderScalar("##value", ImGuiDataType_Double, &v, &lo, &hi, format,
                                           logarithmic ? ImGuiSliderFlags_Logarithmic : ImGuiSliderFlags_None);
+        if (changed_now && drag_step > 0.0 && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            v = std::clamp(drag_step * std::round(v / drag_step), lo, hi);
+        }
     } else {
         changed_now = ImGui::InputDouble("##value", &v, 0.0, 0.0, "%.6g");
     }
@@ -899,25 +931,45 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
     ImGui::PopID();
 }
 
-void SeastackGuiComponent::RenderParametersPanel() {
+void SeastackGuiComponent::RenderSeaStatePanel() {
     if (!settings_ || !settings_->parameters.available) return;
-    ParametersPanelState& panel = settings_->parameters;
-
-    if (!ImGui::CollapsingHeader("Parameters", ImGuiTreeNodeFlags_DefaultOpen)) return;
-
-    if (panel.rows.empty()) {
-        ImGui::TextDisabled("No waves, TSDA or RSDA to adjust in this model.");
-        return;
-    }
-
-    // Wave rows first: they affect every body.
+    const ParametersPanelState& panel = settings_->parameters;
+    const ParameterRow* height = nullptr;
+    const ParameterRow* period = nullptr;
     bool any_wave = false;
     for (const ParameterRow& row : panel.rows) {
         if (row.element != "waves") continue;
-        if (!any_wave) ImGui::TextUnformatted("Waves");
         any_wave = true;
-        RenderParameterSlider(row.id, {&row});
+        if (row.field == "height" || row.field == "height_scale") height = &row;
+        if (row.field == "period") period = &row;
     }
+    if (!any_wave || !ImGui::CollapsingHeader("Sea state", ImGuiTreeNodeFlags_DefaultOpen)) return;
+
+    for (const ParameterRow& row : panel.rows) {
+        if (row.element == "waves") RenderParameterSlider(row.id, {&row});
+    }
+    // Derived readout. Deep-water dispersion only: in finite depth the
+    // wavelength is shorter, so the steepness shown is a lower bound.
+    if (period && period->value > 0.0) {
+        constexpr double kGravity = 9.81;  // [m/s^2]
+        const double wavelength = DeepWaterWavelength(period->value, kGravity);
+        if (height && height->field == "height" && wavelength > 0.0) {
+            ImGui::TextDisabled("Wavelength %.3g m, %s/wavelength %.3f", wavelength, height->label.c_str(),
+                                height->value / wavelength);
+        } else {
+            ImGui::TextDisabled("Wavelength %.3g m", wavelength);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Deep-water linear wavelength g T^2 / (2 pi) for the period in\n"
+                              "effect now, and the steepness from it. In finite depth\n"
+                              "the wavelength is shorter. Readout only.");
+        }
+    }
+}
+
+void SeastackGuiComponent::RenderConnectorsPanel() {
+    if (!settings_ || !settings_->parameters.available) return;
+    const ParametersPanelState& panel = settings_->parameters;
 
     // Links in model order, each with its rows (fields in registry order).
     struct LinkRows {
@@ -956,10 +1008,11 @@ void SeastackGuiComponent::RenderParametersPanel() {
         }
     };
 
-    if (any_wave && !links.empty()) ImGui::Spacing();
-    if (links.empty()) {
-        // Waves only.
-    } else if (links.size() == 1) {
+    if (links.empty() || !ImGui::CollapsingHeader("PTO and connectors", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Spring-damper links (TSDA, RSDA): PTOs, rams and springs.");
+    }
+    if (links.size() == 1) {
         ImGui::TextUnformatted(links.front().heading.c_str());
         render_link(links.front());
     } else {
@@ -1030,12 +1083,25 @@ void SeastackGuiComponent::RenderParametersPanel() {
             }
         }
     }
+}
 
-    ImGui::Spacing();
+void SeastackGuiComponent::RenderChangesPanel() {
+    if (!settings_ || !settings_->parameters.available || settings_->parameters.rows.empty()) return;
+    ParametersPanelState& panel = settings_->parameters;
+    char heading[64];
+    std::snprintf(heading, sizeof(heading), "Changes (%zu)###changes", panel.event_lines.size());
+    if (!ImGui::CollapsingHeader(heading, ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Rejections must stay visible with the section closed.
+        if (!panel.status.empty()) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", panel.status.c_str());
+            ImGui::PopTextWrapPos();
+        }
+        return;
+    }
     if (panel.event_lines.empty()) {
-        ImGui::TextDisabled("No changes yet.");
+        ImGui::TextDisabled("No changes yet. Sea-state and connector edits are logged here.");
     } else {
-        ImGui::Text("Changes (%zu):", panel.event_lines.size());
         constexpr size_t kMaxShown = 8;
         const size_t first = panel.event_lines.size() > kMaxShown ? panel.event_lines.size() - kMaxShown : 0;
         if (first > 0) {
@@ -1071,12 +1137,10 @@ void SeastackGuiComponent::RenderParametersPanel() {
 
 // ---------------------------------------------------------------------------
 
-void SeastackGuiComponent::RenderMooringPanel() {
+void SeastackGuiComponent::RenderMooringColours() {
     if (!settings_ || !mooring_viz_ || !mooring_viz_->IsInitialized()) return;
 
-    if (!ImGui::CollapsingHeader("Mooring", ImGuiTreeNodeFlags_DefaultOpen)) return;
-
-    ImGui::Checkbox("Colour by Tension", &settings_->show_mooring_colors);
+    ImGui::Checkbox("Colour by tension", &settings_->show_mooring_colors);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Map tension magnitude to colour\n"
                           "along each mooring line.");
@@ -1142,146 +1206,344 @@ void SeastackGuiComponent::RenderMooringPanel() {
 
 // ---------------------------------------------------------------------------
 
-void SeastackGuiComponent::RenderModelPanel() {
-    ModelState& m = settings_->model;
-    if (m.body_names.empty() || !ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen)) return;
-    const int n = static_cast<int>(m.body_names.size());
-    if (m.selected >= n) m.selected = -1;
+namespace {
 
-    // A long body list scrolls inside the panel.
-    constexpr int kMaxRows = 8;
-    const bool scroll = n > kMaxRows;
-    if (scroll) {
-        ImGui::BeginChild("##bodies", ImVec2(0.0f, kMaxRows * ImGui::GetFrameHeightWithSpacing()), true);
+/// Checkbox that sets a whole per-body column: ticked when every counted row
+/// is on, drawn as mixed when only some are. Rows with applies[i] == 0 are not
+/// counted. Returns true when clicked, with *all_on the new state.
+bool ColumnToggle(const char* label, const std::vector<char>& flags, const std::vector<char>* applies,
+                  bool* all_on) {
+    size_t on = 0;
+    size_t count = 0;
+    for (size_t i = 0; i < flags.size(); ++i) {
+        if (applies && i < applies->size() && !(*applies)[i]) continue;
+        ++count;
+        on += flags[i] ? 1 : 0;
     }
-    for (int i = 0; i < n && i < static_cast<int>(m.body_visible.size()); ++i) {
-        ImGui::PushID(i);
-        bool visible = m.body_visible[i] != 0;
-        if (ImGui::Checkbox("##visible", &visible)) {
-            m.body_visible[i] = visible ? 1 : 0;
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Show / hide (visual only)");
-        }
-        ImGui::SameLine();
-        std::string label = m.body_names[i].empty() ? "(unnamed)" : m.body_names[i];
-        if (i < static_cast<int>(m.body_fixed.size()) && m.body_fixed[i]) {
-            label += " (fixed)";
-        }
-        if (ImGui::Selectable(label.c_str(), m.selected == i, ImGuiSelectableFlags_AllowDoubleClick)) {
-            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-                m.selected = i;
-                m.frame_selected_requested = true;
-            } else {
-                m.selected = (m.selected == i) ? -1 : i;
-            }
-        }
-        ImGui::PopID();
+    // CheckboxFlags draws "mixed" when some but not all of the bits are set.
+    int bits = (on > 0 ? 1 : 0) | (count > 0 && on == count ? 2 : 0);
+    if (ImGui::CheckboxFlags(label, &bits, 3)) {
+        *all_on = (bits == 3);
+        return true;
     }
-    if (scroll) {
-        ImGui::EndChild();
-    }
-    if (m.has_lines) {
-        ImGui::Checkbox("Mooring lines and cables", &m.lines_visible);
-    }
+    return false;
+}
 
-    const bool has_selection = m.selected >= 0;
-    ImGui::BeginDisabled(!has_selection);
-    if (ImGui::Button("Isolate")) {
-        for (int i = 0; i < static_cast<int>(m.body_visible.size()); ++i) {
-            m.body_visible[i] = (i == m.selected) ? 1 : 0;
-        }
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Show only the selected body.");
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Frame")) {
-        m.frame_selected_requested = true;
-    }
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-        ImGui::SetTooltip("Move the camera to the selected body (or double-click it).");
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (ImGui::Button("Show all")) {
-        std::fill(m.body_visible.begin(), m.body_visible.end(), static_cast<char>(1));
-        m.lines_visible = true;
-    }
-
-    if (has_selection) {
-        const Vec3& p = m.selected_com;
-        const Vec3& r = m.selected_rotation;
-        const Vec3& v = m.selected_velocity;
-        ImGui::Text("COM       %9.3f %9.3f %9.3f m", p[0], p[1], p[2]);
-        ImGui::Text("Rotation  %9.2f %9.2f %9.2f deg", r[0], r[1], r[2]);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Roll, pitch, yaw: Cardan angles X-Y'-Z''\n"
-                              "(as euler_xyz in the HDF5 output).");
-        }
-        ImGui::Text("Velocity  %9.3f %9.3f %9.3f m/s", v[0], v[1], v[2]);
-    } else {
-        ImGui::TextDisabled("Click a body to select it.");
+void SetColumn(std::vector<char>* flags, const std::vector<char>* applies, bool on) {
+    for (size_t i = 0; i < flags->size(); ++i) {
+        if (applies && i < applies->size() && !(*applies)[i]) continue;
+        (*flags)[i] = on ? 1 : 0;
     }
 }
 
-void SeastackGuiComponent::RenderAnalysisPanel() {
-    if (!ImGui::CollapsingHeader("Analysis", ImGuiTreeNodeFlags_DefaultOpen)) return;
-    AnalysisState& a = settings_->analysis;
+/// Small colour swatch matching the arrows of a force source (kTotal = text colour).
+void SourceSwatch(int source) {
+    const float size = ImGui::GetTextLineHeight();
+    ImGui::ColorButton("##swatch", ImGui::ColorConvertU32ToFloat4(ForceSourceColor(source)),
+                       ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoDragDrop,
+                       ImVec2(size, size));
+}
 
-    ImGui::Checkbox("Force vectors", &a.show_forces);
+}  // namespace
+
+void SeastackGuiComponent::RenderScenePanel() {
+    if (!settings_ || !ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    ModelState& m = settings_->model;
+    const int n = static_cast<int>(m.body_names.size());
+
+    if (!vsys_ && n > 0) {
+        const size_t count = m.body_names.size();
+        for (std::vector<char>* v : {&m.body_visible, &m.body_label, &m.body_axes, &m.body_forces, &m.body_trail}) {
+            if (v->size() != count) v->assign(count, v == &m.body_visible ? 1 : 0);
+        }
+        std::vector<char> moving(count, 1);
+        for (size_t i = 0; i < count && i < m.body_fixed.size(); ++i) moving[i] = m.body_fixed[i] ? 0 : 1;
+        if (m.selected >= n) m.selected = -1;
+
+        struct Column {
+            const char* name;
+            const char* tooltip;
+            std::vector<char>* flags;
+            const std::vector<char>* applies;
+        };
+        const std::array<Column, 5> columns = {{
+            {"Show", "Draw the body (visual only; the simulation is unchanged).", &m.body_visible, nullptr},
+            {"Label", "Body name at its centre of mass.", &m.body_label, nullptr},
+            {"Axes", "Body reference-frame axes: x red, y green, z blue.", &m.body_axes, nullptr},
+            {"Force", "Force (and moment) arrows at the centre of mass.\nComponents and scale: Loads and motion.",
+             &m.body_forces, nullptr},
+            {"Trail", "Centre-of-mass path over the recorded frames.\nLength: Loads and motion.", &m.body_trail,
+             &moving},
+        }};
+        constexpr int kMaxRows = 8;  // more bodies scroll inside the table
+        const float row_h = ImGui::GetFrameHeightWithSpacing();
+        const float table_h = n > kMaxRows ? (kMaxRows + 2) * row_h : 0.0f;
+        ImGuiTableFlags flags =
+            ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_NoPadOuterX;
+        if (n > kMaxRows) flags |= ImGuiTableFlags_ScrollY;
+        if (ImGui::BeginTable("##bodies", 6, flags, ImVec2(0.0f, table_h))) {
+            ImGui::TableSetupScrollFreeze(0, 2);
+            ImGui::TableSetupColumn(columns[0].name);
+            ImGui::TableSetupColumn("Body", ImGuiTableColumnFlags_WidthStretch);
+            for (size_t c = 1; c < columns.size(); ++c) ImGui::TableSetupColumn(columns[c].name);
+
+            ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+            for (int c = 0; c < 6; ++c) {
+                ImGui::TableSetColumnIndex(c);
+                const Column* col = c == 0 ? &columns[0] : (c >= 2 ? &columns[static_cast<size_t>(c - 1)] : nullptr);
+                ImGui::TableHeader(col ? col->name : "Body");
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", col ? col->tooltip
+                                               : "Click to select (also in the 3D view);\ndouble-click to frame it.");
+                }
+            }
+
+            // First row sets each column for every body.
+            ImGui::TableNextRow();
+            for (int c = 0; c < 6; ++c) {
+                ImGui::TableSetColumnIndex(c);
+                if (c == 1) {
+                    ImGui::AlignTextToFramePadding();
+                    ImGui::TextDisabled("All bodies");
+                    continue;
+                }
+                const Column& col = columns[static_cast<size_t>(c == 0 ? 0 : c - 1)];
+                ImGui::PushID(c);
+                bool on = false;
+                if (ColumnToggle("##all", *col.flags, col.applies, &on)) SetColumn(col.flags, col.applies, on);
+                ImGui::PopID();
+            }
+
+            for (int i = 0; i < n; ++i) {
+                ImGui::PushID(i);
+                ImGui::TableNextRow();
+                for (int c = 0; c < 6; ++c) {
+                    ImGui::TableSetColumnIndex(c);
+                    if (c == 1) {
+                        std::string label = m.body_names[i].empty() ? "(unnamed)" : m.body_names[i];
+                        if (!moving[static_cast<size_t>(i)]) label += " (fixed)";
+                        ImGui::AlignTextToFramePadding();
+                        if (ImGui::Selectable(label.c_str(), m.selected == i, ImGuiSelectableFlags_AllowDoubleClick)) {
+                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                                m.selected = i;
+                                m.frame_selected_requested = true;
+                            } else {
+                                m.selected = (m.selected == i) ? -1 : i;
+                            }
+                        }
+                        continue;
+                    }
+                    const Column& col = columns[static_cast<size_t>(c == 0 ? 0 : c - 1)];
+                    if (col.applies && !(*col.applies)[static_cast<size_t>(i)]) continue;  // no trail for fixed bodies
+                    ImGui::PushID(c);
+                    bool on = (*col.flags)[static_cast<size_t>(i)] != 0;
+                    if (ImGui::Checkbox("##on", &on)) (*col.flags)[static_cast<size_t>(i)] = on ? 1 : 0;
+                    ImGui::PopID();
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        if (ImGui::SmallButton("Show all")) {
+            std::fill(m.body_visible.begin(), m.body_visible.end(), static_cast<char>(1));
+            m.lines_visible = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Show every body and the mooring lines again (after Isolate).");
+        }
+    }
+
+    // Lines and cables, then the water.
+    if (!vsys_ && m.has_lines) {
+        ImGui::Checkbox("Mooring lines and cables", &m.lines_visible);
+        if (m.lines_visible) {
+            ImGui::Indent();
+            RenderMooringColours();
+            ImGui::Unindent();
+        }
+    } else if (mooring_viz_ && mooring_viz_->IsInitialized()) {
+        ImGui::TextUnformatted("Mooring lines");
+        ImGui::Indent();
+        RenderMooringColours();
+        ImGui::Unindent();
+    }
+    RenderWaterRows();
+}
+
+void SeastackGuiComponent::RenderSelectionPanel() {
+    ModelState& m = settings_->model;
+    AnalysisState& a = settings_->analysis;
+    const int n = static_cast<int>(m.body_names.size());
+    if (n == 0) return;
+    const bool has = m.selected >= 0 && m.selected < n;
+    char heading[160];
+    std::snprintf(heading, sizeof(heading), "Selected: %s###selected",
+                  has ? (m.body_names[m.selected].empty() ? "(unnamed)" : m.body_names[m.selected].c_str()) : "none");
+    if (!ImGui::CollapsingHeader(heading, ImGuiTreeNodeFlags_DefaultOpen)) return;
+    if (!has) {
+        ImGui::TextDisabled("Click a body in the 3D view or in Scene.");
+        return;
+    }
+    const size_t sel = static_cast<size_t>(m.selected);
+
+    if (ImGui::Button("Isolate")) {
+        for (size_t i = 0; i < m.body_visible.size(); ++i) m.body_visible[i] = (i == sel) ? 1 : 0;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show only this body (Show all in Scene undoes it).");
+    ImGui::SameLine();
+    if (ImGui::Button("Frame")) m.frame_selected_requested = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Move the camera to this body (or double-click it).");
+    ImGui::SameLine();
+    if (ImGui::Button("Plot")) a.show_plots = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Open the plot window for this body.");
+
+    const Vec3& p = m.selected_com;
+    const Vec3& r = m.selected_rotation;
+    const Vec3& v = m.selected_velocity;
+    ImGui::Text("COM       %9.3f %9.3f %9.3f m", p[0], p[1], p[2]);
+    ImGui::Text("Rotation  %9.2f %9.2f %9.2f deg", r[0], r[1], r[2]);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Roll, pitch, yaw: Cardan angles X-Y'-Z''\n"
+                          "(as euler_xyz in the HDF5 output).");
+    }
+    ImGui::Text("Velocity  %9.3f %9.3f %9.3f m/s", v[0], v[1], v[2]);
+
+    // Load breakdown: one bar per component, coloured as its arrows.
+    const size_t n_sources = a.force_sources.size();
+    if (n_sources == 0 || m.selected_wrenches.size() != n_sources + 1) return;
+    ImGui::Spacing();
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Loads");
+    ImGui::SameLine();
+    if (sel < m.body_forces.size()) {
+        bool arrows = m.body_forces[sel] != 0;
+        if (ImGui::Checkbox("Arrows on this body", &arrows)) m.body_forces[sel] = arrows ? 1 : 0;
+    }
+    double max_force = 0.0;
+    for (const Wrench& w : m.selected_wrenches) max_force = std::max(max_force, Magnitude(w.force));
+    const float line_h = ImGui::GetTextLineHeightWithSpacing();
+    const float name_w = ImGui::CalcTextSize("Nonlinear Froude-Krylov").x * 0.8f;
+    const float value_w = ImGui::CalcTextSize("-000 MN").x;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    for (size_t k = 0; k <= n_sources; ++k) {
+        const int source = k < n_sources ? static_cast<int>(k) : AnalysisState::kTotal;
+        const Wrench& w = m.selected_wrenches[k];
+        const std::string name = k < n_sources ? a.force_sources[k] : "Total";
+        ImGui::PushID(static_cast<int>(k));
+        if (ImGui::Selectable("##load", false, ImGuiSelectableFlags_None, ImVec2(0.0f, line_h - 2.0f))) {
+            a.plot_force_request = source;
+        }
+        const bool hovered = ImGui::IsItemHovered();
+        const ImVec2 r0 = ImGui::GetItemRectMin();
+        const ImVec2 r1 = ImGui::GetItemRectMax();
+        const float swatch = ImGui::GetTextLineHeight() * 0.8f;
+        const float cy = 0.5f * (r0.y + r1.y);
+        const ImU32 color = ForceSourceColor(source);
+        dl->AddRectFilled(ImVec2(r0.x, cy - 0.5f * swatch), ImVec2(r0.x + swatch, cy + 0.5f * swatch), color);
+        const float text_x = r0.x + swatch + ImGui::GetStyle().ItemSpacing.x;
+        dl->PushClipRect(ImVec2(text_x, r0.y), ImVec2(text_x + name_w, r1.y), true);
+        dl->AddText(ImVec2(text_x, cy - 0.5f * ImGui::GetTextLineHeight()), ImGui::GetColorU32(ImGuiCol_Text),
+                    name.c_str());
+        dl->PopClipRect();
+        const float bar_x0 = text_x + name_w + ImGui::GetStyle().ItemSpacing.x;
+        const float bar_x1 = std::max(bar_x0, r1.x - value_w - ImGui::GetStyle().ItemSpacing.x);
+        const double f = Magnitude(w.force);
+        const float frac = max_force > 0.0 ? static_cast<float>(f / max_force) : 0.0f;
+        const float bar_h = 0.5f * ImGui::GetTextLineHeight();
+        dl->AddRectFilled(ImVec2(bar_x0, cy - 0.5f * bar_h), ImVec2(bar_x1, cy + 0.5f * bar_h),
+                          ImGui::GetColorU32(ImGuiCol_FrameBg));
+        dl->AddRectFilled(ImVec2(bar_x0, cy - 0.5f * bar_h), ImVec2(bar_x0 + frac * (bar_x1 - bar_x0), cy + 0.5f * bar_h),
+                          color);
+        const std::string value = FormatSi(f, "N");
+        dl->AddText(ImVec2(r1.x - ImGui::CalcTextSize(value.c_str()).x, cy - 0.5f * ImGui::GetTextLineHeight()),
+                    ImGui::GetColorU32(ImGuiCol_Text), value.c_str());
+        if (hovered) {
+            a.hovered_source = source;
+            ImGui::SetTooltip("%s on %s (world frame)\n"
+                              "F  = %10.4g %10.4g %10.4g N\n"
+                              "M  = %10.4g %10.4g %10.4g N m (about the centre of mass)\n"
+                              "Click to plot it over time.",
+                              name.c_str(), m.body_names[sel].c_str(), w.force[0], w.force[1], w.force[2],
+                              w.moment[0], w.moment[1], w.moment[2]);
+        }
+        ImGui::PopID();
+    }
+}
+
+void SeastackGuiComponent::RenderLoadsPanel() {
+    if (!ImGui::CollapsingHeader("Loads and motion", ImGuiTreeNodeFlags_DefaultOpen)) return;
+    AnalysisState& a = settings_->analysis;
+    ModelState& m = settings_->model;
+    std::vector<char> moving(m.body_fixed.size(), 1);
+    for (size_t i = 0; i < m.body_fixed.size(); ++i) moving[i] = m.body_fixed[i] ? 0 : 1;
+
+    bool on = false;
+    if (ColumnToggle("Force arrows", m.body_forces, nullptr, &on)) SetColumn(&m.body_forces, nullptr, on);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Loads the solver applied in the step shown, per hydro\n"
                           "model component (incl. mooring and external forces),\n"
                           "drawn at each centre of mass in the world frame.\n"
                           "Arrow lengths are scaled; the legend gives the scale.\n"
-                          "PTO and joint forces are not included.");
+                          "PTO and joint forces are not included.\n"
+                          "Per body: the Force column in Scene.");
     }
-    if (a.show_forces) {
-        ImGui::Indent();
-        if (a.force_sources.empty()) {
-            ImGui::TextDisabled("No force data yet (or a replay)");
-        }
-        for (size_t i = 0; i < a.force_sources.size() && i < a.source_shown.size(); ++i) {
-            bool shown = a.source_shown[i] != 0;
-            if (ImGui::Checkbox(a.force_sources[i].c_str(), &shown)) {
-                a.source_shown[i] = shown ? 1 : 0;
+    ImGui::Indent();
+    if (a.force_sources.empty()) {
+        const TimelineState& tl = settings_->timeline;
+        ImGui::TextDisabled(tl.replay                 ? "No force data in replays."
+                            : tl.end_time > tl.start_time ? "No hydro force data for this model."
+                                                          : "Components appear once the run starts.");
+    } else {
+        // Components, each with the colour of its arrows. Hovering one
+        // highlights its arrows in the view.
+        for (size_t s = 0; s <= a.force_sources.size(); ++s) {
+            const bool total = s == a.force_sources.size();
+            const int source = total ? AnalysisState::kTotal : static_cast<int>(s);
+            ImGui::PushID(static_cast<int>(s));
+            SourceSwatch(source);
+            ImGui::SameLine();
+            if (total) {
+                ImGui::Checkbox("Total", &a.show_total);
+            } else if (s < a.source_shown.size()) {
+                bool shown = a.source_shown[s] != 0;
+                if (ImGui::Checkbox(a.force_sources[s].c_str(), &shown)) a.source_shown[s] = shown ? 1 : 0;
             }
-        }
-        if (!a.force_sources.empty()) {
-            ImGui::Checkbox("Total", &a.show_total);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Sum of all components listed above, shown or not.");
+                a.hovered_source = source;
+                if (total) ImGui::SetTooltip("Sum of all components, shown or not.");
             }
-            ImGui::Checkbox("Moments", &a.show_moments);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Moments about the centre of mass as double-headed\n"
-                                  "arrows (right-hand rule), with their own scale.");
-            }
-            ImGui::Checkbox("Lock scale", &a.lock_scale);
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Keep the current arrow scale. Otherwise the largest\n"
-                                  "load of the last 30 s sets it.");
-            }
+            ImGui::PopID();
         }
-        ImGui::Unindent();
+        ImGui::Checkbox("Moments", &a.show_moments);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Moments about the centre of mass as double-headed\n"
+                              "arrows (right-hand rule), with their own scale.");
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Lock scale", &a.lock_scale);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Keep the current arrow scale. Otherwise the largest\n"
+                              "load of the last 30 s sets it.");
+        }
+        ImGui::TextDisabled("Hover a component to highlight its arrows.");
     }
+    ImGui::Unindent();
 
-    ImGui::Checkbox("Trajectories", &a.show_trajectories);
+    if (ColumnToggle("Trails", m.body_trail, &moving, &on)) SetColumn(&m.body_trail, &moving, on);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Path of each moving body's centre of mass over the\n"
-                          "recorded frames up to the time shown.");
+                          "recorded frames up to the time shown.\n"
+                          "Per body: the Trail column in Scene.");
     }
-    if (a.show_trajectories) {
-        ImGui::Indent();
-        ImGui::SliderFloat("Trail", &a.trail_seconds, 2.0f, 600.0f, "%.0f s", ImGuiSliderFlags_Logarithmic);
-        ImGui::Unindent();
-    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::SliderFloat("##trail", &a.trail_seconds, 2.0f, 600.0f, "last %.0f s", ImGuiSliderFlags_Logarithmic);
 
     ImGui::Checkbox("Plots", &a.show_plots);
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Time histories of body motions and loads from the\n"
-                          "recorded frames (one point per rendered frame).");
+                          "recorded frames (one point per rendered frame).\n"
+                          "Follows the selected body.");
     }
 }
 

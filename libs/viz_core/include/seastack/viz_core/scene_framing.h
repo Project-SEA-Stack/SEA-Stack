@@ -196,25 +196,61 @@ inline constexpr double kWaterWavelengthFactor = 1.5;
 /// Still-water minimum side as a multiple of MeanPlanLength, so a small body
 /// with no wavelength to size from still sits on a sizeable patch.
 inline constexpr double kStillWaterPlanFactor = 5.0;
+/// Shorter patch side as a minimum fraction of the longer one, so a slender
+/// model does not sit on a thin strip of water.
+inline constexpr double kWaterMinAspect = 0.4;
 
-/// Square water patch that covers the model with some sea around it and at
-/// least kWaterWavelengthFactor wavelengths. With no wavelength (still water,
-/// wavelength_m <= 0) the side is at least kStillWaterPlanFactor mean plan sizes.
+/// Water patch that covers the model with some sea around it and, along each
+/// side, at least kWaterWavelengthFactor wavelengths. Each side follows the
+/// model's plan size along that axis, so a slender model gets a rectangle
+/// (no shorter than kWaterMinAspect of the long side) and the grid points are
+/// not spent on empty sea beside it. With no wavelength (still water,
+/// wavelength_m <= 0) each side is at least kStillWaterPlanFactor mean plan sizes.
 inline WaterExtent ComputeWaterExtent(const Bounds3& bounds, double wavelength_m) {
     WaterExtent w;
-    double side = std::max(kWaterModelFactor * ModelLengthScale(bounds),
-                           kWaterWavelengthFactor * std::max(wavelength_m, 0.0));
-    if (!(wavelength_m > 0.0)) {
-        side = std::max(side, kStillWaterPlanFactor * MeanPlanLength(bounds));
+    Vec3 size{kMinModelLength, kMinModelLength, kMinModelLength};
+    if (bounds.IsValid()) {
+        size = bounds.Size();
     }
-    w.width = side;
-    w.length = side;
+    const double wave_side = kWaterWavelengthFactor * std::max(wavelength_m, 0.0);
+    w.width = std::max(kWaterModelFactor * std::max(size[0], kMinModelLength), wave_side);
+    w.length = std::max(kWaterModelFactor * std::max(size[1], kMinModelLength), wave_side);
+    if (!(wavelength_m > 0.0)) {
+        const double still_side = kStillWaterPlanFactor * MeanPlanLength(bounds);
+        w.width = std::max(w.width, still_side);
+        w.length = std::max(w.length, still_side);
+    }
+    const double min_side = kWaterMinAspect * std::max(w.width, w.length);
+    w.width = std::max(w.width, min_side);
+    w.length = std::max(w.length, min_side);
     if (bounds.IsValid()) {
         const Vec3 c = bounds.Center();
         w.center_x = c[0];
         w.center_y = c[1];
     }
     return w;
+}
+
+/// Grid vertices along X and Y of a water patch.
+struct WaterGridCounts {
+    int nx = 2;
+    int ny = 2;
+};
+
+/// Vertex counts for a `width` x `length` [m] patch with about resolution^2
+/// vertices in total and near-square cells, so a rectangular patch costs the
+/// same as a square one at that resolution but has finer cells. A square
+/// patch gives resolution x resolution.
+inline WaterGridCounts ComputeWaterGridCounts(double width, double length, int resolution) {
+    const int n = std::max(resolution, 2);
+    WaterGridCounts c{n, n};
+    if (!(width > 0.0) || !(length > 0.0)) {
+        return c;
+    }
+    const double cell = std::sqrt(width * length) / (n - 1);
+    c.nx = std::max(2, static_cast<int>(std::lround(width / cell)) + 1);
+    c.ny = std::max(2, static_cast<int>(std::lround(length / cell)) + 1);
+    return c;
 }
 
 /// Mooring-line visual radii [m].
