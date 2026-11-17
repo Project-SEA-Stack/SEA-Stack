@@ -179,10 +179,20 @@ The v1.0.0 notes are unchanged:
   still come from the BEM solution at zero yaw, and excitation still uses
   the world wave direction rather than the direction relative to the hull.
   Wave phase is referenced to the BEM origin, so a body that drifts away
-  sees the waves at the origin, and there is no mean wave-drift force. A
-  free-floating hull can therefore drift in yaw (up to 26 deg in the Wigley
-  spreading demo) with only approximate forcing. Interpolation over relative
-  heading is planned for v1.2.
+  sees the waves at the origin, and there is no mean wave-drift force.
+  Interpolation over relative heading is planned for v1.2.
+- **A free-floating hull with no yaw restraint can spin.** Nothing in the
+  linear model resists slow yaw: there is no yaw restoring, and yaw
+  radiation damping is almost zero below the wave band. Second-order terms
+  from combined roll and pitch then build up a net yaw rate. They are not
+  treated consistently: Chrono applies the infinite-frequency added mass as
+  a constant matrix in its velocity coordinates, without the matching
+  gyroscopic term. Without yaw damping, the Wigley spreading hull turned
+  150-330 deg in 600 s for seven of eight wave seeds tried, in either
+  direction; the earlier "up to 26 deg" was one seed. Both Wigley demos now include a
+  linear yaw damping of 1e7 N m s/rad (time constant about 20 s), which
+  stands in for a mooring and keeps the yaw within about 22 deg. Moor
+  free-floating models or add yaw damping.
 - **The trimaran demo's BEM file has a single heading.** Its spread sea is
   forced as if every component came from 0 deg, so the hull sees only
   head-sea excitation.
