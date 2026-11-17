@@ -34,7 +34,6 @@ class SeastackViewer : public OverlayBuilder {
         double fov_deg = 40.0;    ///< Vertical field of view [deg]
         std::string font_path;    ///< ImGui TrueType font; empty = ImGui default
         float font_size = 15.0f;  ///< ImGui font size [px at 100 % display scale]
-        std::string skybox_path;  ///< KTX cubemap shown by themes with a sky; empty = none
     };
 
     /// ImGui drawing callback, called once per rendered frame.

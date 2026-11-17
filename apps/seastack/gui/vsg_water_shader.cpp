@@ -1,7 +1,7 @@
 // =============================================================================
 // SEA-Stack VSG Water Shader - Implementation
 // =============================================================================
-// Pipeline built by hand as in vsg_skybox.cpp; GLSL is compiled at run time
+// Pipeline built by hand (after vsgExamples' vsgskybox); GLSL is compiled at run time
 // by VSG's shader compiler. All colours are linear (the swapchain is sRGB).
 // =============================================================================
 

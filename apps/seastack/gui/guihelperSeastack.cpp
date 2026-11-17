@@ -126,7 +126,6 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
     options.height = kWindowHeight;
     options.fov_deg = kCameraFovDeg;
     options.font_path = ::chrono::GetChronoDataFile("vsg/fonts/open-sans/OpenSans-Regular.ttf");
-    options.skybox_path = ::chrono::GetChronoDataFile("vsg/textures/vsg_skybox.ktx");  // as the Chrono viewer
     auto draw_gui = [this]() {
         gui_->Draw();
         HandlePicking();
