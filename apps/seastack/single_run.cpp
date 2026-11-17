@@ -723,9 +723,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         std::shared_ptr<seastack::viz::UI> pui;
         bool gui_init_ok = false;
         try {
-            seastack::viz::ViewerBackend backend = seastack::viz::ViewerBackend::kChrono;
+            seastack::viz::ViewerBackend backend = seastack::viz::ViewerBackend::kSeastack;
             if (!seastack::viz::ParseViewerBackend(config.viewer, &backend)) {
-                seastack::infra::cli::LogWarning("[viz] Unknown viewer '" + config.viewer + "'; using chrono.");
+                seastack::infra::cli::LogWarning("[viz] Unknown viewer '" + config.viewer + "'; using seastack.");
             }
             pui = seastack::viz::CreateUI(!nogui, backend);
         } catch (const std::exception& e) {

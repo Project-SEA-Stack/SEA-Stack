@@ -48,7 +48,7 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::LogInfo("      --doctor         Run environment/package diagnostics and exit");
     seastack::infra::cli::LogInfo("      --campaign FILE  Generate a power matrix from a campaign YAML");
     seastack::infra::cli::LogInfo("      --nogui          Disable GUI visualization");
-    seastack::infra::cli::LogInfo("      --viewer=NAME    GUI renderer: chrono (default) or seastack (experimental)");
+    seastack::infra::cli::LogInfo("      --viewer=NAME    GUI renderer: seastack (default) or chrono (fallback, to be removed)");
     seastack::infra::cli::LogInfo("      --replay FILE    Replay a results .h5 in the SEA-Stack viewer (no simulation)");
     seastack::infra::cli::LogInfo("      --schedule FILE  Apply TSDA/RSDA parameter changes from a schedule YAML");
     seastack::infra::cli::LogInfo("      --log            Enable detailed logging to file");
@@ -113,7 +113,7 @@ struct CLIArgs {
     bool trace = false;
     std::string output_level;
     bool profile = false;
-    std::string viewer;  // --viewer=chrono|seastack; empty = default (chrono)
+    std::string viewer;  // --viewer=seastack|chrono; empty = default (seastack)
 };
 
 static CLIArgs ParseArguments(int argc, char* argv[]) {

@@ -131,6 +131,20 @@ void GUI::Init(::chrono::ChSystem* system, const char* title) {
             pImpl->SetViewerOptions(viewer_options_);
         }
     }
+    // Until the SEA-Stack viewer has run on every platform, a start-up failure
+    // (e.g. a shader the driver rejects) falls back to the Chrono viewer.
+    if (backend_ == ViewerBackend::kSeastack && system) {
+        try {
+            pImpl->Init(*this, system, title);
+            return;
+        } catch (const std::exception& e) {
+            seastack::infra::cli::LogWarning(std::string("SEA-Stack viewer failed to start (") + e.what() +
+                                             "); using the Chrono viewer.");
+        }
+        backend_ = ViewerBackend::kChrono;
+        pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+        pImpl->SetViewerOptions(viewer_options_);
+    }
 #endif
     pImpl->Init(*this, system, title);
 }

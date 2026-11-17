@@ -346,7 +346,7 @@ int RunFromYAML(int argc, char* argv[]) {
         std::string cli_output_level;
         std::string schedule_file;
         bool nogui = false;
-        std::string viewer = "chrono";
+        std::string viewer = "seastack";
         bool quiet_mode = false;
         bool enable_logging = false;
         bool debug_mode = false;

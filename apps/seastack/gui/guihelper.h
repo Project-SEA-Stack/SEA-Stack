@@ -20,10 +20,10 @@ class RuntimeControls;
 
 namespace seastack::viz {
 
-/// Which renderer draws the GUI (command line: --viewer=chrono|seastack).
+/// Which renderer draws the GUI (command line: --viewer=seastack|chrono).
 enum class ViewerBackend {
-    kChrono,    ///< Chrono::VSG visual system (default)
-    kSeastack,  ///< SEA-Stack's own VSG viewer (experimental)
+    kChrono,    ///< Chrono::VSG visual system (fallback; to be removed)
+    kSeastack,  ///< SEA-Stack's own VSG viewer (default)
 };
 
 /// Parse "chrono" or "seastack"; returns false for anything else.
@@ -174,7 +174,7 @@ class GUIImpl;
 /// SEA-Stack Graphical User Interface.
 class GUI : public UI {
   public:
-    explicit GUI(ViewerBackend backend = ViewerBackend::kChrono);
+    explicit GUI(ViewerBackend backend = ViewerBackend::kSeastack);
     GUI(const GUI&)            = delete;
     GUI& operator=(const GUI&) = delete;
 
@@ -205,6 +205,6 @@ class GUI : public UI {
  *
  */
 std::shared_ptr<seastack::viz::UI> CreateUI(bool visualizationOn = true,
-                                            ViewerBackend backend = ViewerBackend::kChrono);
+                                            ViewerBackend backend = ViewerBackend::kSeastack);
 
 }  // namespace seastack::viz

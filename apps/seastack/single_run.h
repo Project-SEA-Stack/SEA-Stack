@@ -58,7 +58,7 @@ struct SingleRunConfig {
     /// When true (e.g. power-matrix cells), hide repetitive startup banners unless debug_mode.
     bool concise_cli    = false;
     bool nogui          = true;
-    std::string viewer  = "chrono";  ///< GUI renderer: "chrono" or "seastack"
+    std::string viewer  = "seastack";  ///< GUI renderer: "seastack" or "chrono"
     bool debug_mode     = false;
     bool trace_mode     = false;
     bool profile_mode   = false;
