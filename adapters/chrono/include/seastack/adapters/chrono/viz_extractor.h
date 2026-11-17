@@ -11,6 +11,7 @@
 
 namespace chrono {
 class ChBody;
+class ChLinkDistance;
 class ChLinkTSDA;
 class ChSystem;
 }  // namespace chrono
@@ -46,6 +47,8 @@ ForceProvider MakeHydroForceProvider(HydroSystem* hydro);
 /// TSDAs that carry a Chrono point-point visual (SEGMENT or SPRING) are
 /// exported as cable_lines (hoist ropes / PTO springs), separate from MoorDyn
 /// mooring_lines, so the SEA-Stack viewer can draw Chrono-style glyphs.
+/// Distance constraints with SEGMENT visuals follow them in cable_lines
+/// (tension = magnitude of the constraint reaction force).
 class VizExtractor {
   public:
     /// @param system  Chrono system (must outlive the extractor).
@@ -76,6 +79,9 @@ class VizExtractor {
     std::vector<std::shared_ptr<::chrono::ChBody>> bodies_;
     /// TSDAs with a SEGMENT/SPRING visual; indices match scene_.cable_lines.
     std::vector<std::shared_ptr<::chrono::ChLinkTSDA>> tsda_cables_;
+    /// Distance constraints with SEGMENT visuals; cable_lines index
+    /// tsda_cables_.size() + i.
+    std::vector<std::shared_ptr<::chrono::ChLinkDistance>> distance_cables_;
     seastack::viz::SceneDescription scene_;
 };
 
@@ -85,7 +91,8 @@ bool IsWaterSurfaceBody(const ::chrono::ChBody& body);
 /// Visual content of `system` that VizExtractor cannot export, so the
 /// SEA-Stack viewer would not show it: body shapes other than box, sphere,
 /// cylinder and triangle mesh; FEA meshes; visual shapes on links other than
-/// TSDA SEGMENT/SPRING glyphs; other physics items with visual shapes. Each
+/// TSDA SEGMENT/SPRING glyphs and distance-constraint SEGMENTs; other physics
+/// items with visual shapes. Each
 /// entry is a short description for the user; empty = everything is drawable.
 std::vector<std::string> FindUndrawableItems(const ::chrono::ChSystem& system);
 

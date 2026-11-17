@@ -10,6 +10,7 @@
 #include <chrono/geometry/ChTriangleMeshConnected.h>
 #include <chrono/physics/ChBody.h>
 #include <chrono/physics/ChBodyAuxRef.h>
+#include <chrono/physics/ChLinkDistance.h>
 #include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChSystemNSC.h>
 
@@ -190,6 +191,44 @@ int main() {
         TEST_NEAR(cable_frame.cable_lines[0].point2[2], -2.0, 1e-12, "cable tracks endpoint motion");
 
         TEST_ASSERT(seastack::chrono::FindUndrawableItems(cable_sys).empty(), "SEGMENT TSDA is drawable");
+    }
+
+    // Distance constraint with a SEGMENT visual (as Chrono's YAML parser builds
+    // it) follows the TSDA cables; one without a visual is ignored.
+    {
+        ::chrono::ChSystemNSC dist_sys;
+        auto a = chrono_types::make_shared<::chrono::ChBody>();
+        a->SetPos({0.0, 0.0, 10.0});
+        a->SetFixed(true);
+        dist_sys.AddBody(a);
+        auto b = chrono_types::make_shared<::chrono::ChBody>();
+        b->SetPos({3.0, 0.0, 0.0});
+        dist_sys.AddBody(b);
+
+        auto hoist = chrono_types::make_shared<::chrono::ChLinkTSDA>();
+        hoist->Initialize(a, b, false, {0.0, 0.0, 10.0}, {3.0, 0.0, 0.0});
+        hoist->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeSegment>());
+        dist_sys.AddLink(hoist);
+
+        auto tether = chrono_types::make_shared<::chrono::ChLinkDistance>();
+        tether->SetName("tether");
+        tether->Initialize(a, b, false, {0.0, 0.0, 10.0}, {3.0, 0.0, 1.0});
+        tether->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeSegment>());
+        dist_sys.AddLink(tether);
+
+        auto bare = chrono_types::make_shared<::chrono::ChLinkDistance>();
+        bare->Initialize(a, b, false, {1.0, 0.0, 10.0}, {3.0, 0.0, 0.0});
+        dist_sys.AddLink(bare);
+
+        VizExtractor dist_ex(&dist_sys);
+        TEST_ASSERT(dist_ex.Scene().cable_lines.size() == 2, "TSDA and visualised distance constraint");
+        TEST_ASSERT(dist_ex.Scene().cable_lines[1].kind == CableKind::kSegment, "distance constraint: SEGMENT");
+        const VizFrame dist_frame = dist_ex.Capture(0);
+        TEST_ASSERT(IsConsistent(dist_ex.Scene(), dist_frame), "distance frame matches scene");
+        TEST_NEAR(dist_frame.cable_lines[1].point1[2], 10.0, 1e-12, "distance endpoint 1");
+        TEST_NEAR(dist_frame.cable_lines[1].point2[0], 3.0, 1e-12, "distance endpoint 2 x");
+        TEST_NEAR(dist_frame.cable_lines[1].point2[2], 1.0, 1e-12, "distance endpoint 2 z");
+        TEST_ASSERT(seastack::chrono::FindUndrawableItems(dist_sys).empty(), "distance SEGMENT is drawable");
     }
 
     // Undrawable content is reported so the GUI can fall back to the Chrono viewer.

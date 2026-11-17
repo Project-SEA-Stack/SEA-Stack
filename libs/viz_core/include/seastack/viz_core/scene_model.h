@@ -165,7 +165,8 @@ struct CableLineDescription {
 struct SceneDescription {
     std::vector<BodyDescription> bodies;
     std::vector<MooringLineDescription> mooring_lines;
-    /// Hoist ropes / PTO springs (Chrono TSDA visuals); separate from MoorDyn.
+    /// Hoist ropes / PTO springs (Chrono TSDA visuals), then distance
+    /// constraints; separate from MoorDyn.
     std::vector<CableLineDescription> cable_lines;
     /// Names of the force sources in VizFrame::body_wrenches, e.g. "Excitation";
     /// empty until the first forces are known.

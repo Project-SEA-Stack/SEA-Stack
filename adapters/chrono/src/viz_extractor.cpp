@@ -9,6 +9,7 @@
 #include <chrono/assets/ChVisualShapeSphere.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/physics/ChBody.h>
+#include <chrono/physics/ChLinkDistance.h>
 #include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChSystem.h>
 
@@ -161,6 +162,20 @@ bool DescribeCableVisual(const ::chrono::ChLinkTSDA& tsda, viz::CableLineDescrip
     return false;
 }
 
+/// True if `link` has visual shapes and all of them are straight segments.
+bool HasOnlySegmentVisuals(const ::chrono::ChPhysicsItem& link) {
+    auto model = link.GetVisualModel();
+    if (!model || model->GetNumShapes() == 0) {
+        return false;
+    }
+    for (const auto& instance : model->GetShapeInstances()) {
+        if (!std::dynamic_pointer_cast<::chrono::ChVisualShapeSegment>(instance.shape)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 bool IsWaterSurfaceBody(const ::chrono::ChBody& body) {
@@ -207,9 +222,14 @@ std::vector<std::string> FindUndrawableItems(const ::chrono::ChSystem& system) {
         }
         auto tsda = std::dynamic_pointer_cast<::chrono::ChLinkTSDA>(link);
         viz::CableLineDescription unused;
-        if (!tsda || !DescribeCableVisual(*tsda, &unused)) {
-            items.push_back(ItemName(*link, "link") + " visual");
+        if (tsda && DescribeCableVisual(*tsda, &unused)) {
+            continue;
         }
+        auto distance = std::dynamic_pointer_cast<::chrono::ChLinkDistance>(link);
+        if (distance && HasOnlySegmentVisuals(*distance)) {
+            continue;
+        }
+        items.push_back(ItemName(*link, "link") + " visual");
     }
     if (!system.GetMeshes().empty()) {
         items.push_back(std::to_string(system.GetMeshes().size()) + " FEA mesh(es)");
@@ -251,6 +271,14 @@ VizExtractor::VizExtractor(::chrono::ChSystem* system, viz::MooringVizProvider m
             }
             tsda_cables_.push_back(std::move(tsda));
             scene_.cable_lines.push_back(desc);
+        }
+        // Distance constraints (Chrono's YAML parser gives each a SEGMENT visual).
+        for (const auto& link : system_->GetLinks()) {
+            auto distance = std::dynamic_pointer_cast<::chrono::ChLinkDistance>(link);
+            if (distance && HasOnlySegmentVisuals(*distance)) {
+                distance_cables_.push_back(std::move(distance));
+                scene_.cable_lines.push_back(viz::CableLineDescription{});
+            }
         }
     }
     // Model bounds from the first frame, so they match what is drawn.
@@ -357,13 +385,20 @@ viz::VizFrame VizExtractor::Capture(int64_t step) {
             out.node_tensions = provider_lines[i].node_tensions;
         }
     }
-    frame.cable_lines.resize(tsda_cables_.size());
+    frame.cable_lines.resize(tsda_cables_.size() + distance_cables_.size());
     for (size_t i = 0; i < tsda_cables_.size(); ++i) {
         const auto& tsda = tsda_cables_[i];
         auto& out = frame.cable_lines[i];
         out.point1 = ToVec3(tsda->GetPoint1Abs());
         out.point2 = ToVec3(tsda->GetPoint2Abs());
         out.tension = std::abs(tsda->GetForce());
+    }
+    for (size_t i = 0; i < distance_cables_.size(); ++i) {
+        const auto& distance = distance_cables_[i];
+        auto& out = frame.cable_lines[tsda_cables_.size() + i];
+        out.point1 = ToVec3(distance->GetEndPoint1Abs());
+        out.point2 = ToVec3(distance->GetEndPoint2Abs());
+        out.tension = distance->GetReaction2().force.Length();
     }
     if (forces_) {
         const ForceSample sample = forces_();
