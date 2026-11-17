@@ -940,10 +940,12 @@ void AnimatedWaterSurface::UpdateStyle(const std::shared_ptr<seastack::hydro::Wa
     if (!initialized_ || !builder_) {
         return;
     }
-    // Elevation scale of the full sea at the visual scale, without the
-    // start-up ramp, so the legend does not step up while the sea builds.
-    // Without discrete components: the CPU path's running range.
-    const double visual_scale = settings ? settings->wave_visual_scale : 1.0;
+    // Elevation scale of the full sea at the visual scale and the live
+    // wave-height envelope e(t), without the start-up ramp, so the legend does
+    // not step up while the sea builds. Without discrete components: the CPU
+    // path's running range.
+    const double envelope = wave ? wave->GetAmplitudeEnvelope()->Value(t) : 1.0;
+    const double visual_scale = (settings ? settings->wave_visual_scale : 1.0) * envelope;
     double scale = 0.0;
     double peak = 0.0;
     if (wave && CollectDisplayWaveComponents(*wave, t, kVizFrequencyLimit, visual_scale, &legend_components_)) {
