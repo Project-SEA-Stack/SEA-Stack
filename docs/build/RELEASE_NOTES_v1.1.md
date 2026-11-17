@@ -140,7 +140,7 @@ User guide: [docs/usage/GUI.md](../usage/GUI.md).
   Elevation style that colours the sea by height with a legend, and grid
   detail set from the wavelength so model and full scale look alike.
 - **Usability.** Dark and light themes, a docked transport bar and
-  inspector, body frames and labels, and model-scaled
+  inspector, soft shadows between bodies, body frames and labels, and model-scaled
   camera framing. Viewer preferences are kept between runs. Playback
   speed runs from 0.05x to unlimited. The status bar reports active wall
   time; `/meta/run` records setup, active and paused time.

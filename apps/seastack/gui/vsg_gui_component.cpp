@@ -87,6 +87,7 @@ ViewerPreferences PreferencesFromSettings(const ViewerSettings& s) {
     ViewerPreferences p;
     p.theme = s.theme;
     p.water_wireframe = s.show_water_grid;
+    p.shadows = s.show_shadows;
     p.water_detail = s.water_detail;
     p.water_style = s.water_style;
     p.water_palette = s.water_palette;
@@ -114,6 +115,7 @@ void ApplyPreferences(const ViewerPreferences& p, ViewerSettings* s) {
         s->theme_changed = true;
     }
     s->show_water_grid = p.water_wireframe;
+    s->show_shadows = p.shadows;
     s->water_style = p.water_style;
     s->water_palette = p.water_palette;
     s->water_contours = p.water_contours;
@@ -1552,6 +1554,13 @@ void SeastackGuiComponent::RenderScenePanel() {
         ImGui::Indent();
         RenderMooringColours();
         ImGui::Unindent();
+    }
+    if (!vsys_) {
+        ImGui::Checkbox("Shadows", &settings_->show_shadows);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Soft shadows from the main light, cast by the bodies onto\n"
+                              "themselves and each other (not onto the water).");
+        }
     }
     RenderWaterRows();
 }

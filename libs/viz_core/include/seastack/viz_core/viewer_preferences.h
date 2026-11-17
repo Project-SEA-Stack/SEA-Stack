@@ -23,6 +23,7 @@ namespace seastack::viz {
 struct ViewerPreferences {
     VisualTheme theme = VisualTheme::kDark;
     bool water_wireframe = true;
+    bool shadows = true;  ///< Bodies cast soft shadows
     WaterDetail water_detail = WaterDetail::kNormal;  ///< Grid points per wavelength
     WaterStyle water_style = WaterStyle::kElevation;
     WaterPalette water_palette = WaterPalette::kDeep;
@@ -44,7 +45,8 @@ struct ViewerPreferences {
     bool open_display = false;
 
     bool operator==(const ViewerPreferences& o) const {
-        return theme == o.theme && water_wireframe == o.water_wireframe && water_detail == o.water_detail &&
+        return theme == o.theme && water_wireframe == o.water_wireframe && shadows == o.shadows &&
+               water_detail == o.water_detail &&
                water_style == o.water_style && water_palette == o.water_palette &&
                water_contours == o.water_contours &&
                update_hz == o.update_hz && smooth_slow_motion == o.smooth_slow_motion &&
@@ -168,6 +170,8 @@ inline ViewerPreferences ParseViewerPreferences(const std::string& text) {
             ParseVisualTheme(value, &p.theme);
         } else if (key == "water_wireframe") {
             ParseBool(value, &p.water_wireframe);
+        } else if (key == "shadows") {
+            ParseBool(value, &p.shadows);
         } else if (key == "water_detail") {
             ParseWaterDetail(value, &p.water_detail);
         } else if (key == "water_style") {
@@ -217,6 +221,7 @@ inline std::string FormatViewerPreferences(const ViewerPreferences& p) {
     out << "# SEA-Stack viewer preferences (visual only). Delete this file to reset.\n"
         << "theme = " << VisualThemeName(p.theme) << "\n"
         << "water_wireframe = " << b(p.water_wireframe) << "\n"
+        << "shadows = " << b(p.shadows) << "\n"
         << "water_detail = " << WaterDetailName(p.water_detail) << "\n"
         << "water_style = " << (p.water_style == WaterStyle::kShaded ? "shaded" : "elevation") << "\n"
         << "water_palette = " << WaterPaletteName(p.water_palette) << "\n"

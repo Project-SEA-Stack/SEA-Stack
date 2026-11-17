@@ -90,6 +90,10 @@ class SeastackViewer : public OverlayBuilder {
     /// Clear colour, skybox visibility and light levels for `theme`.
     void ApplySceneTheme(const SceneTheme& theme);
 
+    /// Soft shadows from the key light, cast by the bodies onto themselves
+    /// and each other (not onto the water). Visual only.
+    void SetShadows(bool on);
+
     // OverlayBuilder: overlays are drawn after the bodies so translucent
     // water blends over them.
     vsg::ref_ptr<vsg::Group> OverlayScene() override { return overlay_root_; }
@@ -149,6 +153,7 @@ class SeastackViewer : public OverlayBuilder {
     vsg::ref_ptr<vsg::LookAt> look_at_;
     vsg::ref_ptr<vsg::Trackball> trackball_;
     vsg::ref_ptr<vsg::RenderGraph> render_graph_;
+    vsg::ref_ptr<vsg::View> view_;  ///< The scene view; its ViewDependentState renders the shadow maps
     vsg::ref_ptr<vsg::Group> scene_root_;
     vsg::ref_ptr<vsg::Group> overlay_root_;
     vsg::ref_ptr<vsg::Switch> sky_switch_;  ///< Holds the skybox, if it loaded
@@ -156,6 +161,10 @@ class SeastackViewer : public OverlayBuilder {
     vsg::ref_ptr<vsg::SharedObjects> shared_objects_;
 
     vsg::ref_ptr<vsg::AmbientLight> ambient_light_;
+    vsg::ref_ptr<vsg::DirectionalLight> key_light_;
+    vsg::ref_ptr<vsg::ShadowSettings> key_shadows_;  ///< Assigned to key_light_ while shadows are on
+    vsg::dvec3 model_center_;     ///< Centre of the model bounds at Initialize() [m]
+    double model_radius_ = 10.0;  ///< Radius of the model bounds at Initialize() [m]
     vsg::ref_ptr<vsg::DirectionalLight> fill_light_;
     vsg::ref_ptr<vsg::DirectionalLight> rim_light_;
     WaterShader water_shader_;  ///< Shared by every water mesh; eye updated each frame

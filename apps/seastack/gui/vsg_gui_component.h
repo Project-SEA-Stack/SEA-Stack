@@ -175,6 +175,7 @@ struct InspectorLayout {
 /// and passed by pointer to GUI components and the water surface renderer.
 struct ViewerSettings {
     // --- Display Options ---
+    bool show_shadows = true;         ///< Bodies cast soft shadows (SEA-Stack viewer)
     bool show_water = true;           ///< Toggle water surface visibility
     bool show_water_grid = true;      ///< Show wireframe overlay on water surface
     bool show_water_status = false;   ///< Show status line in overlay

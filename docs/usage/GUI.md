@@ -153,6 +153,10 @@ The Scene section sets how the water is drawn.
   support are greyed out, with the reason. This is a visual approximation:
   diffraction is not drawn, and nothing feeds back into the simulation.
 
+**Shadows** (Scene section, on by default) draws soft shadows from the main
+light. Bodies shadow themselves and each other; they cast no shadow on the
+water. Turn it off on a slow GPU.
+
 ## Model YAML options
 
 Optional keys under `simulation.visualization` in the simulation YAML:

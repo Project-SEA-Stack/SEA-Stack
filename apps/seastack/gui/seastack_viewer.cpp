@@ -198,6 +198,22 @@ float SrgbToLinear(float c) {
     return (c <= 0.04045f) ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
 }
 
+// Key-light shadows. Cascaded shadow maps cover the view out to the far side
+// of the model, so their resolution is spent on the bodies, not the sea.
+constexpr uint32_t kShadowCascades = 3;
+constexpr double kShadowPenumbraPerRadius = 0.015;  // penumbra radius / model radius [-]
+constexpr double kShadowRangeRadii = 2.0;           // shadow range beyond the model centre [model radii]
+
+// vsg::ViewDependentState renders shadow maps with traversal mask 0x1; Switch
+// children with this mask are drawn in the main view only and cast no shadow.
+constexpr vsg::Mask kNoShadowMask = vsg::MASK_ALL & ~vsg::Mask{0x1};
+
+vsg::ref_ptr<vsg::Switch> WithoutShadow(vsg::ref_ptr<vsg::Node> node) {
+    auto s = vsg::Switch::create();
+    s->addChild(kNoShadowMask, node);
+    return s;
+}
+
 /// Directional light shining from (azimuth, elevation) [rad] in the Z-up world
 /// frame; VSG directions point from the light into the scene.
 vsg::ref_ptr<vsg::DirectionalLight> MakeDirectionalLight(const char* name, double azimuth, double elevation,
@@ -239,14 +255,23 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     // ApplySceneTheme. Resolution independent, unlike a cubemap.
     sky_switch_ = vsg::Switch::create();
     sky_switch_->addChild(true, water_shader_.CreateSkyNode());
-    scene_root_->addChild(sky_switch_);
+    scene_root_->addChild(WithoutShadow(sky_switch_));
     ambient_light_ = vsg::AmbientLight::create();
     ambient_light_->name = "ambient";
     ambient_light_->color.set(1.0f, 1.0f, 1.0f);
     ambient_light_->intensity = 0.2f;
     scene_root_->addChild(ambient_light_);
-    scene_root_->addChild(
-        MakeDirectionalLight("key light", kKeyAzimuth, kKeyElevation, kKeyIntensity, vsg::vec3(1.0f, 1.0f, 1.0f)));
+    if (scene.model_bounds.IsValid()) {
+        const Vec3 c = scene.model_bounds.Center();
+        model_center_.set(c[0], c[1], c[2]);
+        model_radius_ = std::max(scene.model_bounds.Radius(), 0.1);
+    }
+    key_light_ =
+        MakeDirectionalLight("key light", kKeyAzimuth, kKeyElevation, kKeyIntensity, vsg::vec3(1.0f, 1.0f, 1.0f));
+    key_shadows_ =
+        vsg::SoftShadows::create(kShadowCascades, static_cast<float>(kShadowPenumbraPerRadius * model_radius_));
+    key_light_->shadowSettings = key_shadows_;
+    scene_root_->addChild(key_light_);
     fill_light_ = MakeDirectionalLight(kFillLightName, kFillAzimuth, kFillElevation, kFillIntensity,
                                        vsg::vec3(0.85f, 0.90f, 1.00f));
     rim_light_ = MakeDirectionalLight(kRimLightName, kRimAzimuth, kRimElevation, kRimIntensity,
@@ -288,7 +313,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
         body_transforms_.push_back(transform);
     }
     overlay_root_ = vsg::Group::create();
-    scene_root_->addChild(overlay_root_);
+    scene_root_->addChild(WithoutShadow(overlay_root_));
     // Frame triads last: drawn without a depth test, so they show through hulls and water.
     frame_switch_ = vsg::Switch::create();
     frame_transforms_.clear();
@@ -299,7 +324,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
         frame_transforms_.push_back(transform);
     }
     body_axes_.assign(num_bodies_, 0);
-    scene_root_->addChild(frame_switch_);
+    scene_root_->addChild(WithoutShadow(frame_switch_));
 
     // ---- Camera ----
     look_at_ = vsg::LookAt::create(vsg::dvec3(10.0, -10.0, 10.0), vsg::dvec3(0.0, 0.0, 0.0), vsg::dvec3(0.0, 0.0, 1.0));
@@ -312,6 +337,11 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     // ---- Render graph and ImGui overlay ----
     render_graph_ = vsg::createRenderGraphForView(window_, camera_, scene_root_, VK_SUBPASS_CONTENTS_INLINE,
                                                   false /* no headlight */);
+    for (auto& child : render_graph_->children) {
+        if (auto view = child.cast<vsg::View>()) {
+            view_ = view;
+        }
+    }
     auto command_graph = vsg::CommandGraph::create(window_, render_graph_);
 
     ImGui::CreateContext();
@@ -486,7 +516,7 @@ SeastackViewer::MeshArrays SeastackViewer::UnsharedArrays(const TriangleMesh& me
     MeshArrays a;
     a.vertices = vsg::vec3Array::create(n);
     a.normals = vsg::vec3Array::create(n);
-    a.texcoords = vsg::vec2Array::create(n, vsg::vec2(0.0f, 0.0f));
+    a.texcoords = vsg::vec2Array::create(n);
     a.colors = vsg::vec4Array::create(n, vsg::vec4(1.0f, 1.0f, 1.0f, 1.0f));
     a.indices = vsg::uintArray::create(n);
     for (size_t f = 0; f < num_faces; ++f) {
@@ -497,6 +527,21 @@ SeastackViewer::MeshArrays SeastackViewer::UnsharedArrays(const TriangleMesh& me
             (*a.vertices)[c] = vsg::vec3(static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2]));
             (*a.normals)[c] = vsg::vec3(static_cast<float>(nn[0]), static_cast<float>(nn[1]), static_cast<float>(nn[2]));
             (*a.indices)[c] = static_cast<uint32_t>(c);
+        }
+        // The PBR shader builds the tangent frame for soft-shadow sampling from
+        // texture coordinate gradients; constant coordinates make it NaN and
+        // turn shadows off. Project each face onto the coordinate plane it is
+        // closest to [m], so every face has a valid frame (bodies are untextured).
+        const vsg::vec3& p0 = (*a.vertices)[3 * f];
+        const vsg::vec3 face_normal = vsg::cross((*a.vertices)[3 * f + 1] - p0, (*a.vertices)[3 * f + 2] - p0);
+        const float ax = std::abs(face_normal.x);
+        const float ay = std::abs(face_normal.y);
+        const float az = std::abs(face_normal.z);
+        for (size_t c = 3 * f; c < 3 * f + 3; ++c) {
+            const vsg::vec3& q = (*a.vertices)[c];
+            (*a.texcoords)[c] = (ax >= ay && ax >= az) ? vsg::vec2(q.y, q.z)
+                                : (ay >= az)           ? vsg::vec2(q.x, q.z)
+                                                       : vsg::vec2(q.x, q.y);
         }
     }
     return a;
@@ -555,7 +600,7 @@ vsg::ref_ptr<vsg::Node> SeastackViewer::CreatePbrNode(const MeshArrays& arrays, 
 
     auto config = vsg::GraphicsPipelineConfigurator::create(pbr_shader_set_);
     config->shaderHints->defines.insert("VSG_TWO_SIDED_LIGHTING");
-    SetPipelineStates states;
+    config->shaderHints->defines.insert("VSG_SHADOWS_SOFT");    SetPipelineStates states;
     states.blend = shape.color[3] < 1.0f;
     states.depth_test = !on_top;
     config->accept(states);
@@ -710,6 +755,10 @@ bool SeastackViewer::RenderFrame() {
         viewer_->handleEvents();
         if (look_at_) {
             water_shader_.SetEye(look_at_->eye);  // after the trackball moved the camera
+            if (view_ && view_->viewDependentState) {
+                view_->viewDependentState->maxShadowDistance =
+                    vsg::length(look_at_->eye - model_center_) + kShadowRangeRadii * model_radius_;
+            }
         }
         viewer_->update();
         viewer_->recordAndSubmit();
@@ -788,6 +837,12 @@ void SeastackViewer::SetClipPlanes(const ClipPlanes& clip) {
     if (auto* perspective = dynamic_cast<vsg::Perspective*>(camera_->projectionMatrix.get())) {
         perspective->nearDistance = clip.near_m;
         perspective->farDistance = clip.far_m;
+    }
+}
+
+void SeastackViewer::SetShadows(bool on) {
+    if (key_light_) {
+        key_light_->shadowSettings = on ? key_shadows_ : vsg::ref_ptr<vsg::ShadowSettings>();
     }
 }
 

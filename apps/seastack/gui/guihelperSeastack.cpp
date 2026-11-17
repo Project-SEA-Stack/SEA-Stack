@@ -714,6 +714,7 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
         viewer_->ApplySceneTheme(GetSceneTheme(viewer_settings_->theme));
         viewer_settings_->theme_changed = false;
     }
+    viewer_->SetShadows(viewer_settings_->show_shadows);
     return viewer_->RenderFrame();
 }
 

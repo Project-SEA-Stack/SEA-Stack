@@ -25,6 +25,7 @@ int main() {
         ViewerPreferences p;
         p.theme = VisualTheme::kLight;
         p.water_wireframe = false;
+        p.shadows = false;
         p.water_detail = WaterDetail::kFine;
         p.water_style = WaterStyle::kShaded;
         p.water_palette = WaterPalette::kViridis;
