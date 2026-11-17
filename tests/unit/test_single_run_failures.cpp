@@ -9,6 +9,8 @@
  *   F2  CurrentExceptionMessage reads std::exception and vsg::Exception; the
  *       latter is not a std::exception, so `catch (const std::exception&)`
  *       let viewer start-up and replay failures escape.
+ *   F3  A failure while recording the replay data (/visualization) drops only
+ *       that group; the run succeeds and /results is written.
  */
 
 #include <seastack/config.h>
@@ -21,8 +23,12 @@
 #include <vsg/core/Exception.h>
 #endif
 
+#include <seastack/infra/logging.h>
+
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -78,6 +84,21 @@ long long RecordedSamples(const fs::path& dir) {
     return -1;
 }
 
+/// True if the one .h5 in `dir` has an object at `path`.
+bool HasObject(const fs::path& dir, const std::string& path) {
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (entry.path().extension() != ".h5") continue;
+        try {
+            H5::Exception::dontPrint();
+            H5::H5File file(entry.path().string(), H5F_ACC_RDONLY);
+            return file.nameExists(path);
+        } catch (const H5::Exception&) {
+            return false;
+        }
+    }
+    return false;
+}
+
 fs::path FreshDir(const std::string& name) {
     const fs::path dir = fs::temp_directory_path() / ("seastack_test_single_run_failures_" + name);
     std::error_code ec;
@@ -90,6 +111,17 @@ fs::path FreshDir(const std::string& name) {
 
 int main() {
     std::cout << "test_single_run_failures\n";
+    const fs::path log_path = fs::temp_directory_path() / "seastack_test_single_run_failures.log";
+    {
+        std::error_code ec;
+        fs::remove(log_path, ec);
+        seastack::infra::LoggingConfig log_cfg;
+        log_cfg.log_file_path = log_path.string();
+        log_cfg.enable_colors = false;
+        if (!seastack::infra::Initialize(log_cfg)) {
+            std::cerr << "logging initialization failed\n";
+        }
+    }
 
     {  // F1
         const fs::path out = FreshDir("viewer");
@@ -124,6 +156,27 @@ int main() {
                         vsg_msg.find("-3") != std::string::npos,
                     "F2: vsg::Exception message and result: " + vsg_msg);
 #endif
+    }
+
+    {  // F3
+        const fs::path out = FreshDir("visual_recording");
+        seastack::app::SingleRunConfig cfg = Rm3Regular(out);
+        cfg.test_fail_visual_recording = true;
+        const seastack::app::SingleRunResult r = seastack::app::RunSingleCase(cfg);
+        TEST_ASSERT(r.exit_code == 0, "F3: run succeeds: " + r.error_message);
+        const long long n = RecordedSamples(out);
+        TEST_ASSERT(n > 1000, "F3: full results written (" + std::to_string(n) + " samples)");
+        TEST_ASSERT(!HasObject(out, "/visualization"), "F3: partial /visualization removed");
+    }
+
+    seastack::infra::Shutdown();
+    {
+        std::ifstream log(log_path);
+        const std::string text((std::istreambuf_iterator<char>(log)), std::istreambuf_iterator<char>());
+        TEST_ASSERT(text.find("Viewer error at t =") != std::string::npos, "F1: viewer error logged");
+        TEST_ASSERT(text.find("Replay data not written (injected visual recording failure)") !=
+                        std::string::npos,
+                    "F3: replay-data warning logged");
     }
 
     test_results.Summary();

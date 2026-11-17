@@ -92,6 +92,17 @@ H5Writer::Group H5Writer::Group::CreateGroup(const std::string& name) const {
     return Group(created_group);
 }
 
+bool H5Writer::Group::Unlink(const std::string& name) const {
+    if (!Valid()) {
+        throw std::logic_error("Unlink: group handle is not valid");
+    }
+    if (!group_.nameExists(name)) {
+        return false;
+    }
+    group_.unlink(name);
+    return true;
+}
+
 void H5Writer::Group::WriteAttribute(const std::string& name, const std::string& value) const {
     if (!Valid()) {
         throw std::logic_error("WriteAttribute(string): group handle is not valid");

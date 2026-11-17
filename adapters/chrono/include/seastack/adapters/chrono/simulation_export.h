@@ -217,6 +217,15 @@ class SimulationExporter {
      */
     void RecordVisualizationForces(std::function<ForceSample()> forces);
 
+    /**
+     * @brief Drop the replay data after WriteVisualization() failed part-way.
+     *
+     * Removes /visualization and stops recording cable endpoints and replay
+     * loads; /results and every other group are unaffected. Does not throw;
+     * if the group cannot be removed, a warning is logged.
+     */
+    void DiscardVisualization();
+
     // Runtime metadata (written into /meta/run at Finalize)
     /**
      * @brief Record runtime metadata under /meta/run.

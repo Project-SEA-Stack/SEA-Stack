@@ -746,6 +746,20 @@ void SimulationExporter::WriteVisualization(::chrono::ChSystem* system, double w
     impl_->cable_tension.assign(scene.cable_lines.size(), {});
 }
 
+void SimulationExporter::DiscardVisualization() {
+    impl_->viz_extractor.reset();
+    impl_->viz_forces = false;
+    impl_->viz_wrenches.clear();
+    impl_->cable_point1.clear();
+    impl_->cable_point2.clear();
+    impl_->cable_tension.clear();
+    try {
+        impl_->writer.Root().Unlink("visualization");
+    } catch (const H5::Exception& e) {
+        LOG_WARNING("Could not remove the partial /visualization group: " << e.getDetailMsg());
+    }
+}
+
 void SimulationExporter::RecordVisualizationForces(std::function<ForceSample()> forces) {
     if (!impl_->viz_extractor || !forces) {
         return;
@@ -2106,6 +2120,7 @@ void SimulationExporter::WriteVisualization(::chrono::ChSystem*, double, double,
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }
 void SimulationExporter::RecordVisualizationForces(std::function<ForceSample()>) {}
+void SimulationExporter::DiscardVisualization() {}
 void SimulationExporter::RecordMooringLines(
     const std::vector<seastack::viz::MooringLineVizData>&) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");

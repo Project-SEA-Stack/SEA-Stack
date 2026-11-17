@@ -90,6 +90,8 @@ struct SingleRunConfig {
     /// Tests only: run the interactive loop with this UI instead of creating
     /// one (`nogui` and `viewer` are then ignored). Empty = normal behaviour.
     std::shared_ptr<seastack::viz::UI> ui_override;
+    /// Tests only: fail the replay-data recording after /visualization is written.
+    bool test_fail_visual_recording = false;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).

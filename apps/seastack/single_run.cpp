@@ -1022,7 +1022,8 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 }
 
                 // Visual scene and wave components for `run_seastack --replay`.
-                {
+                // Optional: a failure here drops only the replay data.
+                try {
                     const auto wave_ptr = hydro_forces ? hydro_forces->GetWave() : nullptr;
                     const auto* comps = wave_ptr ? wave_ptr->GetWaveComponents() : nullptr;
                     if (comps != nullptr && !comps->empty()) {
@@ -1041,8 +1042,24 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     exporter->WriteVisualization(system.get(), wave_ptr ? wave_ptr->GetRampDuration() : 0.0,
                                                  wave_ptr ? wave_ptr->GetWaterDepth() : 0.0, gravity,
                                                  gui_init_ok);
+                    if (config.test_fail_visual_recording) {
+                        throw std::runtime_error("injected visual recording failure");
+                    }
                     exporter->RecordVisualizationForces(
                         seastack::chrono::MakeHydroForceProvider(hydro_forces.get()));
+                }
+#if defined(SEASTACK_HAVE_HYDRO_IO)
+                catch (const H5::Exception& e) {
+                    seastack::infra::cli::LogWarning("Replay data not written (HDF5: " + e.getFuncName() +
+                                                     " - " + e.getDetailMsg() + "); the results are unaffected.");
+                    exporter->DiscardVisualization();
+                }
+#endif
+                catch (...) {
+                    seastack::infra::cli::LogWarning("Replay data not written (" +
+                                                     seastack::viz::CurrentExceptionMessage() +
+                                                     "); the results are unaffected.");
+                    exporter->DiscardVisualization();
                 }
             }
 #if defined(SEASTACK_HAVE_HYDRO_IO)

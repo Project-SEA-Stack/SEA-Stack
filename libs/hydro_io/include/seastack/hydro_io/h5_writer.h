@@ -75,6 +75,14 @@ class H5Writer {
           */
         [[nodiscard]] Group CreateGroup(const std::string& name) const;
          /**
+          * @brief Remove a direct child (group or dataset) of this group. Requires: Valid().
+          * @param name Child name (single path segment).
+          * @return False if no such child exists.
+          * @throws std::logic_error if this Group handle is not valid.
+          * @throws H5::Exception on HDF5 failures
+          */
+        bool Unlink(const std::string& name) const;
+         /**
           * @brief Write a string attribute on this group. Requires: Valid().
           * @param name Attribute name
           * @param value UTF-8 string value
