@@ -233,6 +233,12 @@ HeadingBracket FindHeadingBracket(const Eigen::VectorXd& h5_wave_directions, dou
 
     double dir = std::fmod(direction_rad, kTwoPi);
     if (dir < 0.0) dir += kTwoPi;
+    // The search needs dir in [h0, h0 + 2 pi). Headings from 0 up already
+    // have it; for a grid such as -30..30 deg, 345 deg must become -15 deg.
+    const double h0 = h5_wave_directions[0];
+    if (h0 < 0.0 && dir >= h0 + kTwoPi) {
+        dir -= kTwoPi;
+    }
 
     const double* dir_begin = h5_wave_directions.data();
     const double* dir_end   = dir_begin + n_h5_dir;

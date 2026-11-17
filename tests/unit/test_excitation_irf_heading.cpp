@@ -12,12 +12,18 @@
  *   3. Between headings, kernels are blended linearly.
  *   4. Single-heading data and mismatched kernel counts fall back to the
  *      first-heading kernel.
+ *   5. Headings that start below 0 (e.g. -30..30 deg) bracket correctly.
+ *   6. Every direction the live-change check (CheckSeaStateChange) calls
+ *      covered is reproduced by the interpolator's bracket, on several grids.
  *********************************************************************/
 
 #include <seastack/hydro/excitation_transfer.h>
 #include <seastack/hydro/force_components/excitation_irf_component.h>
+#include <seastack/hydro/waves/sea_state_change.h>
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -107,12 +113,81 @@ void TestKernelSelection() {
           "kernel count != heading count returns the fallback kernel");
 }
 
+void TestNegativeHeadings() {
+    std::cout << "\n--- FindHeadingBracket, headings starting below 0 ---\n";
+    const double deg = kPi / 180.0;
+    Eigen::VectorXd h(2);
+    h << -30.0 * deg, 30.0 * deg;
+    Check(BracketIs(FindHeadingBracket(h, -15.0 * deg), 0, 1, 0.25), "-15 deg is a quarter from -30 to 30 deg");
+    Check(BracketIs(FindHeadingBracket(h, 345.0 * deg), 0, 1, 0.25), "345 deg equals -15 deg");
+    Check(BracketIs(FindHeadingBracket(h, 0.0), 0, 1, 0.5), "0 deg is halfway");
+    // On the first heading exactly, the wrap bracket puts all weight on it
+    // (as for 0 deg on a grid starting at 0).
+    Check(BracketIs(FindHeadingBracket(h, -30.0 * deg), 1, 0, 1.0), "-30 deg sits on the first heading");
+    // Outside the data: wrap from 30 deg to 330 deg (gap 300 deg).
+    Check(BracketIs(FindHeadingBracket(h, 180.0 * deg), 1, 0, 0.5), "180 deg wraps halfway from 30 to 330 deg");
+
+    Eigen::VectorXd sym(5);
+    sym << -180.0 * deg, -90.0 * deg, 0.0, 90.0 * deg, 180.0 * deg;
+    Check(BracketIs(FindHeadingBracket(sym, -45.0 * deg), 1, 2, 0.5), "-180..180 grid: -45 deg between -90 and 0");
+    Check(BracketIs(FindHeadingBracket(sym, 135.0 * deg), 3, 4, 0.5), "-180..180 grid: 135 deg between 90 and 180");
+}
+
+/// Direction the bracket interpolates to [rad], in [0, 2 pi).
+double BracketDirection(const Eigen::VectorXd& h, const HeadingBracket& b) {
+    double lo = h[b.lo];
+    double hi = h[b.hi];
+    if (hi <= lo) hi += 2.0 * kPi;  // wrap from the last heading to the first + 2 pi
+    double d = std::fmod(lo + b.frac * (hi - lo), 2.0 * kPi);
+    return d < 0.0 ? d + 2.0 * kPi : d;
+}
+
+/// For every direction the live-change check calls covered, the
+/// interpolator's bracket must reproduce that direction.
+void TestCoverageAgreesWithBracket() {
+    std::cout << "\n--- Heading coverage (CheckSeaStateChange) agrees with FindHeadingBracket ---\n";
+    const double deg = kPi / 180.0;
+    std::vector<std::pair<std::string, Eigen::VectorXd>> grids;
+    grids.push_back({"0..90", Eigen::VectorXd::LinSpaced(4, 0.0, 90.0 * deg)});
+    grids.push_back({"-30..30", Eigen::VectorXd::LinSpaced(3, -30.0 * deg, 30.0 * deg)});
+    grids.push_back({"-180..180", Eigen::VectorXd::LinSpaced(9, -180.0 * deg, 180.0 * deg)});
+    grids.push_back({"0..330", Eigen::VectorXd::LinSpaced(12, 0.0, 330.0 * deg)});
+    grids.push_back({"-90..60", Eigen::VectorXd::LinSpaced(6, -90.0 * deg, 60.0 * deg)});
+    seastack::hydro::SeaStateChangeLimits limits;
+    for (const auto& [name, h] : grids) {
+        limits.bem_headings = h;
+        int covered = 0;
+        double worst = 0.0;
+        for (int i = -360; i < 720; ++i) {
+            const double dir = (i + 0.37) * deg;
+            seastack::hydro::WaveComponent c;
+            c.amplitude = 1.0;
+            c.omega = 1.0;
+            c.direction = dir;
+            if (!seastack::hydro::CheckSeaStateChange(seastack::hydro::SeaStateChangeKind::kDirection, {c}, limits)
+                     .empty()) {
+                continue;
+            }
+            ++covered;
+            double want = std::fmod(dir, 2.0 * kPi);
+            if (want < 0.0) want += 2.0 * kPi;
+            double diff = std::abs(BracketDirection(h, FindHeadingBracket(h, dir)) - want);
+            worst = std::max(worst, std::min(diff, 2.0 * kPi - diff));
+        }
+        Check(covered > 0 && worst < 1e-9, "grid " + name + " deg: " + std::to_string(covered) +
+                                               " covered directions, worst bracket error " +
+                                               std::to_string(worst / deg) + " deg");
+    }
+}
+
 }  // namespace
 
 int main() {
     std::cout << "=== test_excitation_irf_heading ===\n";
     TestBracket();
     TestKernelSelection();
+    TestNegativeHeadings();
+    TestCoverageAgreesWithBracket();
     std::cout << "\n" << (g_failures == 0 ? "ALL TESTS PASSED" : "TESTS FAILED") << " (" << g_failures
               << " failure(s))\n";
     return g_failures == 0 ? 0 : 1;
