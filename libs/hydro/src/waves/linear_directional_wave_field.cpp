@@ -125,6 +125,27 @@ const Eigen::VectorXd& LinearDirectionalWaveField::AmplitudesAt(double time, Eig
     return scratch;
 }
 
+std::pair<Eigen::Index, Eigen::Index> LinearDirectionalWaveField::ActiveComponents(double time) const {
+    const Eigen::Index n = amplitudes_.size();
+    if (layers_.empty()) {
+        return {0, n};
+    }
+    // Layers fade out in order, so those with weight at `time` are adjacent.
+    std::size_t first = layers_.size();
+    std::size_t last = 0;
+    for (std::size_t l = 0; l < layers_.size(); ++l) {
+        if (layers_[l].weight.Value(time) != 0.0) {
+            first = std::min(first, l);
+            last = l;
+        }
+    }
+    if (first == layers_.size()) {
+        return {0, 0};
+    }
+    const auto begin = static_cast<Eigen::Index>(layers_[first].begin);
+    return {begin, static_cast<Eigen::Index>(layers_[last].end) - begin};
+}
+
 std::vector<WaveComponent> LinearDirectionalWaveField::GetCurrentComponents() const {
     const std::size_t begin = layers_.empty() ? 0 : layers_.back().begin;
     return std::vector<WaveComponent>(components_.begin() + static_cast<std::ptrdiff_t>(begin), components_.end());
@@ -389,20 +410,28 @@ void LinearDirectionalWaveField::GetElevationAndPressureHead(const Eigen::Matrix
                                                              Eigen::VectorXd& elevation,
                                                              Eigen::VectorXd* pressure_head) const {
     const Eigen::Index n_points = points.cols();
-    const Eigen::Index n_comp = amplitudes_.size();
     elevation.resize(n_points);
     if (pressure_head) pressure_head->resize(n_points);
+
+    // After live period or direction changes, only the sets with weight at
+    // `time` contribute: components [c0, c0 + n_comp).
+    const std::pair<Eigen::Index, Eigen::Index> active = ActiveComponents(time);
+    const Eigen::Index c0 = active.first;
+    const Eigen::Index n_comp = active.second;
+    const auto kx = kx_.segment(c0, n_comp).array();
+    const auto ky = ky_.segment(c0, n_comp).array();
+    const auto wavenumbers = wavenumbers_.segment(c0, n_comp);
 
     const bool infinite_depth = water_depth_ <= 0.0 || std::isinf(water_depth_);
     bool all_deep = true;
     for (Eigen::Index i = 0; i < n_comp; ++i) {
-        all_deep = all_deep && is_in_deep_water(std::abs(wavenumbers_[i]), water_depth_);
+        all_deep = all_deep && is_in_deep_water(std::abs(wavenumbers[i]), water_depth_);
     }
     // Time part of the phase, shared by all points: phi_i - omega_i t.
-    const Eigen::ArrayXd theta = phases_.array() - omegas_.array() * time;
-    const Eigen::ArrayXd abs_k = wavenumbers_.array().abs();
+    const Eigen::ArrayXd theta = phases_.segment(c0, n_comp).array() - omegas_.segment(c0, n_comp).array() * time;
+    const Eigen::ArrayXd abs_k = wavenumbers.array().abs();
     Eigen::VectorXd scratch;
-    const Eigen::VectorXd& amplitudes = AmplitudesAt(time, scratch);
+    const auto amplitudes = AmplitudesAt(time, scratch).segment(c0, n_comp);
 
     const int n = static_cast<int>(n_points);
 #ifdef _OPENMP
@@ -422,7 +451,7 @@ void LinearDirectionalWaveField::GetElevationAndPressureHead(const Eigen::Matrix
             const double x = points(0, j);
             const double y = points(1, j);
             const double z = points(2, j);
-            cos_phase = (kx_.array() * x + ky_.array() * y + theta).cos();
+            cos_phase = (kx * x + ky * y + theta).cos();
             const double eta = elevation_scale * (amplitudes.array() * cos_phase).sum();
             elevation[j] = eta;
             if (!pressure_head) continue;
@@ -438,7 +467,7 @@ void LinearDirectionalWaveField::GetElevationAndPressureHead(const Eigen::Matrix
                 depth_factor = (abs_k * z_s).exp();
             } else {
                 for (Eigen::Index i = 0; i < n_comp; ++i) {
-                    depth_factor[i] = AiryPressureDepthFactor(wavenumbers_[i], z_s, water_depth_);
+                    depth_factor[i] = AiryPressureDepthFactor(wavenumbers[i], z_s, water_depth_);
                 }
             }
             (*pressure_head)[j] = (amplitudes.array() * depth_factor * cos_phase).sum();

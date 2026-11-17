@@ -21,6 +21,7 @@
 
 #include <Eigen/Core>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace seastack::hydro {
@@ -88,8 +89,12 @@ class LinearDirectionalWaveField : public WaveBase {
     /// survive pruning) the new components keep their own phases; eta stays
     /// continuous because the new set starts at weight 0.
     ///
-    /// Evaluation cost grows with the number of changes: faded-out sets stay
-    /// in the list, because IRF excitation convolves the elevation history.
+    /// Faded-out sets stay in the list, so the sea at any past time is still
+    /// available (IRF excitation convolves the elevation history; the viewer's
+    /// timeline redraws past frames). Each set costs a few hundred bytes per
+    /// component. GetElevationAndPressureHead() evaluates only the sets with
+    /// weight at the requested time; IRF excitation frees its own data for
+    /// sets its kernel can no longer reach (ExcitationIrfComponent).
     /// @return Time [s] at which the new set has full weight.
     /// @throws std::invalid_argument on an empty set or bad times;
     ///         std::logic_error if a crossfade is still running at start_time.
@@ -151,6 +156,10 @@ class LinearDirectionalWaveField : public WaveBase {
     /// amplitudes_ itself when there are no layers (bit-identical path);
     /// otherwise fills and returns `scratch`.
     const Eigen::VectorXd& AmplitudesAt(double time, Eigen::VectorXd& scratch) const;
+
+    /// Components with non-zero layer weight at `time`, as (first, count);
+    /// all components when there are no layers.
+    std::pair<Eigen::Index, Eigen::Index> ActiveComponents(double time) const;
 
     /// Cosine excitation ramp: 0.5*(1 - cos(pi*t/T_ramp)); 1 if no ramp or t >= T_ramp.
     double ExcitationRampFactor(double time) const;

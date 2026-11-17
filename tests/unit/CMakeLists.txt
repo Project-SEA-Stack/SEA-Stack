@@ -65,6 +65,12 @@ if(TARGET seastack_hydro_io)
         "SEASTACK_TEST_WIGLEY_H5_FILE=\"${_seastack_test_wigley_h5}\"")
     set_tests_properties(test_h5_reader_simulation_params PROPERTIES LABELS "unit;chrono-free")
 
+    # IRF excitation frees component sets its kernel can no longer reach
+    build_unit_test(test_irf_layer_release)
+    target_link_libraries(test_irf_layer_release PRIVATE SEAStack::HydroIO)
+    target_compile_definitions(test_irf_layer_release PRIVATE "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+    set_tests_properties(test_irf_layer_release PROPERTIES LABELS "unit;chrono-free")
+
     build_unit_test(test_rm3_wave_yaml_depth_precedence)
     target_link_libraries(test_rm3_wave_yaml_depth_precedence PRIVATE SEAStack::HydroIO)
     target_compile_definitions(test_rm3_wave_yaml_depth_precedence PRIVATE

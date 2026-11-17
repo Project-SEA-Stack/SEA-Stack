@@ -1170,10 +1170,23 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     }
                     return def;
                 };
-                auto check = [field, modified, limits](const std::string& what, double value,
-                                                       double time) -> std::string {
+                // True if `value` is the period [s] or direction [deg] now in effect.
+                auto unchanged = [sea, regular](const std::string& what, double value) {
+                    double current = 0.0;
+                    if (what == "period") {
+                        current = regular ? seastack::kTwoPi / sea->omega : sea->partitions[0].spectrum.Tp;
+                    } else {
+                        current = regular ? sea->direction_deg : sea->partitions[0].spreading.mean_direction_deg;
+                    }
+                    return std::abs(value - current) <= 1e-12 * std::max(1.0, std::abs(current));
+                };
+                auto check = [field, modified, unchanged, limits](const std::string& what, double value,
+                                                                  double time) -> std::string {
                     if (what == "period" && !(value > 0.0)) {
                         return "the period must be > 0";
+                    }
+                    if (unchanged(what, value)) {
+                        return "";  // nothing to change, nothing to check
                     }
                     if (field->IsCrossfading(time)) {
                         return "the last period or direction change is still fading in";
@@ -1188,7 +1201,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                                                          : seastack::hydro::SeaStateChangeKind::kDirection;
                     return seastack::hydro::CheckSeaStateChange(kind, proposed, limits);
                 };
-                auto apply = [field, modified, sea](const std::string& what, double value, double time) {
+                auto apply = [field, modified, unchanged, sea](const std::string& what, double value,
+                                                               double time) {
+                    if (unchanged(what, value)) {
+                        return time;  // no new component set: the sea and its cost stay as they are
+                    }
                     const seastack::hydro::SeaStateDefinition def = modified(what, value);
                     auto components = seastack::hydro::ComponentSampler::Build(def);
                     double new_period = 0.0;

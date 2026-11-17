@@ -297,25 +297,28 @@ void ExcitationIrfComponent::AddNewWaveComponents() {
         throw std::logic_error("ExcitationIrfComponent: live period or direction changes need a wave defined "
                                "by components");
     }
-    const Eigen::Index n_old = comp_amplitudes_.size();
+    // Indices below are wave component indices; the arrays start at released_components_.
+    const Eigen::Index n_old = released_components_ + comp_amplitudes_.size();
     const Eigen::Index n_new = static_cast<Eigen::Index>(comps->size());
     if (n_new > n_old) {
         const auto& birf0 = body_irfs_[0];
         const Eigen::Index n_irf = birf0.time_vec.size();
-        comp_amplitudes_.conservativeResize(n_new);
-        comp_omegas_.conservativeResize(n_new);
-        comp_phases_.conservativeResize(n_new);
-        irf_cos_wt_.conservativeResize(Eigen::NoChange, n_new);
-        irf_sin_wt_.conservativeResize(Eigen::NoChange, n_new);
+        const Eigen::Index n_kept = n_new - released_components_;
+        comp_amplitudes_.conservativeResize(n_kept);
+        comp_omegas_.conservativeResize(n_kept);
+        comp_phases_.conservativeResize(n_kept);
+        irf_cos_wt_.conservativeResize(Eigen::NoChange, n_kept);
+        irf_sin_wt_.conservativeResize(Eigen::NoChange, n_kept);
         for (Eigen::Index i = n_old; i < n_new; ++i) {
             const auto& c = (*comps)[static_cast<std::size_t>(i)];
-            comp_amplitudes_[i] = c.amplitude;
-            comp_omegas_[i] = c.omega;
-            comp_phases_[i] = c.phase;
+            const Eigen::Index col = i - released_components_;
+            comp_amplitudes_[col] = c.amplitude;
+            comp_omegas_[col] = c.omega;
+            comp_phases_[col] = c.phase;
             for (Eigen::Index j = 0; j < n_irf; ++j) {
                 const double arg = c.omega * birf0.time_vec[j];
-                irf_cos_wt_(j, i) = std::cos(arg);
-                irf_sin_wt_(j, i) = std::sin(arg);
+                irf_cos_wt_(j, col) = std::cos(arg);
+                irf_sin_wt_(j, col) = std::sin(arg);
             }
         }
     }
@@ -336,8 +339,43 @@ void ExcitationIrfComponent::AddNewWaveComponents() {
     }
 }
 
+void ExcitationIrfComponent::ReleaseFinishedLayers(double time) {
+    const auto& layers = waves_->GetWaveLayers();
+    double kernel_span = 0.0;  // longest lag tau [s]
+    for (const auto& birf : body_irfs_) {
+        if (birf.time_vec.size() > 0) kernel_span = std::max(kernel_span, birf.time_vec.maxCoeff());
+    }
+    // A layer whose weight reached 0 at EndTime() is out of reach once
+    // time - kernel_span >= EndTime(). The margin [s] covers later force
+    // evaluations at slightly earlier times (integrator stages, a repeated
+    // step); it assumes time steps well below 1 s.
+    constexpr double margin = 1.0;
+    std::size_t release = released_layers_;
+    while (release + 1 < layers.size()) {  // the newest layer is never released
+        const AmplitudeEnvelope& w = layers[release].weight;
+        if (w.Target() != 0.0 || w.EndTime() > time - kernel_span - margin) break;
+        ++release;
+    }
+    if (release == released_layers_) return;
+
+    const Eigen::Index drop = static_cast<Eigen::Index>(layers[release].begin) - released_components_;
+    const Eigen::Index keep = comp_amplitudes_.size() - drop;
+    comp_amplitudes_ = comp_amplitudes_.tail(keep).eval();
+    comp_omegas_ = comp_omegas_.tail(keep).eval();
+    comp_phases_ = comp_phases_.tail(keep).eval();
+    irf_cos_wt_ = irf_cos_wt_.rightCols(keep).eval();
+    irf_sin_wt_ = irf_sin_wt_.rightCols(keep).eval();
+    for (std::size_t l = std::max<std::size_t>(released_layers_, 1); l < release; ++l) {
+        layer_kernels_[l - 1].clear();
+        layer_kernels_[l - 1].shrink_to_fit();
+    }
+    released_layers_ = release;
+    released_components_ += drop;
+}
+
 void ExcitationIrfComponent::ComputeLayered(const SystemState& state, double time, BodyForces& inout_forces) {
     AddNewWaveComponents();
+    ReleaseFinishedLayers(time);
     const auto& layers = waves_->GetWaveLayers();
     const auto& birf0 = body_irfs_[0];
     const Eigen::Index n_steps = birf0.time_vec.size();
@@ -352,7 +390,7 @@ void ExcitationIrfComponent::ComputeLayered(const SystemState& state, double tim
     Eigen::VectorXd& eta = layer_eta_buffer_;
     Eigen::VectorXd& weight = layer_weight_buffer_;
     weight.resize(n_steps);
-    for (std::size_t l = 0; l < layers.size(); ++l) {
+    for (std::size_t l = released_layers_; l < layers.size(); ++l) {
         // Weight of each past sample, with the ramp and e(t - tau).
         bool active = false;
         for (Eigen::Index s = 0; s < n_steps; ++s) {
@@ -367,7 +405,7 @@ void ExcitationIrfComponent::ComputeLayered(const SystemState& state, double tim
         }
         if (!active) continue;  // faded out over the whole kernel length, or not started
 
-        const Eigen::Index begin = static_cast<Eigen::Index>(layers[l].begin);
+        const Eigen::Index begin = static_cast<Eigen::Index>(layers[l].begin) - released_components_;
         const Eigen::Index size = static_cast<Eigen::Index>(layers[l].end - layers[l].begin);
         eta = irf_cos_wt_.middleCols(begin, size) * a_cos.segment(begin, size) -
               irf_sin_wt_.middleCols(begin, size) * a_sin.segment(begin, size);

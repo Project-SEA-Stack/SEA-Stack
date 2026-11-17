@@ -323,6 +323,16 @@ int main() {
             TEST_NEAR(field->GetElevation(point, 39.0), new_sea.GetElevation(point, 39.0), 1e-12,
                       what + "second change: unchanged before it");
             TEST_ASSERT(field->GetWaveLayers().size() == 3, what + "three layers after two changes");
+            // The batched path evaluates only sets with weight (here the
+            // second and third); the pointwise path sums all three.
+            for (double tb : {39.0, 47.0, 70.0}) {
+                Eigen::VectorXd eta_b, head_b;
+                field->GetElevationAndPressureHead(points, tb, 1.0, eta_b, &head_b);
+                TEST_NEAR(eta_b[1], field->GetElevation(surface, tb), 1e-12,
+                          what + "batched elevation agrees after two changes, t = " + std::to_string(tb));
+                TEST_NEAR(head_b[0], field->GetDynamicPressureHead(point, tb, eta_b[0]), 1e-12,
+                          what + "batched pressure head agrees after two changes, t = " + std::to_string(tb));
+            }
         }
     }
 

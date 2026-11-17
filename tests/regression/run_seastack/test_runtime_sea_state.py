@@ -8,9 +8,9 @@ to it over two wave periods, keeping each component's phase at the origin.
 Every excitation path weights the old and new component sets.
 
 Checks, on copies of the demo cases:
-  1. Same value (period set to its own value): every layered path (frequency
-     domain, IRF convolution, nonlinear Froude-Krylov) reproduces the run
-     without a schedule to solver tolerance.
+  1. Same value (period set to its own value) adds no component set, so the
+     frequency-domain, IRF and nonlinear Froude-Krylov runs are bit-identical
+     to the run without a schedule.
   2. Direction change on multi-heading BEM data (OSWEC, headings 0-90 deg):
      with the phases kept, the new component set is the one a run started at
      the new direction uses, so once the transition (and the IRF kernel) has
@@ -24,9 +24,11 @@ Checks, on copies of the demo cases:
      a change while the previous one still fades in.
   6. Fixed frequency band (frequency_min/max): a period change inside the band
      runs, and one that moves energy above the BEM range is refused.
+  7. Ten alternating period changes (IRF, NLFK): deterministic, all logged;
+     with --reference-exe, equal to another build's results.
 
 Needs numpy and h5py (exit code 77, skipped, if missing). Usage:
-    python test_runtime_sea_state.py --exe <path/to/run_seastack>
+    python test_runtime_sea_state.py --exe <path/to/run_seastack> [--reference-exe <other build>]
 """
 
 from __future__ import annotations
@@ -150,6 +152,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--exe", required=True, help="path to run_seastack")
+    parser.add_argument("--reference-exe", help="optional second build; check 7 compares its results with --exe")
     args = parser.parse_args()
     exe = args.exe
 
@@ -180,12 +183,9 @@ def main() -> int:
             if None in h5:
                 continue
             a, s, b, c = (datasets(h, "results") for h in h5)
-            diff = max_relative_difference(a, s, VELOCITY)
-            check(first_differing_row(a, s) < 0 or first_differing_row(a, s) >= CHANGE_STEP,
-                  "same value: unchanged before the change")
-            # The weights sum to 1 only to round-off; HHT stops its Newton
-            # iterations at a tolerance, so that shows up as ~1e-8 in the response.
-            check(diff < 1e-6, f"same value: matches the run without a schedule to solver tolerance ({diff:.2e})")
+            # A change to the value in effect adds no component set.
+            ok_same, why_same = identical(a, s)
+            check(ok_same, f"same value: bit-identical to the run without a schedule {why_same}")
             ok, why = identical(b, c)
             ok_ev, why_ev = identical(datasets(h5[2], "events"), datasets(h5[3], "events"))
             check(ok and ok_ev, f"period change: rerun is bit-identical {why} {why_ev}")
@@ -293,6 +293,42 @@ def main() -> int:
         check("<run succeeded>" not in out and reason in out,
               f"fixed band: Tp 2 s (energy above 0.83 Hz) stops with '{reason}'"
               + ("" if reason in out else f" (output: {out.strip().splitlines()[-3:]})"))
+
+        # 7. Ten alternating period changes. IRF excitation frees the sets its
+        #    kernel no longer reaches, and the NLFK pressure evaluates only sets
+        #    with weight; neither may change the result. With --reference-exe
+        #    the results are compared with another build (e.g. one without
+        #    that freeing): IRF bit-identical; NLFK sums fewer zero terms, a
+        #    round-off change that HHT's Newton tolerance turns into ~1e-8.
+        for name, case, period, step_gap, tol in [
+            ("rm3_irf_many", "rm3/irregular_waves", 8.0, 2500, 0.0),
+            ("sphere_nlfk_many", "iea_sphere/regular_waves_nlfk", 8.0, 2500, 1e-6),
+        ]:
+            print(f"{name}: {case}, 10 alternating waves.period changes")
+            d = prepare(root, name, case, 1.0)
+            dt = time_step(d)
+            set_end_time(d, (CHANGE_STEP + 10 * step_gap + 3000) * dt)
+            sched = d / "many.schedule.yaml"
+            write_schedule(sched, [(CHANGE_STEP + i * step_gap, "waves.period", period + (2.0 if i % 2 == 0 else 0.0))
+                                   for i in range(10)], dt)
+            h5 = [run(exe, d, sched), run(exe, d, sched)]
+            if args.reference_exe:
+                h5.append(run(args.reference_exe, d, sched))
+            check(None not in h5, "all runs succeed")
+            if None in h5:
+                continue
+            res = [datasets(h, "results") for h in h5]
+            ok, why = identical(res[0], res[1])
+            check(ok, f"rerun is bit-identical {why}")
+            ev = datasets(h5[0], "events")
+            check(len(ev.get("step", [])) == 10, f"/events records 10 changes ({len(ev.get('step', []))})")
+            if args.reference_exe:
+                if tol == 0.0:
+                    ok, why = identical(res[2], res[0])
+                    check(ok, f"bit-identical to --reference-exe {why}")
+                else:
+                    diff = max_relative_difference(res[2], res[0], VELOCITY)
+                    check(diff <= tol, f"matches --reference-exe to {tol:g} ({diff:.2e})")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
