@@ -1933,10 +1933,11 @@ void SimulationExporter::Finalize() {
         g_waves.WriteAttribute("count", static_cast<double>(impl_->wave_changes.size()));
         g_waves.WriteAttribute("description",
             std::string("Live sea changes in the order applied. height: the amplitude envelope e(t) ramps "
-                        "linearly to envelope_target over duration [s] from start_time [s]. period / "
-                        "direction: the previous component set fades out and components/ fades in, "
-                        "linearly over duration [s] from start_time [s]. /inputs/simulation/waves is the "
-                        "sea at t = 0."));
+                        "to envelope_target over duration [s] from start_time [s]. period / direction: "
+                        "the previous component set fades out and components/ fades in over duration [s] "
+                        "from start_time [s]; the two weights sum to one. Every ramp is a half-cosine, "
+                        "v0 + (v1 - v0) (1 - cos(pi u)) / 2 with u = (t - start_time) / duration. "
+                        "/inputs/simulation/waves is the sea at t = 0."));
         for (size_t i = 0; i < impl_->wave_changes.size(); ++i) {
             const WaveChangeRecord& c = impl_->wave_changes[i];
             auto g = impl_->writer.RequireGroup("/events/waves/" + IndexedName("change_", i));
