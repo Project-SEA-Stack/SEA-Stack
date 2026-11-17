@@ -181,11 +181,16 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
         if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) {
             TogglePlay();
         }
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket, false)) {
-            playback_speed_ = ClampSpeed(last_finite_speed_ * 0.5);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_RightBracket, false)) {
-            playback_speed_ = ClampSpeed(last_finite_speed_ * 2.0);
+        // vsgImGui maps '(' and ')' to ImGuiKey_Left/RightBracket and leaves
+        // '[' and ']' unmapped, so use the typed characters (any keyboard layout).
+        for (const ImWchar c : io.InputQueueCharacters) {
+            if (c == '[') {
+                playback_speed_ = ClampSpeed(last_finite_speed_ * 0.5);
+                last_finite_speed_ = playback_speed_;
+            } else if (c == ']') {
+                playback_speed_ = ClampSpeed(last_finite_speed_ * 2.0);
+                last_finite_speed_ = playback_speed_;
+            }
         }
         if (ImGui::IsKeyPressed(ImGuiKey_Backslash, false)) {
             playback_speed_ = 1.0;
