@@ -9,12 +9,12 @@ external build options.
 Use it to try runtime parameter changes:
 
 ```bash
-run_seastack --viewer=seastack data/demos/run_seastack/oswec/native_pto
+run_seastack data/demos/run_seastack/oswec/native_pto
 ```
 
-In the **Parameters** panel, type a new PTO damping and press Enter. The
-change applies from the next time step and is logged under `/events` in the
-results file. When the window closes, the changes are also written to
+In the Inspector's **PTO and connectors** section, drag the PTO damping
+slider (or Ctrl+click it to type a value). The change applies from the next
+time step and is logged under `/events` in the results file. When the window closes, the changes are also written to
 `outputs/results.irregular.schedule.yaml`. Rerun them headless; results are
 bit-identical to the GUI run:
 
@@ -25,3 +25,5 @@ run_seastack --nogui data/demos/run_seastack/oswec/native_pto \
 
 Sign convention (Chrono RSDA): torque = -k (angle - free_angle) - c ω, with
 the angle about the RSDA axis (+Y here).
+
+More on live changes and schedules: [docs/usage/GUI.md](../../../../../docs/usage/GUI.md).

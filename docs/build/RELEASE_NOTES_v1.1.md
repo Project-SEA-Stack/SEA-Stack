@@ -99,6 +99,7 @@ The v1.0.0 notes are unchanged:
 
 Everything in this section is visual or opt-in: a run that is not changed
 from the GUI gives the same results as before, with or without the GUI.
+User guide: [docs/usage/GUI.md](../usage/GUI.md).
 
 - **SEA-Stack viewer, now the default.** `run_seastack` opens SEA-Stack's
   own viewer. The Chrono viewer stays for this release: use

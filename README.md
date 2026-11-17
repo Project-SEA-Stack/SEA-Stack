@@ -105,6 +105,7 @@ Detailed walkthroughs (toolchains, optional modules, packaging, troubleshooting,
 | **Add a new PTO, controller, or solver adapter** | [`docs/extending/EXTENDING.md`](docs/extending/EXTENDING.md) (other sections) | Same cookbook style: interfaces (**`WaveBase`**, **`IPTOModel`**, **`IController`**, Chrono-style adapters), file layout, tests. |
 | **Use SEA-Stack from another CMake project** | [`docs/usage/DOWNSTREAM_PROJECT.md`](docs/usage/DOWNSTREAM_PROJECT.md) | **`find_package(SEAStack)`**, imported targets, install layout, typical consumption patterns. |
 | **Run worked examples** (standalone libraries, `run_seastack`, demo YAML cases) | [`docs/usage/EXAMPLE_WORKFLOWS.md`](docs/usage/EXAMPLE_WORKFLOWS.md) | Entry points into [`examples/`](examples/) and the [demo suite README](data/demos/run_seastack/README.md). |
+| **Use the viewer** (controls, timeline and replay, live changes, schedules) | [`docs/usage/GUI.md`](docs/usage/GUI.md) | Keyboard and mouse, `--replay`, parameters you can change while running, schedule files, water and radiated-wave display. |
 | **Run tests** or dig into **labels, baselines, reports, and plots** | [`tests/README.md`](tests/README.md) · [`tests/TEST_SUITES_REFERENCE.md`](tests/TEST_SUITES_REFERENCE.md) · [`tests/REPORTING_AND_PLOTS.md`](tests/REPORTING_AND_PLOTS.md) | User-facing how-to; reference tables; Markdown/PDF reports and figures. |
 | **Contribute** code or docs | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Workflow, expectations, and repo conventions for contributors. |
 
