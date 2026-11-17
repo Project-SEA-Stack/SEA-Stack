@@ -50,7 +50,7 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::LogInfo("      --nogui          Disable GUI visualization");
     seastack::infra::cli::LogInfo("      --viewer=NAME    GUI renderer: seastack (default) or chrono (fallback, to be removed)");
     seastack::infra::cli::LogInfo("      --replay FILE    Replay a results .h5 in the SEA-Stack viewer (no simulation)");
-    seastack::infra::cli::LogInfo("      --schedule FILE  Apply TSDA/RSDA parameter changes from a schedule YAML");
+    seastack::infra::cli::LogInfo("      --schedule FILE  Apply TSDA/RSDA and wave changes from a schedule YAML");
     seastack::infra::cli::LogInfo("      --log            Enable detailed logging to file");
     seastack::infra::cli::LogInfo("      --model_file     Override model YAML file (default: auto-detected)");
     seastack::infra::cli::LogInfo("      --sim_file       Override simulation YAML file (default: auto-detected)");
