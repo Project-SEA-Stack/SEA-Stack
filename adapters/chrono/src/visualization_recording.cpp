@@ -322,8 +322,15 @@ bool LoadReplayRecording(const std::string& path, size_t budget_bytes, ReplayRec
 
         // Mooring and cable topology first, so the frame size estimate is complete.
         std::vector<int> mooring_nodes;
+        std::vector<std::string> mooring_paths;
+        int lines_without_geometry = 0;
         for (int li = 1; PathExists(file, "/results/mooring/line_" + std::to_string(li)); ++li) {
             const std::string line_path = "/results/mooring/line_" + std::to_string(li);
+            if (!PathExists(file, line_path + "/node_positions")) {
+                ++lines_without_geometry;  // compact output: peak tensions only
+                continue;
+            }
+            mooring_paths.push_back(line_path);
             viz::MooringLineDescription desc;
             desc.num_nodes = static_cast<int>(ReadDoubleAttr(file.openGroup(line_path), "num_nodes", 0.0));
             const std::string ends_path = "/visualization/mooring_lines/line_" + std::to_string(li);
@@ -336,6 +343,11 @@ bool LoadReplayRecording(const std::string& path, size_t budget_bytes, ReplayRec
             }
             scene.mooring_lines.push_back(desc);
             mooring_nodes.push_back(desc.num_nodes);
+        }
+        if (lines_without_geometry > 0) {
+            out->mooring_note = std::to_string(lines_without_geometry) +
+                                " mooring line(s) not drawn: the file has no node positions (written with "
+                                "--output-level compact).";
         }
         if (PathExists(file, "/visualization/cables")) {
             const int cable_count =
@@ -411,21 +423,29 @@ bool LoadReplayRecording(const std::string& path, size_t budget_bytes, ReplayRec
         }
 
         // ── Mooring lines ────────────────────────────────────────────────────
+        // Node geometry has its own time base (sample_time; thinned at the
+        // standard output level). Each frame shows the latest sample at or
+        // before its time. Files without sample_time store one per output sample.
         for (size_t li = 0; li < mooring_nodes.size(); ++li) {
-            const std::string line_path = "/results/mooring/line_" + std::to_string(li + 1);
-            if (!PathExists(file, line_path + "/node_positions")) {
-                continue;
-            }
+            const std::string& line_path = mooring_paths[li];
             const size_t nn = static_cast<size_t>(std::max(0, mooring_nodes[li]));
             const std::vector<double> positions = ReadDoubles(file, line_path + "/node_positions");
             const std::vector<double> tensions = ReadDoubles(file, line_path + "/node_tensions");
+            const std::vector<double> sample_time = PathExists(file, line_path + "/sample_time")
+                                                        ? ReadDoubles(file, line_path + "/sample_time")
+                                                        : time;
+            size_t j = 0;
             for (size_t f = 0; f < samples.size(); ++f) {
-                const size_t i = samples[f];
+                const double t_frame = time[samples[f]];
+                // 1e-9 s: the sample and frame times come from the same clock.
+                while (j + 1 < sample_time.size() && sample_time[j + 1] <= t_frame + 1e-9) {
+                    ++j;
+                }
                 viz::MooringLineState& state = out->frames[f].mooring_lines[li];
                 for (size_t n = 0; n < nn; ++n) {
-                    state.node_positions[n] = ToVec3(positions, 3 * (i * nn + n));
-                    const size_t t_index = i * nn + n;
-                    state.node_tensions[n] = t_index < tensions.size() ? tensions[t_index] : 0.0;
+                    const size_t index = j * nn + n;
+                    state.node_positions[n] = ToVec3(positions, 3 * index);
+                    state.node_tensions[n] = index < tensions.size() ? tensions[index] : 0.0;
                 }
             }
         }

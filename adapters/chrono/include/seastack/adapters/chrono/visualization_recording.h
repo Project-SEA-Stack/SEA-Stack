@@ -8,7 +8,8 @@
  *   /visualization                         scene: shapes, input pose, environment
  *   /results/time/time                     frame times [s]
  *   /results/model/bodies/<name>           centre-of-mass position and orientation
- *   /results/mooring/line_<i>              MoorDyn node positions and tensions
+ *   /results/mooring/line_<i>              MoorDyn node positions and tensions (own sample_time)
+ *   /events/waves                          live sea changes (optional)
  *   /visualization/cables/cable_<i>        TSDA glyph endpoints
  *   /visualization/forces                  hydro loads by component (optional)
  *   /inputs/simulation/waves/components    linear wave components (optional)
@@ -46,7 +47,10 @@ struct ReplayRecording {
     /// Wave field rebuilt from the stored components; null when the run had no
     /// component wave model (still water, or a tabulated elevation record).
     std::shared_ptr<hydro::WaveBase> wave;
-    std::string wave_note;  ///< Why wave is null, for the user; empty otherwise
+    /// For the user: why wave is null, or why it shows only the initial sea; empty otherwise.
+    std::string wave_note;
+    /// For the user: why mooring lines are not drawn (e.g. compact output); empty otherwise.
+    std::string mooring_note;
 
     /// True if the shape colours were already painted by a GUI viewer; false if
     /// they are as authored in the model (headless run) and still need the palette.

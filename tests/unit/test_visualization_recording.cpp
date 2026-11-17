@@ -182,9 +182,12 @@ int main() {
         TEST_ASSERT(rec.scene.mooring_lines[0].start_type == MooringEndType::kFixed &&
                         rec.scene.mooring_lines[0].end_type == MooringEndType::kCoupled,
                     "mooring end types");
-        const double t_last = rec.frames.back().time;
-        TEST_NEAR(rec.frames.back().mooring_lines[0].node_positions[1][2], -10.0 + t_last, 1e-9, "mooring nodes");
-        TEST_NEAR(rec.frames.back().mooring_lines[0].node_tensions[1], 200.0 + t_last, 1e-9, "mooring tensions");
+        // Standard output: geometry every 0.1 s (t = 0.01, 0.11, ..., 0.41) in float32;
+        // a frame shows the latest sample at or before its time.
+        TEST_NEAR(rec.frames.back().mooring_lines[0].node_positions[1][2], -10.0 + 0.41, 1e-5, "mooring nodes");
+        TEST_NEAR(rec.frames.back().mooring_lines[0].node_tensions[1], 200.0 + 0.41, 1e-4, "mooring tensions");
+        TEST_NEAR(rec.frames[14].mooring_lines[0].node_tensions[1], 200.0 + 0.11, 1e-4,
+                  "frame at t = 0.15 s shows the sample at 0.11 s");
     }
 
     TEST_ASSERT(rec.scene.force_sources == std::vector<std::string>({"Excitation", "Radiation"}),
@@ -374,10 +377,96 @@ int main() {
     TEST_ASSERT(old_rec.wave_note.find("initial sea throughout") != std::string::npos,
                 "older file: note says the changes are not drawn: " + old_rec.wave_note);
 
+    // ---- Mooring geometry by output level (300 steps of 0.01 s) ----
+    // One file per level: H5Writer leaves group handles open, so HDF5 keeps
+    // a written file open (and locked) until the process exits.
+    std::vector<std::string> level_paths;
+    struct LevelCase {
+        seastack::chrono::ExportLevel level;
+        const char* name;
+        hsize_t samples;  // node geometry samples; 0 = not recorded
+        size_t bytes;     // per stored value
+    };
+    for (const LevelCase& c : {LevelCase{seastack::chrono::ExportLevel::kCompact, "compact", 0, 0},
+                               LevelCase{seastack::chrono::ExportLevel::kStandard, "standard", 30, 4},
+                               LevelCase{seastack::chrono::ExportLevel::kDetailed, "detailed", 300, 8}}) {
+        const std::string path_level = (std::filesystem::temp_directory_path() /
+                                        (std::string("seastack_test_visualization_recording_") + c.name + ".h5"))
+                                           .string();
+        level_paths.push_back(path_level);
+        {
+            ::chrono::ChSystemNSC sys;
+            auto body = chrono_types::make_shared<::chrono::ChBody>();
+            body->SetName("float");
+            body->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeBox>(1.0, 1.0, 1.0));
+            sys.AddBody(body);
+            seastack::chrono::SimulationExporter::Options options;
+            options.output_path = path_level;
+            options.log_final_output_path = false;
+            options.export_config.level = c.level;
+            seastack::chrono::SimulationExporter exporter(options);
+            exporter.WriteSimulationInfo(&sys, "", "test", kDt, 3.0);
+            exporter.WriteModel(&sys);
+            exporter.BeginResults(&sys, 300);
+            exporter.WriteVisualization(&sys, 0.0, 0.0, 9.81, false);
+            for (int i = 0; i < 300; ++i) {
+                sys.DoStepDynamics(kDt);
+                exporter.RecordStep(&sys);
+                auto lines = FakeMooring(sys.GetChTime());
+                // A snatch between geometry samples must still reach the peak statistics.
+                if (i == 154) lines[0].line_max_tension = 9000.0;
+                exporter.RecordMooringLines(lines);
+            }
+            exporter.Finalize();
+        }
+        const std::string tag = std::string(c.name) + ": ";
+        {
+            H5::H5File file(path_level, H5F_ACC_RDONLY);
+            const H5::Group line = file.openGroup("/results/mooring/line_1");
+            double peak = 0.0;
+            line.openAttribute("peak_tension_N").read(H5::PredType::NATIVE_DOUBLE, &peak);
+            TEST_NEAR(peak, 9000.0, 0.0, tag + "peak tension at full rate");
+            hsize_t n_max = 0;
+            line.openDataSet("line_max_tension").getSpace().getSimpleExtentDims(&n_max);
+            TEST_ASSERT(n_max == 300, tag + "line_max_tension at every output step");
+            TEST_ASSERT(line.nameExists("node_positions") == (c.samples > 0), tag + "node geometry present by level");
+            if (c.samples > 0) {
+                const H5::DataSet pos = line.openDataSet("node_positions");
+                hsize_t dims[3] = {0, 0, 0};
+                const int rank = pos.getSpace().getSimpleExtentDims(dims);
+                TEST_ASSERT(rank == 3 && dims[0] == c.samples && dims[1] == 3 && dims[2] == 3,
+                            tag + "node_positions shape [" + std::to_string(dims[0]) + ", " + std::to_string(dims[1]) +
+                                ", " + std::to_string(dims[2]) + "]");
+                TEST_ASSERT(pos.getDataType().getSize() == c.bytes, tag + "node_positions dtype");
+                hsize_t n_t = 0;
+                line.openDataSet("sample_time").getSpace().getSimpleExtentDims(&n_t);
+                hsize_t dims_t[2] = {0, 0};
+                line.openDataSet("node_tensions").getSpace().getSimpleExtentDims(dims_t);
+                TEST_ASSERT(n_t == c.samples && dims_t[0] == c.samples && dims_t[1] == 3,
+                            tag + "sample_time and node_tensions match");
+            }
+        }
+        seastack::chrono::ReplayRecording level_rec;
+        TEST_ASSERT(seastack::chrono::LoadReplayRecording(path_level, size_t{64} << 20, &level_rec, &error),
+                    tag + "replay loads: " + error);
+        TEST_ASSERT(level_rec.scene.mooring_lines.size() == (c.samples > 0 ? 1u : 0u) &&
+                        level_rec.mooring_note.empty() == (c.samples > 0),
+                    tag + "replay draws the lines it has, with a note otherwise: " + level_rec.mooring_note);
+        if (c.samples > 0 && !level_rec.frames.empty()) {
+            // Frame 154 is t = 1.55 s: standard shows the 1.51 s sample, detailed its own.
+            const double expected = c.samples == 300 ? 200.0 + 1.55 : 200.0 + 1.51;
+            TEST_NEAR(level_rec.frames[154].mooring_lines[0].node_tensions[1], expected, 1e-4,
+                      tag + "replay tension at t = 1.55 s");
+        }
+    }
+
     std::error_code ec;
     std::filesystem::remove(path, ec);
     std::filesystem::remove(path_changes, ec);
     std::filesystem::remove(path_old, ec);
+    for (const std::string& p : level_paths) {
+        std::filesystem::remove(p, ec);
+    }
     test_results.Summary();
     return test_results.failed > 0 ? 1 : 0;
 }

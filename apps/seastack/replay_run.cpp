@@ -49,6 +49,9 @@ int RunReplay(const std::string& results_path) {
     if (!recording->wave_note.empty()) {
         cli::LogWarning("Replay: " + recording->wave_note);
     }
+    if (!recording->mooring_note.empty()) {
+        cli::LogWarning("Replay: " + recording->mooring_note);
+    }
 
     auto ui = seastack::viz::CreateUI(true, seastack::viz::ViewerBackend::kSeastack);
     try {

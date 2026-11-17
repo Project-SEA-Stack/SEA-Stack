@@ -64,6 +64,9 @@ static std::string SimpleSha256(const std::string& text) {
     }
     return hs.str();
 }
+
+/// Mooring node geometry interval at the standard output level [s] (10 Hz, enough for replay).
+constexpr double kMooringStandardInterval = 0.1;
 }
 
 namespace seastack::chrono {
@@ -193,9 +196,10 @@ struct SimulationExporter::Impl {
     // ── Mooring line buffers (geometry at output rate; peaks every step) ──
     struct MooringLineBuffers {
         unsigned int num_nodes = 0;
-        std::vector<double> node_positions;   // N_frames * num_nodes * 3
-        std::vector<double> node_tensions;    // N_frames * num_nodes
-        std::vector<double> line_max_tension; // N_frames
+        std::vector<double> sample_time;      // N_samples [s], geometry time base
+        std::vector<double> node_positions;   // N_samples * num_nodes * 3
+        std::vector<double> node_tensions;    // N_samples * num_nodes
+        std::vector<double> line_max_tension; // N_frames (every recorded step)
         double peak_tension_N = 0.0;          // max over all steps
         double peak_tension_time_s = 0.0;
     };
@@ -1483,6 +1487,17 @@ void SimulationExporter::RecordMooringLines(
         impl_->mooring_initialized = true;
     }
 
+    // Node geometry by output level: compact none, standard thinned to
+    // kMooringStandardInterval, detailed every recorded step.
+    const ExportLevel level = impl_->export_config.level;
+    bool sample_geometry = impl_->last_step_was_recorded && level != ExportLevel::kCompact;
+    if (sample_geometry && level == ExportLevel::kStandard && !impl_->mooring_lines.empty() &&
+        !impl_->mooring_lines.front().sample_time.empty()) {
+        // 1e-9 s: tolerate round-off in the accumulated simulation time.
+        sample_geometry = peak_t >= impl_->mooring_lines.front().sample_time.back() +
+                                        kMooringStandardInterval - 1e-9;
+    }
+
     for (size_t li = 0; li < lines.size() && li < impl_->mooring_lines.size(); ++li) {
         auto& buf = impl_->mooring_lines[li];
         const auto& src = lines[li];
@@ -1495,7 +1510,12 @@ void SimulationExporter::RecordMooringLines(
         if (!impl_->last_step_was_recorded) {
             continue;
         }
+        buf.line_max_tension.push_back(tmax);
+        if (!sample_geometry) {
+            continue;
+        }
 
+        buf.sample_time.push_back(peak_t);
         const size_t n = buf.num_nodes;
         for (size_t ni = 0; ni < n; ++ni) {
             if (ni < src.node_positions.size()) {
@@ -1509,7 +1529,6 @@ void SimulationExporter::RecordMooringLines(
                 (ni < src.node_tensions.size()) ? src.node_tensions[ni] : 0.0;
             buf.node_tensions.push_back(ten);
         }
-        buf.line_max_tension.push_back(tmax);
     }
 }
 
@@ -1754,9 +1773,14 @@ void SimulationExporter::Finalize() {
     if (!impl_->mooring_lines.empty()) {
         auto g_moor = impl_->writer.RequireGroup("/results/mooring");
         g_moor.WriteAttribute("time_ref", std::string("/results/time/time"));
+        const char* geometry_rate = level == ExportLevel::kCompact    ? "not recorded (compact output)"
+                                    : level == ExportLevel::kStandard ? "about 10 Hz, float32 (standard output)"
+                                                                      : "every output step (detailed output)";
+        g_moor.WriteAttribute("node_geometry_rate", std::string(geometry_rate));
         g_moor.WriteAttribute("description",
-            std::string("MoorDyn line node positions/tensions at the animation "
-                        "output rate; peak_tension_* are full-rate extrema."));
+            std::string("MoorDyn lines. line_max_tension: every output step (time_ref). node_positions "
+                        "[N_samples, num_nodes, 3] and node_tensions [N_samples, num_nodes]: at "
+                        "sample_time (node_geometry_rate). peak_tension_*: extrema over every step."));
         for (size_t li = 0; li < impl_->mooring_lines.size(); ++li) {
             auto& buf = impl_->mooring_lines[li];
             auto g_line = g_moor.CreateGroup("line_" + std::to_string(li + 1));
@@ -1768,19 +1792,23 @@ void SimulationExporter::Finalize() {
             g_line.WriteAttribute("frame", std::string("world"));
 
             const hsize_t N = static_cast<hsize_t>(buf.line_max_tension.size());
+            if (N > 0) {
+                write1d(g_line, "line_max_tension", buf.line_max_tension, {N});
+            }
+            const hsize_t Ns = static_cast<hsize_t>(buf.sample_time.size());
             const hsize_t Nn = static_cast<hsize_t>(buf.num_nodes);
-            if (N > 0 && Nn > 0 && !buf.node_positions.empty()) {
-                std::array<hsize_t, 3> d3 = {N, Nn, 3};
-                std::array<hsize_t, 2> d2 = {N, Nn};
-                std::array<hsize_t, 1> d1 = {N};
-                write2d(g_line, "node_tensions", buf.node_tensions, d2);
-                write1d(g_line, "line_max_tension", buf.line_max_tension, d1);
-                // 3D dataset via flattened write as [N*Nn, 3] then document shape
-                std::array<hsize_t, 2> d2_flat = {N * Nn, 3};
-                write2d(g_line, "node_positions", buf.node_positions, d2_flat);
-                g_line.WriteAttribute("node_positions_shape",
-                                      std::string("N_frames x num_nodes x 3 (row-major frames,nodes)"));
-                (void)d3;
+            if (Ns > 0 && Nn > 0) {
+                g_line.WriteDataset("sample_time", buf.sample_time, std::array<hsize_t, 1>{Ns}, wopts);
+                g_line.WriteAttribute("sample_time.units", std::string("s"));
+                const std::array<hsize_t, 3> d3 = {Ns, Nn, 3};
+                const std::array<hsize_t, 2> d2 = {Ns, Nn};
+                if (level == ExportLevel::kStandard || f32) {
+                    g_line.WriteDatasetF32("node_positions", buf.node_positions, d3, wopts);
+                    g_line.WriteDatasetF32("node_tensions", buf.node_tensions, d2, wopts);
+                } else {
+                    g_line.WriteDataset("node_positions", buf.node_positions, d3, wopts);
+                    g_line.WriteDataset("node_tensions", buf.node_tensions, d2, wopts);
+                }
             }
         }
     }
@@ -1861,8 +1889,8 @@ void SimulationExporter::Finalize() {
                     }
                     // float32 (about 7 significant digits) is ample for drawing.
                     auto g_body = impl_->writer.RequireGroup(source_path + "/" + IndexedName("body_", b));
-                    g_body.WriteDatasetF32("force", force, {N, 3}, wopts);
-                    g_body.WriteDatasetF32("moment", moment, {N, 3}, wopts);
+                    g_body.WriteDatasetF32("force", force, std::array<hsize_t, 2>{N, 3}, wopts);
+                    g_body.WriteDatasetF32("moment", moment, std::array<hsize_t, 2>{N, 3}, wopts);
                 }
             }
         };

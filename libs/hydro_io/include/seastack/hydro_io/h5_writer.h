@@ -155,6 +155,12 @@ class H5Writer {
         /** @brief Write a 2D dataset stored as float32 (source data is double). */
         void WriteDatasetF32(const std::string& name, const std::vector<double>& data,
                              const std::array<hsize_t, 2>& dims, const WriteOptions& opts) const;
+        /** @brief Write a 3D double dataset (row-major) with optional gzip compression. */
+        void WriteDataset(const std::string& name, const std::vector<double>& data,
+                          const std::array<hsize_t, 3>& dims, const WriteOptions& opts) const;
+        /** @brief Write a 3D dataset (row-major) stored as float32 (source data is double). */
+        void WriteDatasetF32(const std::string& name, const std::vector<double>& data,
+                             const std::array<hsize_t, 3>& dims, const WriteOptions& opts) const;
 
       private:
         H5::Group group_;

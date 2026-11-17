@@ -282,10 +282,11 @@ class SimulationExporter {
     /**
      * @brief Record MoorDyn line node positions / tensions for offline viz.
      *
-     * Call once per simulation step after RecordStep. Geometry samples are
-     * appended only when the preceding RecordStep passed the decimation gate
-     * (animation rate). Per-line peak tension is updated every call so short
-     * snatch peaks are not missed between output frames.
+     * Call once per simulation step after RecordStep. Per-line peak tension is
+     * updated every call so short snatch peaks are not missed between output
+     * frames; line_max_tension is kept at every recorded step. Node positions
+     * and tensions follow the output level, with their own sample_time:
+     * compact none, standard about 10 Hz in float32, detailed every recorded step.
      */
     void RecordMooringLines(
         const std::vector<seastack::viz::MooringLineVizData>& lines);
