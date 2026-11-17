@@ -22,6 +22,10 @@ Top-level groups (high level):
 - `/results` — time histories (bodies, PTOs, joints, hydro components)
 - `/meta` — run metadata (`system`, `config`, `run`)
 - `/diagnostics` — optional diagnostics (e.g. radiation)
+- `/visualization` — visual scene and per-sample display data for `run_seastack --replay`: body shapes and
+  input pose, TSDA cable endpoints, and hydrodynamic loads by component (`forces`, float32). Visual only.
+- `/events` — parameter changes applied while running (GUI or `--schedule`); see
+  [docs/usage/GUI.md](../usage/GUI.md#changing-parameters-while-the-model-runs)
 
 ### `/meta/run` timing attributes
 

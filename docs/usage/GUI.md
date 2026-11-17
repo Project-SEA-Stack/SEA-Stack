@@ -57,9 +57,10 @@ motion" (Display) draws poses interpolated between steps.
 `--replay` plays a results file without running Chrono, at any speed. It
 needs a file written by v1.1 or later (HDF5 visualization schema 1.1); an
 older file gives a clear message. Long records are thinned to fit about
-512 MB. Replays have no force data, so force arrows and load plots are live
-only. The frame at t = 0 is the input pose, labelled as such, because results
-start after the first step.
+512 MB. Force arrows and load plots work in a replay too: every run records
+the hydrodynamic loads by component under `/visualization/forces` (float32,
+about 2 MB for RM3 written every step over 180 s). The frame at t = 0 is the
+input pose, labelled as such, because results start after the first step.
 
 ## Changing parameters while the model runs
 

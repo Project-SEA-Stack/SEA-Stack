@@ -22,6 +22,7 @@
 #include <seastack/adapters/chrono/hydro_system.h>
 #include <seastack/adapters/chrono/simulation_export.h>
 #include <seastack/adapters/chrono/runtime_controls.h>
+#include <seastack/adapters/chrono/viz_extractor.h>
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 #include <seastack/hydro/waves/component_sampler.h>
@@ -1037,6 +1038,8 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     exporter->WriteVisualization(system.get(), wave_ptr ? wave_ptr->GetRampDuration() : 0.0,
                                                  wave_ptr ? wave_ptr->GetWaterDepth() : 0.0, gravity,
                                                  gui_init_ok);
+                    exporter->RecordVisualizationForces(
+                        seastack::chrono::MakeHydroForceProvider(hydro_forces.get()));
                 }
             }
 #if defined(SEASTACK_HAVE_HYDRO_IO)

@@ -109,7 +109,9 @@ User guide: [docs/usage/GUI.md](../usage/GUI.md).
 - **Timeline and replay.** Scrub, step and play back the run so far, at any
   speed, then return to live; slow motion is interpolated. `run_seastack
   --replay results.h5` plays a recorded run without Chrono, with the same
-  controls. Recording costs about 1% of step time.
+  controls, force arrows and plots. Recording costs about 1% of step time;
+  the replay data (`/visualization`) adds to the results file, for example
+  about 2 MB of loads for RM3 written every step over 180 s.
 - **Live changes while the model runs.** The Inspector has sliders for TSDA
   and RSDA stiffness, damping and rest length or angle, and for the sea
   state: wave height, period and direction. Changes apply at a step
@@ -278,9 +280,8 @@ User guide: [docs/usage/GUI.md](../usage/GUI.md).
 - **The SEA-Stack viewer has been tested on Windows only.** On another
   platform, if it fails to start, the run falls back to the Chrono viewer
   with a warning.
-- **Replays have no force data.** Force arrows and load plots work only
-  in live runs. Results files written before this release cannot be
-  replayed.
+- **Results files written before this release cannot be replayed.** They
+  have no `/visualization` group; the viewer says so.
 - **Not yet done** (recorded in the theory note, section 10): the Aalborg
   University sphere decay experiment, CCP-WSI Blind Test 3 (waiting on a
   licence check), and a WEC-Sim ellipsoid demonstration.

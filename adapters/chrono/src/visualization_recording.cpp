@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <exception>
 #include <sstream>
+#include <stdexcept>
 
 namespace seastack::chrono {
 
@@ -58,6 +59,26 @@ double ReadDoubleAttr(const H5::H5Object& obj, const std::string& name, double f
     double value = fallback;
     obj.openAttribute(name).read(H5::PredType::NATIVE_DOUBLE, &value);
     return value;
+}
+
+std::vector<std::string> ReadStrings(const H5::H5File& file, const std::string& path) {
+    H5::DataSet ds = file.openDataSet(path);
+    const hssize_t n = ds.getSpace().getSimpleExtentNpoints();
+    std::vector<std::string> values;
+    if (n <= 0) {
+        return values;
+    }
+    const H5::StrType type = ds.getStrType();
+    if (!type.isVariableStr()) {
+        throw std::runtime_error(path + ": expected variable-length strings");
+    }
+    std::vector<char*> raw(static_cast<size_t>(n), nullptr);
+    ds.read(raw.data(), type);
+    for (char* s : raw) {
+        values.emplace_back(s ? s : "");
+    }
+    H5::DataSet::vlenReclaim(raw.data(), type, ds.getSpace());
+    return values;
 }
 
 std::string ReadStringAttr(const H5::H5Object& obj, const std::string& name) {
@@ -286,6 +307,10 @@ bool LoadReplayRecording(const std::string& path, size_t budget_bytes, ReplayRec
             prototype.mooring_lines[li].node_tensions.resize(static_cast<size_t>(std::max(0, mooring_nodes[li])));
         }
         prototype.cable_lines.resize(scene.cable_lines.size());
+        if (PathExists(file, "/visualization/forces/sources")) {
+            scene.force_sources = ReadStrings(file, "/visualization/forces/sources");
+            prototype.body_wrenches.resize(scene.force_sources.size() * scene.bodies.size());
+        }
 
         const size_t capacity = viz::FrameCapacityForBudget(viz::EstimateFrameBytes(prototype), budget_bytes,
                                                             n_samples);
@@ -366,6 +391,29 @@ bool LoadReplayRecording(const std::string& path, size_t budget_bytes, ReplayRec
                 state.point1 = ToVec3(p1, 3 * i);
                 state.point2 = ToVec3(p2, 3 * i);
                 state.tension = i < tension.size() ? tension[i] : 0.0;
+            }
+        }
+
+        // ── Hydrodynamic loads (absent groups are zero) ─────────────────────
+        const size_t n_bodies = scene.bodies.size();
+        for (size_t s = 0; s < scene.force_sources.size(); ++s) {
+            for (size_t b = 0; b < n_bodies; ++b) {
+                const std::string body_path = "/visualization/forces/source_" + std::to_string(s) + "/body_" +
+                                              std::to_string(b);
+                if (!PathExists(file, body_path + "/force")) {
+                    continue;
+                }
+                const std::vector<double> force = ReadDoubles(file, body_path + "/force");
+                const std::vector<double> moment = ReadDoubles(file, body_path + "/moment");
+                if (force.size() != 3 * n_samples || moment.size() != 3 * n_samples) {
+                    *error = path + ": " + body_path + " does not match /results/time/time.";
+                    return false;
+                }
+                for (size_t f = 0; f < samples.size(); ++f) {
+                    viz::Wrench& w = out->frames[f].body_wrenches[s * n_bodies + b];
+                    w.force = ToVec3(force, 3 * samples[f]);
+                    w.moment = ToVec3(moment, 3 * samples[f]);
+                }
             }
         }
 

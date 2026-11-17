@@ -10,6 +10,7 @@
  *   /results/model/bodies/<name>           centre-of-mass position and orientation
  *   /results/mooring/line_<i>              MoorDyn node positions and tensions
  *   /visualization/cables/cable_<i>        TSDA glyph endpoints
+ *   /visualization/forces                  hydro loads by component (optional)
  *   /inputs/simulation/waves/components    linear wave components (optional)
  *
  * Conventions match viz_core: world frame, Z up, SI units, quaternions (w, x, y, z).

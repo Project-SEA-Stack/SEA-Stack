@@ -13,6 +13,7 @@
 #ifndef SEASTACK_ADAPTERS_CHRONO_SIMULATION_EXPORT_H
 #define SEASTACK_ADAPTERS_CHRONO_SIMULATION_EXPORT_H
 
+#include <functional>
 #include <memory>
 #include <vector>
 #include <string>
@@ -26,6 +27,8 @@ namespace seastack::hydro_io { class H5Writer; }
 namespace seastack::hydro { struct ComponentForceRecord; }
 
 namespace seastack::chrono {
+
+struct ForceSample;
 
 enum class H5Verbosity { Quiet = 0, Verbose = 1 };
 
@@ -201,6 +204,18 @@ class SimulationExporter {
      */
     void WriteVisualization(::chrono::ChSystem* system, double wave_ramp_duration_s, double water_depth_m,
                             double gravity_m_s2, bool viewer_colors);
+
+    /**
+     * @brief Also record per-component hydrodynamic loads for offline replay.
+     *
+     * Each output sample then stores the force and moment of each source on
+     * each body under /visualization/forces (world axes, applied at the
+     * centre of mass), so a replay can draw force arrows and load plots.
+     * Pass MakeHydroForceProvider(hydro) (viz_extractor.h) for the hydro
+     * components, as the live viewer does; results are unchanged. Call after
+     * WriteVisualization() and before stepping. An empty provider is ignored.
+     */
+    void RecordVisualizationForces(std::function<ForceSample()> forces);
 
     // Runtime metadata (written into /meta/run at Finalize)
     /**

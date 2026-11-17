@@ -82,7 +82,23 @@ int main() {
     components[1] = {1.3, 1.3 * 1.3 / 9.81, 0.5, 0.4, 1.1};
     seastack::hydro::LinearDirectionalWaveField wave(components, 0.0);
 
+    // Excitation acts on both bodies; radiation on the hull only (the anchor's
+    // is zero, so the file omits it).
+    auto fake_forces = [&system, hull, anchor]() {
+        const double t = system.GetChTime();
+        seastack::chrono::ForceSample sample;
+        sample.sources = {"Excitation", "Radiation"};
+        sample.bodies = {hull.get(), anchor.get()};
+        sample.wrenches.resize(4);
+        sample.wrenches[0].force = {t, 2.0 * t, -3.0 * t};
+        sample.wrenches[0].moment = {0.5 * t, 0.0, 1.0};
+        sample.wrenches[1].force = {0.0, 0.0, 5.0};
+        sample.wrenches[2].force = {0.0, 0.0, -10.0 * t};
+        return sample;
+    };
+
     seastack::chrono::VizExtractor extractor(&system);
+    extractor.SetForceProvider(fake_forces);
     const VizFrame input = extractor.Capture(0);
     std::vector<VizFrame> live;
     constexpr double kDt = 0.01;    // [s]
@@ -105,6 +121,7 @@ int main() {
         }
         exporter.WriteWaveComponents(om, kk, am, ph, dir);
         exporter.WriteVisualization(&system, 5.0, 0.0, 9.81, false);
+        exporter.RecordVisualizationForces(fake_forces);
         for (int i = 0; i < kSteps; ++i) {
             system.DoStepDynamics(kDt);
             exporter.RecordStep(&system);
@@ -166,6 +183,31 @@ int main() {
         TEST_NEAR(rec.frames.back().mooring_lines[0].node_positions[1][2], -10.0 + t_last, 1e-9, "mooring nodes");
         TEST_NEAR(rec.frames.back().mooring_lines[0].node_tensions[1], 200.0 + t_last, 1e-9, "mooring tensions");
     }
+
+    TEST_ASSERT(rec.scene.force_sources == std::vector<std::string>({"Excitation", "Radiation"}),
+                "force source names round trip");
+    double max_wrench_err = 0.0;
+    bool sizes_ok = true;
+    for (size_t f = 0; f < rec.frames.size() && f < live.size(); ++f) {
+        const auto& a = rec.frames[f].body_wrenches;
+        const auto& b = live[f].body_wrenches;
+        sizes_ok = sizes_ok && a.size() == 4 && b.size() == 4;
+        for (size_t i = 0; i < a.size() && i < b.size(); ++i) {
+            for (int k = 0; k < 3; ++k) {
+                // Relative to max(1, |live|): loads are stored as float32.
+                max_wrench_err = std::max(max_wrench_err, std::abs(a[i].force[k] - b[i].force[k]) /
+                                                              std::max(1.0, std::abs(b[i].force[k])));
+                max_wrench_err = std::max(max_wrench_err, std::abs(a[i].moment[k] - b[i].moment[k]) /
+                                                              std::max(1.0, std::abs(b[i].moment[k])));
+            }
+        }
+    }
+    TEST_ASSERT(sizes_ok, "every frame has sources x bodies wrenches");
+    TEST_ASSERT(max_wrench_err < 1e-6, "replayed loads match live to float32, including zero loads on the anchor");
+    TEST_NEAR(rec.frames.back().body_wrenches[1 * 2 + 0].force[2], -10.0 * rec.frames.back().time, 1e-5,
+              "radiation on the hull at the last frame");
+    TEST_NEAR(rec.frames.back().body_wrenches[0 * 2 + 1].force[2], 5.0, 1e-12,
+              "excitation on the anchor (second body of one source)");
 
     TEST_ASSERT(rec.wave != nullptr, "wave rebuilt from components");
     if (rec.wave) {

@@ -36,6 +36,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <iomanip>
+#include <limits>
 #include <thread>
 #include <fstream>
 #include <exception>
@@ -217,6 +218,9 @@ struct SimulationExporter::Impl {
     std::vector<std::vector<double>> cable_point1;   // [cable] -> N x 3 [m]
     std::vector<std::vector<double>> cable_point2;   // [cable] -> N x 3 [m]
     std::vector<std::vector<double>> cable_tension;  // [cable] -> N [N]
+    bool viz_forces = false;
+    /// [sample] -> VizFrame::body_wrenches (sources x bodies); empty if unknown.
+    std::vector<std::vector<viz::Wrench>> viz_wrenches;
 
     ExportConfig export_config;
     double prev_time = 0.0;  // for energy trapezoidal integration under decimation
@@ -742,6 +746,14 @@ void SimulationExporter::WriteVisualization(::chrono::ChSystem* system, double w
     impl_->cable_tension.assign(scene.cable_lines.size(), {});
 }
 
+void SimulationExporter::RecordVisualizationForces(std::function<ForceSample()> forces) {
+    if (!impl_->viz_extractor || !forces) {
+        return;
+    }
+    impl_->viz_extractor->SetForceProvider(std::move(forces));
+    impl_->viz_forces = true;
+}
+
 
 void SimulationExporter::WriteModel(::chrono::ChSystem* system) {
     if (system == nullptr) {
@@ -1156,14 +1168,17 @@ void SimulationExporter::RecordStep(::chrono::ChSystem* system) {
     impl_->time.push_back(current_time);
     impl_->steps_seen++;
 
-    // ── TSDA glyph endpoints for offline replay (see WriteVisualization) ────
-    if (impl_->viz_extractor && !impl_->cable_tension.empty()) {
-        const viz::VizFrame frame = impl_->viz_extractor->Capture(impl_->total_steps_seen);
+    // ── TSDA glyph endpoints and loads for offline replay (see WriteVisualization) ──
+    if (impl_->viz_extractor && (!impl_->cable_tension.empty() || impl_->viz_forces)) {
+        viz::VizFrame frame = impl_->viz_extractor->Capture(impl_->total_steps_seen);
         for (size_t c = 0; c < frame.cable_lines.size() && c < impl_->cable_tension.size(); ++c) {
             const viz::CableLineState& s = frame.cable_lines[c];
             impl_->cable_point1[c].insert(impl_->cable_point1[c].end(), s.point1.begin(), s.point1.end());
             impl_->cable_point2[c].insert(impl_->cable_point2[c].end(), s.point2.begin(), s.point2.end());
             impl_->cable_tension[c].push_back(s.tension);
+        }
+        if (impl_->viz_forces) {
+            impl_->viz_wrenches.push_back(std::move(frame.body_wrenches));
         }
     }
 
@@ -1768,6 +1783,71 @@ void SimulationExporter::Finalize() {
             g_cable.WriteAttribute("units", std::string("m (points), N (tension)"));
             g_cable.WriteAttribute("frame", std::string("world"));
         }
+
+        const viz::SceneDescription& scene = impl_->viz_extractor->Scene();
+        const size_t n_sources = scene.force_sources.size();
+        const size_t n_bodies = scene.bodies.size();
+        auto write_viz_forces = [&]() {
+            const hsize_t N = static_cast<hsize_t>(impl_->viz_wrenches.size());
+            auto g_forces = impl_->writer.RequireGroup("/visualization/forces");
+            g_forces.WriteAttribute("description",
+                std::string("Hydrodynamic loads by component type, as drawn by the viewer (solver output; "
+                            "a copy, results unchanged). source_<s>/body_<k>: load of source s on "
+                            "/visualization/bodies/body_<k>. Bodies with no load from a source are omitted "
+                            "(zero). NaN where a sample has no data. Stored as float32."));
+            g_forces.WriteAttribute("frame", std::string("world"));
+            g_forces.WriteAttribute("application_point", std::string("body centre of mass"));
+            g_forces.WriteAttribute("units_force", std::string("N"));
+            g_forces.WriteAttribute("units_moment", std::string("N*m"));
+            g_forces.WriteAttribute("time_ref", std::string("/results/time/time"));
+            g_forces.WriteStringArray("sources", scene.force_sources);
+            const double nan = std::numeric_limits<double>::quiet_NaN();
+            for (size_t s = 0; s < n_sources; ++s) {
+                const std::string source_path = "/visualization/forces/" + IndexedName("source_", s);
+                bool source_written = false;
+                for (size_t b = 0; b < n_bodies; ++b) {
+                    std::vector<double> force;
+                    std::vector<double> moment;
+                    force.reserve(3 * impl_->viz_wrenches.size());
+                    moment.reserve(3 * impl_->viz_wrenches.size());
+                    bool loaded = false;
+                    for (const auto& sample : impl_->viz_wrenches) {
+                        if (sample.size() != n_sources * n_bodies) {
+                            force.insert(force.end(), {nan, nan, nan});
+                            moment.insert(moment.end(), {nan, nan, nan});
+                            continue;
+                        }
+                        const viz::Wrench& w = sample[s * n_bodies + b];
+                        force.insert(force.end(), w.force.begin(), w.force.end());
+                        moment.insert(moment.end(), w.moment.begin(), w.moment.end());
+                        for (int k = 0; k < 3; ++k) {
+                            loaded = loaded || w.force[k] != 0.0 || w.moment[k] != 0.0;
+                        }
+                    }
+                    if (!loaded) {
+                        continue;
+                    }
+                    if (!source_written) {
+                        impl_->writer.RequireGroup(source_path).WriteAttribute("name", scene.force_sources[s]);
+                        source_written = true;
+                    }
+                    // float32 (about 7 significant digits) is ample for drawing.
+                    auto g_body = impl_->writer.RequireGroup(source_path + "/" + IndexedName("body_", b));
+                    g_body.WriteDatasetF32("force", force, {N, 3}, wopts);
+                    g_body.WriteDatasetF32("moment", moment, {N, 3}, wopts);
+                }
+            }
+        };
+        // Replay-only data: a failure here must not cost the results written after it.
+        if (impl_->viz_forces && n_sources > 0 && !impl_->viz_wrenches.empty()) {
+            try {
+                write_viz_forces();
+            } catch (const H5::Exception& e) {
+                LOG_WARNING("Replay loads not written (/visualization/forces): " << e.getDetailMsg());
+            } catch (const std::exception& e) {
+                LOG_WARNING("Replay loads not written (/visualization/forces): " << e.what());
+            }
+        }
     }
 
     // ── Runtime commands (GUI edits and schedules) ──────────────────────────
@@ -2025,6 +2105,7 @@ void SimulationExporter::WriteWaveComponents(const std::vector<double>&, const s
 void SimulationExporter::WriteVisualization(::chrono::ChSystem*, double, double, double, bool) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }
+void SimulationExporter::RecordVisualizationForces(std::function<ForceSample()>) {}
 void SimulationExporter::RecordMooringLines(
     const std::vector<seastack::viz::MooringLineVizData>&) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
