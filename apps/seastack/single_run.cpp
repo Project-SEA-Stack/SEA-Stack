@@ -1141,7 +1141,8 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         // Live wave period and direction (one regular or spectral sea state).
         // A change samples the sea again with the new value and crossfades to
         // it over two dominant periods (the longer of the old and new one),
-        // keeping each component's phase at the origin. It is refused while a
+        // keeping each component's phase at the origin when the component
+        // count is unchanged (see CrossfadeTo). It is refused while a
         // crossfade runs, or when the BEM data does not cover the new sea
         // (CheckSeaStateChange). Eta-file seas and partitions have no single
         // period or direction to change.
@@ -1183,7 +1184,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     } catch (const std::exception& e) {
                         return e.what();
                     }
-                    return seastack::hydro::CheckSeaStateChange(field->GetCurrentComponents(), proposed, limits);
+                    const auto kind = (what == "period") ? seastack::hydro::SeaStateChangeKind::kPeriod
+                                                         : seastack::hydro::SeaStateChangeKind::kDirection;
+                    return seastack::hydro::CheckSeaStateChange(kind, proposed, limits);
                 };
                 auto apply = [field, modified, sea](const std::string& what, double value, double time) {
                     const seastack::hydro::SeaStateDefinition def = modified(what, value);

@@ -141,18 +141,19 @@ double LinearDirectionalWaveField::CrossfadeTo(std::vector<WaveComponent> compon
     }
     const std::size_t current_begin = layers_.empty() ? 0 : layers_.back().begin;
     const std::size_t current_end = components_.size();
-    if (components.size() != current_end - current_begin) {
-        throw std::invalid_argument("LinearDirectionalWaveField::CrossfadeTo: " + std::to_string(components.size()) +
-                                    " new components for " + std::to_string(current_end - current_begin) +
-                                    " current ones (the discretisation must not change)");
+    if (components.empty()) {
+        throw std::invalid_argument("LinearDirectionalWaveField::CrossfadeTo: no new components");
     }
+    const bool matched = components.size() == current_end - current_begin;
     constexpr double kTwoPi = 2.0 * M_PI;
     for (std::size_t i = 0; i < components.size(); ++i) {
         WaveComponent& c = components[i];
-        const WaveComponent& old = components_[current_begin + i];
         c.k = ComputeWaveNumber(c.omega, water_depth_, g_);
-        c.phase = std::fmod(old.phase + (c.omega - old.omega) * start_time, kTwoPi);
-        if (c.phase < 0.0) c.phase += kTwoPi;
+        if (matched) {
+            const WaveComponent& old = components_[current_begin + i];
+            c.phase = std::fmod(old.phase + (c.omega - old.omega) * start_time, kTwoPi);
+            if (c.phase < 0.0) c.phase += kTwoPi;
+        }
     }
 
     if (layers_.empty()) {

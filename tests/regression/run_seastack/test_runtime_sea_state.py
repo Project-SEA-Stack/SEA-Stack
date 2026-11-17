@@ -22,6 +22,8 @@ Checks, on copies of the demo cases:
      the BEM headings (one heading; outside 0-90 deg), a period outside the
      BEM frequencies, a period change with constant-coefficient radiation, and
      a change while the previous one still fades in.
+  6. Fixed frequency band (frequency_min/max): a period change inside the band
+     runs, and one that moves energy above the BEM range is refused.
 
 Needs numpy and h5py (exit code 77, skipped, if missing). Usage:
     python test_runtime_sea_state.py --exe <path/to/run_seastack>
@@ -59,6 +61,18 @@ def set_wave(case: Path, field: str, value: float) -> None:
                       flags=re.MULTILINE)
     if n != 1:
         raise RuntimeError(f"{hydro}: no {field}")
+    hydro.write_text(text, encoding="utf-8")
+
+
+def set_frequency_band(case: Path, f_min_hz: float, f_max_hz: float) -> None:
+    """Pin the sampled frequency band (waves.frequency_min/max) in the hydro YAML."""
+    hydro = next(case.glob("*.hydro.yaml"))
+    text = hydro.read_text(encoding="utf-8")
+    text, n = re.subn(r"^(\s*)seed:(.*)$",
+                      rf"\g<1>seed:\g<2>\n\g<1>frequency_min: {f_min_hz!r}\n\g<1>frequency_max: {f_max_hz!r}",
+                      text, count=1, flags=re.MULTILINE)
+    if n != 1:
+        raise RuntimeError(f"{hydro}: no waves.seed to anchor the frequency band")
     hydro.write_text(text, encoding="utf-8")
 
 
@@ -255,6 +269,30 @@ def main() -> int:
             check("<run succeeded>" not in out and reason in out and "refused" in out,
                   f"{name}: run stops with '{reason}'"
                   + ("" if reason in out else f" (output: {out.strip().splitlines()[-3:]})"))
+
+        # 6. Fixed frequency band (frequency_min/max): a period change keeps the
+        #    frequencies or changes the pruned count. It used to be refused as
+        #    "a different number of wave components", or to skip the BEM band
+        #    check. RM3 BEM data: 0.02-5.2 rad/s (up to 0.83 Hz).
+        print("rm3_band: rm3/irregular_waves, frequency band 0.04-1.2 Hz")
+        d = prepare(root, "rm3_band", "rm3/irregular_waves", 30.0)
+        set_frequency_band(d, 0.04, 1.2)
+        dt = time_step(d)
+        sched = d / "band.schedule.yaml"
+        write_schedule(sched, [(CHANGE_STEP, "waves.period", 10.0)], dt)
+        h5_base, h5_band = run(exe, d, None), run(exe, d, sched)
+        check(None not in (h5_base, h5_band), "fixed band: period change 8 -> 10 s inside the band runs")
+        if None not in (h5_base, h5_band):
+            a, b = datasets(h5_base, "results"), datasets(h5_band, "results")
+            row = first_differing_row(a, b)
+            check(CHANGE_STEP <= row <= CHANGE_STEP + 5, f"fixed band: the change takes effect (first differing row {row})")
+        set_end_time(d, (CHANGE_STEP + 10) * dt)
+        write_schedule(sched, [(CHANGE_STEP, "waves.period", 2.0)], dt)
+        out = run_refused(exe, d, sched)
+        reason = "outside the BEM frequency range"
+        check("<run succeeded>" not in out and reason in out,
+              f"fixed band: Tp 2 s (energy above 0.83 Hz) stops with '{reason}'"
+              + ("" if reason in out else f" (output: {out.strip().splitlines()[-3:]})"))
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

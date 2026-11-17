@@ -2,8 +2,8 @@
  * @file  sea_state_change.h
  * @brief Checks for live wave period and direction changes.
  *
- * A live change crossfades to a new component set with the same seed and
- * discretisation (LinearDirectionalWaveField::CrossfadeTo). It is refused
+ * A live change crossfades to a new component set with the same seed
+ * (LinearDirectionalWaveField::CrossfadeTo). It is refused
  * when the new sea needs data the model does not have; at startup the same
  * situations only warn, but a live change is a choice the user can undo, so
  * the GUI says why and keeps the current sea:
@@ -41,8 +41,23 @@ struct SeaStateChangeLimits {
     double max_energy_outside = 0.01;  ///< Largest share of wave energy outside the BEM data [-]
 };
 
+/// What the user changed. The component frequencies alone cannot tell: with a
+/// fixed frequency band (frequency_min/max) a period change keeps them and
+/// changes only the amplitudes, or changes how many components survive pruning.
+enum class SeaStateChangeKind {
+    kPeriod,     ///< Peak period Tp: radiation and BEM frequency-range checks
+    kDirection,  ///< Mean direction: heading-coverage and IRF-kernel checks
+};
+
+/// Why a change of `kind` to the component set `proposed` is refused, or an
+/// empty string if it is allowed. `proposed` may have any number of components.
+std::string CheckSeaStateChange(SeaStateChangeKind kind, const std::vector<WaveComponent>& proposed,
+                                const SeaStateChangeLimits& limits);
+
 /// Why the change from `current` to `proposed` (matched one to one) is
-/// refused, or an empty string if it is allowed.
+/// refused, or an empty string if it is allowed. Infers the kind from the
+/// frequencies and directions and refuses a different component count; prefer
+/// the overload that takes a SeaStateChangeKind.
 std::string CheckSeaStateChange(const std::vector<WaveComponent>& current,
                                 const std::vector<WaveComponent>& proposed,
                                 const SeaStateChangeLimits& limits);

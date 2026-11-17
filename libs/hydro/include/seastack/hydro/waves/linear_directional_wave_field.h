@@ -76,18 +76,22 @@ class LinearDirectionalWaveField : public WaveBase {
     /// Live period or direction change: crossfade from the current components
     /// to `components` over [start_time, start_time + duration] (see WaveLayer).
     ///
-    /// `components` must match the current set one to one (same seed and
-    /// discretisation). Wavenumbers are recomputed for this field's depth and
-    /// gravity. Each phase is shifted so the new component has the phase of
-    /// the current one at the origin at start_time:
+    /// Wavenumbers are recomputed for this field's depth and gravity. When
+    /// `components` has as many entries as the current set (same seed and
+    /// discretisation), they are matched one to one and each phase is shifted
+    /// so the new component has the phase of the current one at the origin at
+    /// start_time:
     ///   phi_new = phi_old + (w_new - w_old) * start_time   (mod 2 pi)
     /// so a direction change leaves eta at the origin unchanged, and after a
-    /// period change both sets start in step.
+    /// period change both sets start in step. With a different count (a
+    /// period change in a fixed frequency band can change how many components
+    /// survive pruning) the new components keep their own phases; eta stays
+    /// continuous because the new set starts at weight 0.
     ///
     /// Evaluation cost grows with the number of changes: faded-out sets stay
     /// in the list, because IRF excitation convolves the elevation history.
     /// @return Time [s] at which the new set has full weight.
-    /// @throws std::invalid_argument on a size mismatch or bad times;
+    /// @throws std::invalid_argument on an empty set or bad times;
     ///         std::logic_error if a crossfade is still running at start_time.
     double CrossfadeTo(std::vector<WaveComponent> components, double start_time, double duration);
 

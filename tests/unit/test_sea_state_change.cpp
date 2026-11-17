@@ -10,16 +10,23 @@
  *       reason: constant-coefficient radiation + period change; energy
  *       outside the BEM frequencies or headings above the limit; IRF with one
  *       kernel for several headings + direction change; a different
- *       discretisation. A full-circle heading set covers the wrap.
+ *       discretisation (inferred kind only). A full-circle heading set
+ *       covers the wrap.
+ *   S1b With the kind of change given: a period change in a fixed frequency
+ *       band (same frequencies, new amplitudes) runs the band check and the
+ *       constant-coefficient refusal; a different component count is allowed.
  *   S2  Crossfade: unchanged (to round-off) before it; (1 - s) old + s new during it
  *       (half-cosine s); exactly the new sea after it, with the phase of the
  *       old one at the origin at the start. A direction change leaves eta at
  *       the origin unchanged. Elevation, pressure head, velocity and the
- *       visualization path agree. A second change during a crossfade and a
- *       different component count are rejected.
+ *       visualization path agree. A second change during a crossfade is
+ *       rejected.
  *   S3  ExcitationComponent on the crossfaded wave: bit-identical before any
  *       change; after it, the force of an excitation built on the new sea;
  *       during it, the weighted sum.
+ *   S4  Crossfade to a different component count: new components keep their
+ *       phases, eta is the weighted sum and continuous at the start, the
+ *       weights sum to 1, and FD excitation is the weighted sum.
  *
  * Self-contained: no data files, no Chrono.
  *********************************************************************/
@@ -187,7 +194,46 @@ int main() {
         auto fewer = current;
         fewer.pop_back();
         TEST_ASSERT(Contains(CheckSeaStateChange(current, fewer, limits), "different number"),
-                    "different discretisation refused");
+                    "inferred kind: different discretisation refused");
+    }
+
+    // ---- S1b. Guardrails with the kind of change given ----
+    {
+        using seastack::hydro::SeaStateChangeKind;
+        SeaStateChangeLimits limits;
+        limits.bem_frequencies = Eigen::VectorXd::LinSpaced(41, 0.2, 1.0);
+        limits.bem_headings = (Eigen::VectorXd(2) << 0.0, kPi / 2).finished();
+        // Fixed frequency band: a shorter Tp keeps the frequencies and moves
+        // energy to the 1.1 rad/s component, above the BEM range.
+        std::vector<WaveComponent> current = Sea(1.0, 0.0);
+        current[2].amplitude = 0.01;  // 0.03% of the energy above 1.0 rad/s
+        std::vector<WaveComponent> shorter = Sea(1.0, 0.0);
+        shorter[0].amplitude = 0.1;
+        shorter[2].amplitude = 0.5;  // 71% of the energy above 1.0 rad/s
+
+        TEST_ASSERT(CheckSeaStateChange(current, shorter, limits).empty(),
+                    "inferred kind misses the fixed-band period change (why the kind is passed)");
+        const std::string band = CheckSeaStateChange(SeaStateChangeKind::kPeriod, shorter, limits);
+        TEST_ASSERT(Contains(band, "outside the BEM frequency range"), "fixed band: band check runs: " + band);
+        TEST_ASSERT(CheckSeaStateChange(SeaStateChangeKind::kPeriod, current, limits).empty(),
+                    "fixed band: period change inside the band allowed");
+
+        SeaStateChangeLimits cc = limits;
+        cc.constant_coefficient_radiation = true;
+        TEST_ASSERT(Contains(CheckSeaStateChange(SeaStateChangeKind::kPeriod, current, cc), "constant-coefficient"),
+                    "fixed band: constant-coefficient radiation refuses a period change");
+        TEST_ASSERT(CheckSeaStateChange(SeaStateChangeKind::kDirection, Sea(1.0, kPi / 4), cc).empty(),
+                    "constant-coefficient radiation: direction change allowed");
+
+        std::vector<WaveComponent> pruned = current;
+        pruned.pop_back();
+        TEST_ASSERT(CheckSeaStateChange(SeaStateChangeKind::kPeriod, pruned, limits).empty(),
+                    "a different component count is allowed");
+        TEST_ASSERT(Contains(CheckSeaStateChange(SeaStateChangeKind::kDirection, Sea(1.0, kPi), limits),
+                             "outside the BEM headings"),
+                    "kind = direction: heading check runs");
+        TEST_ASSERT(Contains(CheckSeaStateChange(SeaStateChangeKind::kPeriod, {}, limits), "no wave components"),
+                    "empty sea refused");
     }
 
     // ---- S2. Crossfade in the wave field ----
@@ -267,13 +313,6 @@ int main() {
                 busy = true;
             }
             TEST_ASSERT(busy, what + "a second change during the crossfade is rejected");
-            bool mismatch = false;
-            try {
-                field->CrossfadeTo({Component(1.0, 0.8, 0.0, 0.0)}, 30.0, duration);
-            } catch (const std::invalid_argument&) {
-                mismatch = true;
-            }
-            TEST_ASSERT(mismatch, what + "a different component count is rejected");
             if (!turn) {
                 TEST_NEAR(field->GetCharacteristicPeriod(), 2.0 * kPi / (0.6 * 1.25), 1e-12,
                           "period: characteristic period of the new sea");
@@ -336,6 +375,50 @@ int main() {
             threw = true;
         }
         TEST_ASSERT(threw, "changed wave without a transfer function: error");
+    }
+
+    // ---- S4. Crossfade to a different number of components ----
+    {
+        constexpr double t0 = 8.0, duration = 14.0;
+        const Eigen::Vector3d point(30.0, 20.0, -2.0);
+        const std::vector<WaveComponent> next = {Component(0.4, 0.7, 0.0, 2.5), Component(0.2, 0.9, 0.0, 5.1)};
+        LinearDirectionalWaveField old_sea(Sea(1.0, 0.0), 0.0);
+        auto field = std::make_shared<LinearDirectionalWaveField>(Sea(1.0, 0.0), 0.0);
+        auto live = MakeExcitation(Sea(1.0, 0.0), field);
+        field->CrossfadeTo(next, t0, duration);
+
+        const auto all = field->GetComponents();
+        TEST_ASSERT(all.size() == 5 && field->GetWaveLayers().size() == 2, "2 new components appended as a layer");
+        TEST_ASSERT(all[3].phase == 2.5 && all[4].phase == 5.1, "unmatched components keep their own phases");
+        const std::vector<WaveComponent> new_comps(all.begin() + 3, all.end());
+        LinearDirectionalWaveField new_sea(new_comps, 0.0);
+
+        double worst_eta = 0.0, worst_weight = 0.0;
+        Eigen::VectorXd weights;
+        for (double t : {0.0, t0, 9.5, 15.0, 21.9, t0 + duration, 30.0}) {
+            const double s = HalfCosine(t, t0, duration);
+            const double expected = (1.0 - s) * old_sea.GetElevation(point, t) + s * new_sea.GetElevation(point, t);
+            worst_eta = std::max(worst_eta, std::abs(field->GetElevation(point, t) - expected));
+            field->GetComponentWeights(t, weights);
+            worst_weight = std::max(worst_weight, std::abs(weights[0] + weights[3] - 1.0));
+        }
+        TEST_ASSERT(worst_eta < 1e-12, "eta = (1 - s) old + s new (worst " + std::to_string(worst_eta) + " m)");
+        TEST_ASSERT(worst_weight < 1e-15, "old and new weights sum to 1");
+        // Continuity at the start: the new set enters at weight 0.
+        TEST_NEAR(field->GetElevation(point, t0), old_sea.GetElevation(point, t0), 1e-12, "eta continuous at t0");
+
+        auto old_only = MakeExcitation(Sea(1.0, 0.0), nullptr);
+        auto new_only = MakeExcitation(new_comps, nullptr);
+        double worst_force = 0.0;
+        for (double t : {9.0, 14.0, 21.0, 40.0}) {
+            const double s = HalfCosine(t, t0, duration);
+            const auto f_old = Force(*old_only, t);
+            const auto f_new = Force(*new_only, t);
+            std::vector<double> expected(6);
+            for (int i = 0; i < 6; ++i) expected[i] = (1.0 - s) * f_old[i] + s * f_new[i];
+            worst_force = std::max(worst_force, MaxRelDiff(Force(*live, t), expected));
+        }
+        TEST_ASSERT(worst_force < 1e-13, "FD excitation is the weighted sum (rel. " + std::to_string(worst_force) + ")");
     }
 
     test_results.Summary();
