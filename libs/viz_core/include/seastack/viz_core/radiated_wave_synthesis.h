@@ -371,7 +371,9 @@ class RadiatedWaveSynthesizer {
         }
         const double ti = history.TimeOf(i);
         for (size_t n = 0; n < n_w_; ++n) {
-            const Complex ph = std::polar(sign * history_dt_, -omega_[n] * ti);
+            // std::polar is undefined for a negative magnitude; libc++ returns NaN.
+            // sign is +1 to add a sample and -1 to drop one from the sliding window.
+            const Complex ph = std::polar(history_dt_, -omega_[n] * ti) * sign;
             for (size_t s = 0; s < sources_.size(); ++s) {
                 const std::array<double, 6>& u = (*sample)[s].velocity;
                 Complex* spectra = sources_[s].spectra.data();
