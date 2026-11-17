@@ -22,6 +22,7 @@
 #endif
 
 #include <seastack/viz_core/frame_series.h>
+#include <seastack/viz_core/slider_step.h>
 
 #include <algorithm>
 #include <array>
@@ -979,13 +980,17 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
                              2.0f * style.FramePadding.x + 2.0f * style.ItemSpacing.x;
     ImGui::SetNextItemWidth(std::max(slider_w, ImGui::GetContentRegionAvail().x - trailing_w));
     bool changed_now = false;
-    // Sea-state sliders step in 0.1 m / 0.1 s / 1 deg; a typed value (Ctrl+click) is kept as entered.
+    // Sea-state sliders step in about 1% of the start height or period (SliderStepFor) and
+    // 1 deg; a typed value (Ctrl+click) is kept as entered.
     double drag_step = 0.0;
     const char* value_format = "%.4g";
+    char step_format[16];
     if (first.element == "waves") {
         if (first.field == "height" || first.field == "period") {
-            drag_step = 0.1;
-            value_format = "%.1f";
+            const SliderStep s = SliderStepFor(first.default_value);
+            drag_step = s.step;
+            std::snprintf(step_format, sizeof(step_format), "%%.%df", s.decimals);
+            value_format = step_format;
         } else if (first.field == "direction") {
             drag_step = 1.0;
             value_format = "%.0f";

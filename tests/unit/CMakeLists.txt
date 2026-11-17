@@ -149,6 +149,10 @@ build_unit_test(test_color_range)
 target_link_libraries(test_color_range PRIVATE SEAStack::VizCore)
 set_tests_properties(test_color_range PROPERTIES LABELS "unit;chrono-free")
 
+build_unit_test(test_slider_step)
+target_link_libraries(test_slider_step PRIVATE SEAStack::VizCore)
+set_tests_properties(test_slider_step PROPERTIES LABELS "unit;chrono-free")
+
 build_unit_test(test_scene_model)
 target_link_libraries(test_scene_model PRIVATE SEAStack::VizCore)
 set_tests_properties(test_scene_model PROPERTIES LABELS "unit;chrono-free")
