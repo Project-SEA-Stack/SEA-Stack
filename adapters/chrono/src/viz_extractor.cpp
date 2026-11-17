@@ -3,10 +3,20 @@
 #include <seastack/adapters/chrono/hydro_system.h>
 #include <seastack/core/force_component.h>
 
+#include <chrono/assets/ChVisualShapeBarrel.h>
 #include <chrono/assets/ChVisualShapeBox.h>
+#include <chrono/assets/ChVisualShapeCapsule.h>
+#include <chrono/assets/ChVisualShapeCone.h>
 #include <chrono/assets/ChVisualShapeCylinder.h>
+#include <chrono/assets/ChVisualShapeEllipsoid.h>
+#include <chrono/assets/ChVisualShapeLine.h>
+#include <chrono/assets/ChVisualShapeModelFile.h>
+#include <chrono/assets/ChVisualShapePath.h>
 #include <chrono/assets/ChVisualShapePointPoint.h>
+#include <chrono/assets/ChVisualShapeRoundedBox.h>
+#include <chrono/assets/ChVisualShapeRoundedCylinder.h>
 #include <chrono/assets/ChVisualShapeSphere.h>
+#include <chrono/assets/ChVisualShapeSurface.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
 #include <chrono/physics/ChBody.h>
 #include <chrono/physics/ChLinkDistance.h>
@@ -16,7 +26,6 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
-#include <typeinfo>
 #include <utility>
 
 namespace seastack::chrono {
@@ -197,6 +206,26 @@ bool HasVisualShapes(const ::chrono::ChPhysicsItem& item) {
     return model && model->GetNumShapes() > 0;
 }
 
+/// Plain name of a Chrono visual shape type, for messages. typeid().name() is
+/// mangled on GCC and Clang, so the known types are named here.
+const char* ShapeKindName(const ::chrono::ChVisualShape& shape) {
+    const ::chrono::ChVisualShape* s = &shape;
+    if (dynamic_cast<const ::chrono::ChVisualShapeBarrel*>(s)) return "barrel";
+    if (dynamic_cast<const ::chrono::ChVisualShapeCapsule*>(s)) return "capsule";
+    if (dynamic_cast<const ::chrono::ChVisualShapeCone*>(s)) return "cone";
+    if (dynamic_cast<const ::chrono::ChVisualShapeEllipsoid*>(s)) return "ellipsoid";
+    if (dynamic_cast<const ::chrono::ChVisualShapeRoundedBox*>(s)) return "rounded box";
+    if (dynamic_cast<const ::chrono::ChVisualShapeRoundedCylinder*>(s)) return "rounded cylinder";
+    if (dynamic_cast<const ::chrono::ChVisualShapeModelFile*>(s)) return "model file";
+    if (dynamic_cast<const ::chrono::ChVisualShapeLine*>(s)) return "line";
+    if (dynamic_cast<const ::chrono::ChVisualShapePath*>(s)) return "path";
+    if (dynamic_cast<const ::chrono::ChVisualShapeSurface*>(s)) return "surface";
+    if (dynamic_cast<const ::chrono::ChVisualShapeSpring*>(s)) return "spring";
+    if (dynamic_cast<const ::chrono::ChVisualShapeSegment*>(s)) return "segment";
+    if (dynamic_cast<const ::chrono::ChVisualShapePointPoint*>(s)) return "point-to-point shape";
+    return "shape of another type";
+}
+
 std::string ItemName(const ::chrono::ChObj& item, const char* kind) {
     return item.GetName().empty() ? std::string("unnamed ") + kind
                                   : std::string(kind) + " '" + item.GetName() + "'";
@@ -212,8 +241,7 @@ std::vector<std::string> FindUndrawableItems(const ::chrono::ChSystem& system) {
         }
         for (const auto& instance : body->GetVisualModel()->GetShapeInstances()) {
             if (instance.shape && !IsDrawableBodyShape(instance.shape)) {
-                const ::chrono::ChVisualShape& shape = *instance.shape;
-                items.push_back(ItemName(*body, "body") + ": " + typeid(shape).name());
+                items.push_back(ItemName(*body, "body") + ": " + ShapeKindName(*instance.shape));
             }
         }
     }

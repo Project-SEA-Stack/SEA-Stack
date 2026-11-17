@@ -251,9 +251,8 @@ int main() {
 
         const std::vector<std::string> items = seastack::chrono::FindUndrawableItems(odd_sys);
         TEST_ASSERT(items.size() == 2, "capsule and non-glyph link visual reported");
-        TEST_ASSERT(items.size() == 2 && items[0].find("body 'buoy'") != std::string::npos &&
-                        items[0].find("Capsule") != std::string::npos,
-                    "body item names the body and shape type");
+        TEST_ASSERT(items.size() == 2 && items[0] == "body 'buoy': capsule",
+                    "body item names the body and a readable shape kind (not a compiler type name)");
         TEST_ASSERT(items.size() == 2 && items[1].find("link 'marker'") != std::string::npos,
                     "link item names the link");
     }
