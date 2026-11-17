@@ -735,10 +735,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     seastack::infra::cli::LogWarning("[viz] Unknown viewer '" + config.viewer + "'; using seastack.");
                 }
                 pui = seastack::viz::CreateUI(!nogui, backend);
-            } catch (const std::exception& e) {
-                seastack::infra::cli::LogWarning(std::string("[viz] CreateUI failed: ") + e.what());
             } catch (...) {
-                seastack::infra::cli::LogWarning("[viz] CreateUI failed (unknown error)");
+                seastack::infra::cli::LogWarning("[viz] CreateUI failed: " +
+                                                 seastack::viz::CurrentExceptionMessage());
             }
         }
 
@@ -796,11 +795,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             try {
                 pui->Init(system.get(), "SEA-Stack YAML");
                 gui_init_ok = true;
-            } catch (const std::exception& e) {
-                seastack::infra::cli::LogWarning(std::string("[viz] GUI initialization failed: ") + e.what());
-                pui.reset();
             } catch (...) {
-                seastack::infra::cli::LogWarning("[viz] GUI initialization failed (unknown error)");
+                seastack::infra::cli::LogWarning("[viz] GUI initialization failed: " +
+                                                 seastack::viz::CurrentExceptionMessage());
                 pui.reset();
             }
         }
@@ -814,7 +811,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     "[viz] To suppress this warning, run with --nogui.");
                 nogui = true;
             }
-            pui = seastack::viz::CreateUI(true);
+            pui = seastack::viz::CreateUI(false);
             pui->Init(system.get(), "SEA-Stack");
         }
 
@@ -1406,10 +1403,8 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             auto gui_running = [&]() {
                 try {
                     return ui.IsRunning(loop_dt);
-                } catch (const std::exception& e) {
-                    viewer_error = e.what();
                 } catch (...) {
-                    viewer_error = "unknown exception";
+                    viewer_error = seastack::viz::CurrentExceptionMessage();
                 }
                 return false;
             };

@@ -6,18 +6,26 @@
  *   F1  A viewer error while drawing a frame ends the interactive loop; the
  *       results up to that time are still written and the run reports the
  *       error (non-zero exit code).
+ *   F2  CurrentExceptionMessage reads std::exception and vsg::Exception; the
+ *       latter is not a std::exception, so `catch (const std::exception&)`
+ *       let viewer start-up and replay failures escape.
  */
 
+#include <seastack/config.h>
 #include "single_run.h"
 #include "guihelper.h"
 #include "test_macros.h"
 
 #include <H5Cpp.h>
+#if defined(SEASTACK_HAVE_VSG)
+#include <vsg/core/Exception.h>
+#endif
 
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 
 namespace fs = std::filesystem;
 
@@ -94,6 +102,28 @@ int main() {
         TEST_ASSERT(r.sim_time_final > 0.0, "F1: the run stepped before the failure");
         const long long n = RecordedSamples(out);
         TEST_ASSERT(n > 0, "F1: results written up to the failure (" + std::to_string(n) + " samples)");
+    }
+
+    {  // F2
+        auto message_of = [](auto&& thrower) {
+            try {
+                thrower();
+            } catch (...) {
+                return seastack::viz::CurrentExceptionMessage();
+            }
+            return std::string("no exception");
+        };
+        TEST_ASSERT(message_of([] { throw std::runtime_error("std failure"); }) == "std failure",
+                    "F2: std::exception message");
+        TEST_ASSERT(message_of([] { throw 42; }) == "unknown exception", "F2: other exception");
+#if defined(SEASTACK_HAVE_VSG)
+        static_assert(!std::is_base_of_v<std::exception, vsg::Exception>,
+                      "vsg::Exception needs its own catch clause");
+        const std::string vsg_msg = message_of([] { throw vsg::Exception{"no Vulkan device", -3}; });
+        TEST_ASSERT(vsg_msg.find("no Vulkan device") != std::string::npos &&
+                        vsg_msg.find("-3") != std::string::npos,
+                    "F2: vsg::Exception message and result: " + vsg_msg);
+#endif
     }
 
     test_results.Summary();

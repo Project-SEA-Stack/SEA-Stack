@@ -29,6 +29,11 @@ enum class ViewerBackend {
 /// Parse "chrono" or "seastack"; returns false for anything else.
 bool ParseViewerBackend(const std::string& name, ViewerBackend* backend);
 
+/// Message of the exception being handled. Call only inside a catch block.
+/// Reads std::exception and vsg::Exception (which does not derive from
+/// std::exception and carries a Vulkan result code).
+std::string CurrentExceptionMessage();
+
 /// Viewer options fixed at start-up (from simulation.visualization YAML).
 /// Visual only; never affect the simulation.
 struct ViewerOptions {

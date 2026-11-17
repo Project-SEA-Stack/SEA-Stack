@@ -54,21 +54,26 @@ int RunReplay(const std::string& results_path) {
     try {
         const std::string title = "SEA-Stack replay - " + std::filesystem::path(results_path).filename().string();
         ui->InitReplay(std::move(recording), title.c_str());
-    } catch (const std::exception& e) {
-        cli::LogError(std::string("ERROR: Cannot open the replay viewer: ") + e.what());
+    } catch (...) {
+        cli::LogError("ERROR: Cannot open the replay viewer: " + seastack::viz::CurrentExceptionMessage());
         return 1;
     }
 
     auto next_frame = std::chrono::steady_clock::now();
-    while (ui->IsRunning(0.0)) {
-        next_frame += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-            std::chrono::duration<double>(kFramePeriod));
-        const auto now = std::chrono::steady_clock::now();
-        if (next_frame > now) {
-            std::this_thread::sleep_until(next_frame);
-        } else {
-            next_frame = now;  // fell behind (slow frame); do not try to catch up
+    try {
+        while (ui->IsRunning(0.0)) {
+            next_frame += std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(kFramePeriod));
+            const auto now = std::chrono::steady_clock::now();
+            if (next_frame > now) {
+                std::this_thread::sleep_until(next_frame);
+            } else {
+                next_frame = now;  // fell behind (slow frame); do not try to catch up
+            }
         }
+    } catch (...) {
+        cli::LogError("ERROR: Replay viewer failed: " + seastack::viz::CurrentExceptionMessage());
+        return 1;
     }
     return 0;
 }

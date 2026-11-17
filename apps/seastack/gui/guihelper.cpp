@@ -7,6 +7,10 @@
 
 #include <seastack/adapters/chrono/visualization_recording.h>
 
+#if defined(SEASTACK_HAVE_VSG)
+#include <vsg/core/Exception.h>
+#endif
+
 #include <algorithm>
 #include <stdexcept>
 #include <string>
@@ -32,6 +36,20 @@ bool seastack::viz::ParseViewerBackend(const std::string& name, ViewerBackend* b
         return true;
     }
     return false;
+}
+
+std::string seastack::viz::CurrentExceptionMessage() {
+    try {
+        throw;
+    } catch (const std::exception& e) {
+        return e.what();
+#if defined(SEASTACK_HAVE_VSG)
+    } catch (const vsg::Exception& e) {
+        return e.message + " (Vulkan result " + std::to_string(e.result) + ")";
+#endif
+    } catch (...) {
+        return "unknown exception";
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -137,8 +155,8 @@ void GUI::Init(::chrono::ChSystem* system, const char* title) {
         try {
             pImpl->Init(*this, system, title);
             return;
-        } catch (const std::exception& e) {
-            seastack::infra::cli::LogWarning(std::string("SEA-Stack viewer failed to start (") + e.what() +
+        } catch (...) {
+            seastack::infra::cli::LogWarning("SEA-Stack viewer failed to start (" + CurrentExceptionMessage() +
                                              "); using the Chrono viewer.");
         }
         backend_ = ViewerBackend::kChrono;
