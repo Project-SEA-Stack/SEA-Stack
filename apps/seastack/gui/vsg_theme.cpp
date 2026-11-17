@@ -113,6 +113,9 @@ void FinishStyle(ImGuiStyle& style, float ui_scale) {
 
 void ApplyImGuiTheme(VisualTheme theme, float ui_scale) {
     ImGuiStyle& style = ImGui::GetStyle();
+    // Start from the defaults: ScaleAllSizes multiplies the current sizes,
+    // so a second call (theme switch) would otherwise compound the scale.
+    style = ImGuiStyle();
     ImVec4* c = style.Colors;
 
     if (theme == VisualTheme::kLight) {

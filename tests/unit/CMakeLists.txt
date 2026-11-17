@@ -582,6 +582,14 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
         target_compile_definitions(test_single_run_failures PRIVATE
             "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
         set_tests_properties(test_single_run_failures PROPERTIES LABELS "unit;chrono" COST 20)
+
+        # Panel theme switches do not compound the display scale
+        if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
+            build_unit_test(test_vsg_theme)
+            target_link_libraries(test_vsg_theme PRIVATE seastack_app_lib)
+            target_include_directories(test_vsg_theme PRIVATE "${CMAKE_SOURCE_DIR}/apps/seastack/gui")
+            set_tests_properties(test_vsg_theme PROPERTIES LABELS "unit;chrono")
+        endif()
     endif()
 else()
     message(STATUS "Skipping test_export_redesign (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
