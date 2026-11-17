@@ -15,7 +15,6 @@
 #include <seastack/viz_core/mesh_normals.h>
 #include <seastack/viz_core/primitive_meshes.h>
 
-#include <vsgXchange/all.h>
 #include <vsgImGui/RenderImGui.h>
 #include <vsgImGui/SendEventsToImGui.h>
 #include <vsgImGui/imgui.h>
@@ -27,7 +26,6 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -227,10 +225,6 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
     traits->y = 100;
     traits->samples = VK_SAMPLE_COUNT_4_BIT;                                 // 4x MSAA
     traits->swapchainPreferences.presentMode = VK_PRESENT_MODE_FIFO_KHR;     // vsync
-    // Transfer source so screenshots can copy the presented image.
-    traits->swapchainPreferences.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    io_options_ = vsg::Options::create(vsgXchange::all::create());
-
     window_ = vsg::Window::create(traits);
     if (!window_) {
         std::cerr << "[SeastackViewer] Could not create window." << std::endl;
@@ -719,176 +713,12 @@ bool SeastackViewer::RenderFrame() {
         }
         viewer_->update();
         viewer_->recordAndSubmit();
-        CollectScreenshotWrite(/*wait=*/false);
-        if (!screenshot_path_.empty()) {
-            const std::string path = screenshot_path_;
-            screenshot_path_.clear();
-            StartScreenshotWrite(CaptureSceneViewport(), path);
-        }
         viewer_->present();
     } catch (const vsg::Exception& e) {
         std::cerr << "[SeastackViewer] VSG error: " << e.message << " (VkResult " << e.result << ")" << std::endl;
         return false;
     }
     return viewer_->active();
-}
-
-void SeastackViewer::StartScreenshotWrite(vsg::ref_ptr<vsg::Data> pixels, const std::string& path) {
-    CollectScreenshotWrite(/*wait=*/true);  // one write at a time
-    if (!pixels) {
-        std::cerr << "[SeastackViewer] Could not capture screenshot " << path << std::endl;
-        last_screenshot_path_ = path;
-        last_screenshot_ok_ = false;
-        return;
-    }
-    screenshot_write_path_ = path;
-    vsg::ref_ptr<vsg::Options> options = io_options_;
-    screenshot_write_ = std::async(std::launch::async, [pixels, path, options]() {
-        return vsg::write(pixels, path, options);
-    });
-}
-
-void SeastackViewer::CollectScreenshotWrite(bool wait) {
-    if (!screenshot_write_.valid()) {
-        return;
-    }
-    if (!wait && screenshot_write_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
-        return;
-    }
-    last_screenshot_ok_ = screenshot_write_.get();
-    last_screenshot_path_ = screenshot_write_path_;
-    if (last_screenshot_ok_) {
-        std::cout << "[SeastackViewer] Screenshot saved: " << last_screenshot_path_ << std::endl;
-    } else {
-        std::cerr << "[SeastackViewer] Could not write screenshot " << last_screenshot_path_ << std::endl;
-    }
-}
-
-vsg::ref_ptr<vsg::Data> SeastackViewer::CaptureSceneViewport() {
-    // After vsgExamples vsgscreenshot.cpp (as Chrono's ExportScreenImage),
-    // restricted to the scene viewport.
-    auto device = window_->getDevice();
-    auto physical_device = window_->getPhysicalDevice();
-    auto swapchain = window_->getSwapchain();
-    if (!device || !physical_device || !swapchain) {
-        return {};
-    }
-    // The frame just submitted (so the GUI can hide its toolbar for it); wait
-    // until it has rendered. A one-off GPU stall of a frame or so.
-    vkDeviceWaitIdle(*device);
-    auto source_image = window_->imageView(window_->imageIndex(0))->image;
-
-    const VkExtent2D extent = window_->extent2D();
-    const VkViewport vp = camera_->getViewport();
-    const int32_t x0 = std::clamp(static_cast<int32_t>(vp.x), 0, static_cast<int32_t>(extent.width) - 1);
-    const int32_t y0 = std::clamp(static_cast<int32_t>(vp.y), 0, static_cast<int32_t>(extent.height) - 1);
-    const uint32_t width = std::min(static_cast<uint32_t>(vp.width), extent.width - static_cast<uint32_t>(x0));
-    const uint32_t height = std::min(static_cast<uint32_t>(vp.height), extent.height - static_cast<uint32_t>(y0));
-    if (width == 0 || height == 0) {
-        return {};
-    }
-
-    // Blit converts to RGBA when the device supports it; otherwise copy as is.
-    const VkFormat source_format = swapchain->getImageFormat();
-    VkFormatProperties src_props;
-    vkGetPhysicalDeviceFormatProperties(*physical_device, source_format, &src_props);
-    VkFormatProperties dst_props;
-    vkGetPhysicalDeviceFormatProperties(*physical_device, VK_FORMAT_R8G8B8A8_SRGB, &dst_props);
-    const bool use_blit = (src_props.optimalTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT) != 0 &&
-                          (dst_props.linearTilingFeatures & VK_FORMAT_FEATURE_BLIT_DST_BIT) != 0;
-    const VkFormat target_format = use_blit ? VK_FORMAT_R8G8B8A8_SRGB : source_format;
-
-    auto target_image = vsg::Image::create();
-    target_image->imageType = VK_IMAGE_TYPE_2D;
-    target_image->format = target_format;
-    target_image->extent = {width, height, 1};
-    target_image->arrayLayers = 1;
-    target_image->mipLevels = 1;
-    target_image->initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    target_image->samples = VK_SAMPLE_COUNT_1_BIT;
-    target_image->tiling = VK_IMAGE_TILING_LINEAR;
-    target_image->usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    target_image->compile(device);
-    auto memory = vsg::DeviceMemory::create(device, target_image->getMemoryRequirements(device->deviceID),
-                                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    target_image->bind(memory, 0);
-
-    const VkImageSubresourceRange color_range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    auto commands = vsg::Commands::create();
-    commands->addChild(vsg::PipelineBarrier::create(
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-        vsg::ImageMemoryBarrier::create(0, VK_ACCESS_TRANSFER_WRITE_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_QUEUE_FAMILY_IGNORED,
-                                        VK_QUEUE_FAMILY_IGNORED, target_image, color_range),
-        vsg::ImageMemoryBarrier::create(VK_ACCESS_MEMORY_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT,
-                                        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, source_image,
-                                        color_range)));
-    if (use_blit) {
-        VkImageBlit region{};
-        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.srcOffsets[0] = VkOffset3D{x0, y0, 0};
-        region.srcOffsets[1] =
-            VkOffset3D{x0 + static_cast<int32_t>(width), y0 + static_cast<int32_t>(height), 1};
-        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.dstOffsets[0] = VkOffset3D{0, 0, 0};
-        region.dstOffsets[1] = VkOffset3D{static_cast<int32_t>(width), static_cast<int32_t>(height), 1};
-        auto blit = vsg::BlitImage::create();
-        blit->srcImage = source_image;
-        blit->srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        blit->dstImage = target_image;
-        blit->dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        blit->regions.push_back(region);
-        blit->filter = VK_FILTER_NEAREST;
-        commands->addChild(blit);
-    } else {
-        VkImageCopy region{};
-        region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.srcOffset = VkOffset3D{x0, y0, 0};
-        region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        region.extent = {width, height, 1};
-        auto copy = vsg::CopyImage::create();
-        copy->srcImage = source_image;
-        copy->srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        copy->dstImage = target_image;
-        copy->dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        copy->regions.push_back(region);
-        commands->addChild(copy);
-    }
-    commands->addChild(vsg::PipelineBarrier::create(
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-        vsg::ImageMemoryBarrier::create(VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_MEMORY_READ_BIT,
-                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-                                        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, target_image, color_range),
-        vsg::ImageMemoryBarrier::create(VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_MEMORY_READ_BIT,
-                                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                                        VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, source_image,
-                                        color_range)));
-
-    auto fence = vsg::Fence::create(device);
-    const auto queue_family = physical_device->getQueueFamily(VK_QUEUE_GRAPHICS_BIT);
-    auto command_pool = vsg::CommandPool::create(device, queue_family);
-    vsg::submitCommandsToQueue(command_pool, fence, 100000000000, device->getQueue(queue_family),
-                               [&](vsg::CommandBuffer& cb) { commands->record(cb); });
-
-    // Repack rows (the mapped pitch may be padded), swap BGRA to RGBA and
-    // force alpha opaque: translucent water leaves alpha < 1 in the swapchain.
-    VkImageSubresource sub{VK_IMAGE_ASPECT_COLOR_BIT, 0, 0};
-    VkSubresourceLayout layout;
-    vkGetImageSubresourceLayout(*device, target_image->vk(device->deviceID), &sub, &layout);
-    auto mapped = vsg::MappedData<vsg::ubyteArray>::create(memory, layout.offset, 0,
-                                                           vsg::Data::Properties{target_format},
-                                                           layout.rowPitch * height);
-    const bool bgra = target_format == VK_FORMAT_B8G8R8A8_SRGB || target_format == VK_FORMAT_B8G8R8A8_UNORM;
-    auto pixels = vsg::ubvec4Array2D::create(width, height, vsg::Data::Properties{VK_FORMAT_R8G8B8A8_SRGB});
-    for (uint32_t row = 0; row < height; ++row) {
-        const auto* src = static_cast<const uint8_t*>(mapped->dataPointer(row * layout.rowPitch));
-        for (uint32_t col = 0; col < width; ++col) {
-            const uint8_t* p = src + 4 * col;
-            pixels->at(col, row) = bgra ? vsg::ubvec4(p[2], p[1], p[0], 255) : vsg::ubvec4(p[0], p[1], p[2], 255);
-        }
-    }
-    return pixels;
 }
 
 void SeastackViewer::SetCameraPose(const CameraPose& pose, double duration_s) {

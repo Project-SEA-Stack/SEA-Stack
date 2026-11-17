@@ -184,8 +184,6 @@ class GUIImplSeastack : public GUIImpl {
     void SyncModel(const VizFrame& frame);
     /// World bounds of body i at `frame` [m].
     Bounds3 BodyWorldBounds(size_t i, const VizFrame& frame) const;
-    /// Pass a GUI screenshot request to the viewer and show the last result.
-    void HandleScreenshot();
     /// Add the live frame to the timeline history if simulated time advanced.
     void RecordFrame(const VizFrame& live);
     /// Frame to draw: the live state, a recorded frame in playback, or the live
@@ -200,7 +198,6 @@ class GUIImplSeastack : public GUIImpl {
     std::chrono::steady_clock::time_point last_select_wall_{};  ///< Previous SelectFrame() call
     bool has_last_select_wall_ = false;
     VizFrame last_frame_;  ///< Frame shown this render; labels are placed from it
-    std::string reported_screenshot_;  ///< Last screenshot whose result the GUI has shown
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     std::unique_ptr<AnimatedWaterSurface> water_;
     std::unique_ptr<RadiatedWaveOverlay> radiated_waves_;

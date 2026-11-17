@@ -131,7 +131,7 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
         HandlePicking();
         DrawBodyLabels();
         const ModelState& model = viewer_settings_->model;
-        if (history_ && !viewer_settings_->capturing_frame) {
+        if (history_) {
             DrawSelection();
             analysis_->DrawSceneOverlays(Scene(), *history_, last_frame_, *viewer_, gui_->SceneRect(),
                                          model_bounds_.Radius(), viewer_->UiScale(), model,
@@ -364,7 +364,7 @@ Bounds3 GUIImplSeastack::BodyWorldBounds(size_t i, const VizFrame& frame) const 
 
 void GUIImplSeastack::HandlePicking() {
     const ImGuiIO& io = ImGui::GetIO();
-    if (io.WantCaptureMouse || viewer_settings_->capturing_frame) {
+    if (io.WantCaptureMouse) {
         return;
     }
     const ScreenRect rect = gui_->SceneRect();
@@ -470,23 +470,6 @@ void GUIImplSeastack::SyncModel(const VizFrame& frame) {
             }
             model.selected_wrenches.push_back(TotalWrench(frame, b));
         }
-    }
-}
-
-void GUIImplSeastack::HandleScreenshot() {
-    // Report the result of last frame's capture, then queue a new request.
-    if (!viewer_->LastScreenshotPath().empty() && viewer_->LastScreenshotPath() != reported_screenshot_) {
-        reported_screenshot_ = viewer_->LastScreenshotPath();
-        viewer_settings_->screenshot_status =
-            viewer_->LastScreenshotOk()
-                ? "Saved " + std::filesystem::path(reported_screenshot_).filename().string()
-                : std::string("Screenshot failed (see console)");
-        viewer_settings_->screenshot_status_time = -1.0;
-    }
-    viewer_settings_->capturing_frame = viewer_settings_->screenshot_requested;
-    if (viewer_settings_->screenshot_requested) {
-        viewer_settings_->screenshot_requested = false;
-        viewer_->RequestScreenshot(NextScreenshotPath(options_.screenshot_directory));
     }
 }
 
@@ -721,7 +704,6 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     const VizFrame& frame = last_frame_;
     viewer_->SetFrame(frame);
     SyncModel(frame);
-    HandleScreenshot();
     SyncParameters();
     UpdateMooring(frame);
     UpdateWater(frame);

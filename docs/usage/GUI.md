@@ -38,8 +38,6 @@ a description.
 | `[` / `]` / `\` | Half speed / double speed / real time |
 | `,` / `.` | Step back / forward one recorded frame |
 | `Home` / `End` | First frame / back to live (last frame in a replay) |
-| `F12` | Screenshot of the 3D view (PNG in the case output folder) |
-
 Shortcuts are ignored while you type in a text field.
 
 **Speed.** The speed slider runs from 0.05x to unlimited; the default is real

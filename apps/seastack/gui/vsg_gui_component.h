@@ -246,13 +246,6 @@ struct ViewerSettings {
     bool camera_view_requested = false;    ///< Move to camera_view, framing the model
     CameraView camera_view = CameraView::kIsometric;
     bool camera_fit_requested = false;     ///< Re-frame the model, keeping the view direction
-
-    // --- Screenshot ---
-    bool screenshot_requested = false;  ///< Save the 3D view as PNG (set by GUI, consumed by the viewer)
-    bool capturing_frame = false;       ///< This frame is being saved: hide the view toolbar
-    std::string screenshot_status;      ///< Last result shown next to the button; empty = none
-    double screenshot_status_time = 0.0;  ///< ImGui time the status was shown first [s]; < 0 = new status
-
     // --- Timeline (SEA-Stack viewer) ---
     TimelineState timeline;
 
@@ -272,10 +265,6 @@ ViewerPreferences PreferencesFromSettings(const ViewerSettings& settings);
 /// Apply preferences to the settings. The theme is kept when
 /// settings->theme_from_model; flags a theme or water grid change.
 void ApplyPreferences(const ViewerPreferences& prefs, ViewerSettings* settings);
-
-/// Unused file path `<directory>/screenshot_YYYYMMDD_HHMMSS[_n].png`;
-/// an empty directory means the working directory. Creates the directory.
-std::string NextScreenshotPath(const std::string& directory);
 
 /// ImGui component for SEA-Stack visualization overlay.
 /// Docked layout: a transport bar along the bottom (play/pause, playback
