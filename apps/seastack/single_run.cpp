@@ -723,19 +723,26 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 
         std::shared_ptr<seastack::viz::UI> pui;
         bool gui_init_ok = false;
-        try {
-            seastack::viz::ViewerBackend backend = seastack::viz::ViewerBackend::kSeastack;
-            if (!seastack::viz::ParseViewerBackend(config.viewer, &backend)) {
-                seastack::infra::cli::LogWarning("[viz] Unknown viewer '" + config.viewer + "'; using seastack.");
+        if (config.ui_override) {
+            nogui = false;
+            pui = config.ui_override;
+            pui->Init(system.get(), "SEA-Stack test");
+            gui_init_ok = true;
+        } else {
+            try {
+                seastack::viz::ViewerBackend backend = seastack::viz::ViewerBackend::kSeastack;
+                if (!seastack::viz::ParseViewerBackend(config.viewer, &backend)) {
+                    seastack::infra::cli::LogWarning("[viz] Unknown viewer '" + config.viewer + "'; using seastack.");
+                }
+                pui = seastack::viz::CreateUI(!nogui, backend);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogWarning(std::string("[viz] CreateUI failed: ") + e.what());
+            } catch (...) {
+                seastack::infra::cli::LogWarning("[viz] CreateUI failed (unknown error)");
             }
-            pui = seastack::viz::CreateUI(!nogui, backend);
-        } catch (const std::exception& e) {
-            seastack::infra::cli::LogWarning(std::string("[viz] CreateUI failed: ") + e.what());
-        } catch (...) {
-            seastack::infra::cli::LogWarning("[viz] CreateUI failed (unknown error)");
         }
 
-        if (pui && !nogui) {
+        if (pui && !nogui && !config.ui_override) {
             // Start-up viewer options from simulation.visualization (all optional):
             //   theme: dark | light       initial theme (switchable in the GUI)
             //   body_colors: model | palette   model (default) keeps colours set in the
@@ -1393,7 +1400,20 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             double prev_frame_sim = system->GetChTime();
 
             bool announced_end_time = false;
-            while (ui.IsRunning(loop_dt)) {
+            // Drawing a frame must not lose the run: a viewer error ends the
+            // loop as closing the window would, and the results are still written.
+            std::string viewer_error;
+            auto gui_running = [&]() {
+                try {
+                    return ui.IsRunning(loop_dt);
+                } catch (const std::exception& e) {
+                    viewer_error = e.what();
+                } catch (...) {
+                    viewer_error = "unknown exception";
+                }
+                return false;
+            };
+            while (gui_running()) {
                 const double frame_wall_start = wall_seconds();
                 if (was_stepping) {
                     run_clock.AddActiveInterval(prev_frame_wall, frame_wall_start,
@@ -1611,6 +1631,15 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 #ifdef _WIN32
             timeEndPeriod(1);
 #endif
+            if (!viewer_error.empty()) {
+                seastack::infra::cli::LogError("Viewer error at t = " +
+                                               seastack::infra::FormatNumber(system->GetChTime(), 3) +
+                                               " s: " + viewer_error +
+                                               ". The run stopped; results up to this time are written.");
+                if (step_error.empty()) {
+                    step_error = "viewer error: " + viewer_error;
+                }
+            }
         }
 
         auto wall_end = std::chrono::steady_clock::now();

@@ -15,9 +15,14 @@
 #include <seastack/adapters/chrono/simulation_export.h>
 #include <seastack/infra/config/yaml_discovery.h>
 
+#include <memory>
 #include <string>
 #include <variant>
 #include <vector>
+
+namespace seastack::viz {
+class UI;
+}
 
 namespace seastack::app {
 
@@ -81,6 +86,10 @@ struct SingleRunConfig {
     /// Optional runtime schedule YAML (--schedule): parameter changes applied
     /// at step boundaries, e.g. exported from a GUI run. Empty = none.
     std::string schedule_file;
+
+    /// Tests only: run the interactive loop with this UI instead of creating
+    /// one (`nogui` and `viewer` are then ignored). Empty = normal behaviour.
+    std::shared_ptr<seastack::viz::UI> ui_override;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).

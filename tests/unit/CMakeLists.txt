@@ -553,6 +553,17 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
     build_unit_test(test_visualization_recording)
     target_link_libraries(test_visualization_recording PRIVATE SEAStack::ChronoAdapter)
     set_tests_properties(test_visualization_recording PROPERTIES LABELS "unit;chrono")
+
+    # RunSingleCase keeps results when the viewer or replay recording fails
+    if(TARGET seastack_app_lib)
+        build_unit_test(test_single_run_failures)
+        target_link_libraries(test_single_run_failures PRIVATE seastack_app_lib)
+        target_include_directories(test_single_run_failures PRIVATE
+            "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/apps/seastack/gui")
+        target_compile_definitions(test_single_run_failures PRIVATE
+            "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+        set_tests_properties(test_single_run_failures PROPERTIES LABELS "unit;chrono" COST 20)
+    endif()
 else()
     message(STATUS "Skipping test_export_redesign (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
 endif()
