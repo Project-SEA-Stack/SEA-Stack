@@ -1011,12 +1011,14 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         }
 #if defined(SEASTACK_HAVE_HYDRO_IO)
                         catch (const H5::Exception& e) {
-                            seastack::infra::debug::LogDebug(
-                                std::string("Skipping spectrum HDF5 export (HDF5): ") + e.getDetailMsg());
+                            seastack::infra::cli::LogWarning("Wave spectrum and input elevation not written (HDF5: " +
+                                                             e.getDetailMsg() + "); the results are unaffected.");
                         }
 #endif
                         catch (const std::exception& e) {
-                            seastack::infra::debug::LogDebug(std::string("Skipping spectrum HDF5 export: ") + e.what());
+                            seastack::infra::cli::LogWarning(std::string("Wave spectrum and input elevation not "
+                                                                         "written (") +
+                                                             e.what() + "); the results are unaffected.");
                         }
                     }
                 }
