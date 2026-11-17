@@ -212,6 +212,9 @@ struct SimulationExporter::Impl {
     std::vector<double> event_values;
     std::vector<double> event_previous_values;
     std::vector<std::string> event_origins;
+    std::vector<WaveChangeRecord> wave_changes;
+    std::vector<double> incident_eta;  // [m] at the origin, one per recorded step
+    bool wave_components_written = false;
 
     // ── Visualization (offline replay): scene source and cable endpoints ──
     std::unique_ptr<VizExtractor> viz_extractor;
@@ -595,6 +598,7 @@ void SimulationExporter::WriteWaveComponents(const std::vector<double>& omega_ra
     }
     g.WriteAttribute("eta_convention",
                      std::string("A*cos(k*(x*cos(theta)+y*sin(theta))-omega*t+phase)"));
+    impl_->wave_components_written = true;
 }
 
 namespace {
@@ -1449,6 +1453,16 @@ void SimulationExporter::SetRuntimeEvents(const std::vector<long long>& steps,
     impl_->event_origins = origins;
 }
 
+void SimulationExporter::AddWaveChange(WaveChangeRecord change) {
+    impl_->wave_changes.push_back(std::move(change));
+}
+
+void SimulationExporter::RecordIncidentElevation(double eta_m) {
+    if (impl_->last_step_was_recorded) {
+        impl_->incident_eta.push_back(eta_m);
+    }
+}
+
 void SimulationExporter::RecordMooringLines(
     const std::vector<seastack::viz::MooringLineVizData>& lines) {
     if (lines.empty()) {
@@ -1880,6 +1894,58 @@ void SimulationExporter::Finalize() {
                         "Rerun with run_seastack --schedule <results>.schedule.yaml."));
     }
 
+    // ── Live sea changes: what /inputs/simulation/waves no longer describes ──
+    if (impl_->wave_components_written) {
+        impl_->g_inputs_sim_waves.WriteAttribute("describes", std::string("initial sea at t = 0"));
+        impl_->g_inputs_sim_waves.WriteAttribute("changed_during_run",
+                                                 static_cast<double>(impl_->wave_changes.empty() ? 0 : 1));
+    }
+    if (!impl_->wave_changes.empty()) {
+        auto g_waves = impl_->writer.RequireGroup("/events/waves");
+        g_waves.WriteAttribute("count", static_cast<double>(impl_->wave_changes.size()));
+        g_waves.WriteAttribute("description",
+            std::string("Live sea changes in the order applied. height: the amplitude envelope e(t) ramps "
+                        "linearly to envelope_target over duration [s] from start_time [s]. period / "
+                        "direction: the previous component set fades out and components/ fades in, "
+                        "linearly over duration [s] from start_time [s]. /inputs/simulation/waves is the "
+                        "sea at t = 0."));
+        for (size_t i = 0; i < impl_->wave_changes.size(); ++i) {
+            const WaveChangeRecord& c = impl_->wave_changes[i];
+            auto g = impl_->writer.RequireGroup("/events/waves/" + IndexedName("change_", i));
+            g.WriteAttribute("start_time", c.start_time_s);
+            g.WriteAttribute("duration", c.duration_s);
+            g.WriteAttribute("kind", c.kind);
+            g.WriteAttribute("parameter", c.parameter);
+            g.WriteAttribute("value", c.value);
+            if (c.kind == "height") {
+                g.WriteAttribute("envelope_target", c.envelope_target);
+                continue;
+            }
+            auto g_comp = impl_->writer.RequireGroup("/events/waves/" + IndexedName("change_", i) + "/components");
+            const std::array<hsize_t, 1> dn = {static_cast<hsize_t>(c.omega_rad_s.size())};
+            g_comp.WriteDataset("omega", c.omega_rad_s, dn);
+            g_comp.WriteDataset("k", c.k_rad_m, dn);
+            g_comp.WriteDataset("amplitude", c.amplitude_m, dn);
+            g_comp.WriteDataset("phase", c.phase_rad, dn);
+            g_comp.WriteDataset("direction", c.direction_rad, dn);
+            g_comp.WriteAttribute("units", std::string("omega rad/s, k rad/m, amplitude m, phase rad, "
+                                                       "direction rad (0 = +X, pi/2 = +Y)"));
+        }
+        if (impl_->incident_eta.size() == impl_->time.size()) {
+            const std::array<hsize_t, 1> dt = {static_cast<hsize_t>(impl_->incident_eta.size())};
+            g_waves.WriteDataset("free_surface_eta", impl_->incident_eta, dt);
+            g_waves.WriteAttribute("free_surface_eta.units", std::string("m"));
+            g_waves.WriteAttribute("free_surface_eta.location", std::string("x = 0, y = 0"));
+            g_waves.WriteAttribute("free_surface_eta.time", std::string("/results/time/time"));
+            g_waves.WriteAttribute("free_surface_eta.description",
+                std::string("Incident elevation as applied: excitation ramp, amplitude envelope and "
+                            "crossfade weights included"));
+        } else if (!impl_->incident_eta.empty()) {
+            LOG_WARNING("Incident elevation not written (/events/waves/free_surface_eta): "
+                        << impl_->incident_eta.size() << " samples for " << impl_->time.size() << " times.");
+        }
+    }
+
     // ── meta/run runtime details ────────────────────────────────────────────
     {
         auto g_run = impl_->writer.RequireGroup("/meta/run");
@@ -2130,6 +2196,8 @@ void SimulationExporter::UpdateLinkParameter(const std::string&, const std::stri
 void SimulationExporter::SetRuntimeEvents(const std::vector<long long>&, const std::vector<double>&,
                                           const std::vector<std::string>&, const std::vector<double>&,
                                           const std::vector<double>&, const std::vector<std::string>&) {}
+void SimulationExporter::AddWaveChange(WaveChangeRecord) {}
+void SimulationExporter::RecordIncidentElevation(double) {}
 void SimulationExporter::WriteRadiationDiagnostics(const std::vector<seastack::hydro::KernelFitDiagnostics>&) {
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }

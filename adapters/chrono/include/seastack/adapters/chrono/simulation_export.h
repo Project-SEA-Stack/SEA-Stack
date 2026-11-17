@@ -47,6 +47,21 @@ struct ExportConfig {
     bool use_float32 = false;     ///< Store time-series as float32 (opt-in)
 };
 
+/// A live sea change as applied during the run (/events/waves/change_<i>).
+struct WaveChangeRecord {
+    double start_time_s = 0.0;  ///< Simulation time at which the transition starts [s]
+    double duration_s = 0.0;    ///< Transition length [s]
+    std::string kind;           ///< "height", "period" or "direction"
+    std::string parameter;      ///< Runtime parameter id, e.g. "waves.period"
+    double value = 0.0;         ///< New value in the parameter's units (m, -, s or deg)
+    /// height: target of the amplitude envelope e(t) [-] (1 = sea of the hydro YAML).
+    double envelope_target = 1.0;
+    /// period / direction: the new component set as stored by the wave field
+    /// (phases matched at start_time_s; same conventions as
+    /// /inputs/simulation/waves/components). Empty for height changes.
+    std::vector<double> omega_rad_s, k_rad_m, amplitude_m, phase_rad, direction_rad;
+};
+
 class SimulationExporter {
   public:
     /**
@@ -304,6 +319,25 @@ class SimulationExporter {
                           const std::vector<std::string>& parameters, const std::vector<double>& values,
                           const std::vector<double>& previous_values,
                           const std::vector<std::string>& origins);
+
+    /**
+     * @brief Record a live sea change as applied (written under /events/waves by Finalize).
+     *
+     * With at least one change, /events/waves also holds the incident
+     * elevation at the origin recorded by RecordIncidentElevation, and
+     * /inputs/simulation/waves is flagged as the initial sea only.
+     */
+    void AddWaveChange(WaveChangeRecord change);
+
+    /**
+     * @brief Record the incident elevation at the origin (x = y = 0) [m] for this step.
+     *
+     * Call once per simulation step after RecordStep, with every factor the
+     * physics applies (excitation ramp, amplitude envelope, crossfade
+     * weights). Kept only when the step was recorded, so it is sampled at
+     * /results/time/time; written only if the sea changed (AddWaveChange).
+     */
+    void RecordIncidentElevation(double eta_m);
 
     /**
      * @brief Write radiation kernel fit diagnostics to HDF5.

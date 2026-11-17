@@ -186,9 +186,63 @@ std::shared_ptr<hydro::WaveBase> ReadWave(const H5::H5File& file, double gravity
         components[i].phase = phase[i];
         components[i].direction = direction[i];
     }
-    auto wave = std::make_shared<hydro::LinearDirectionalWaveField>(std::move(components), depth);
-    wave->UpdateEnvironment(gravity, depth);
-    wave->SetRampDuration(ramp_duration);
+    auto make_initial = [&] {
+        auto w = std::make_shared<hydro::LinearDirectionalWaveField>(components, depth);
+        w->UpdateEnvironment(gravity, depth);
+        w->SetRampDuration(ramp_duration);
+        return w;
+    };
+    auto wave = make_initial();
+
+    // Live sea changes, applied in order with the run's own calls, so the
+    // drawn sea follows the one the physics saw.
+    if (!PathExists(file, "/events/waves")) {
+        if (PathExists(file, "/events/parameter")) {
+            for (const std::string& p : ReadStrings(file, "/events/parameter")) {
+                if (p.rfind("waves.", 0) == 0) {
+                    *note = "The sea changed during this run (" + p + " in /events), but this file has no "
+                            "/events/waves (older SEA-Stack): the water shows the initial sea throughout.";
+                    break;
+                }
+            }
+        }
+        return wave;
+    }
+    const int count = static_cast<int>(ReadDoubleAttr(file.openGroup("/events/waves"), "count", 0.0));
+    try {
+        for (int i = 0; i < count; ++i) {
+            const std::string path = "/events/waves/change_" + std::to_string(i);
+            const H5::Group g = file.openGroup(path);
+            const double start = ReadDoubleAttr(g, "start_time", 0.0);
+            const double duration = ReadDoubleAttr(g, "duration", 0.0);
+            if (ReadStringAttr(g, "kind") == "height") {
+                wave->GetAmplitudeEnvelope()->RampTo(start, ReadDoubleAttr(g, "envelope_target", 1.0), duration);
+                continue;
+            }
+            const std::vector<double> c_omega = ReadDoubles(file, path + "/components/omega");
+            const std::vector<double> c_k = ReadDoubles(file, path + "/components/k");
+            const std::vector<double> c_amplitude = ReadDoubles(file, path + "/components/amplitude");
+            const std::vector<double> c_phase = ReadDoubles(file, path + "/components/phase");
+            const std::vector<double> c_direction = ReadDoubles(file, path + "/components/direction");
+            std::vector<hydro::WaveComponent> next(c_omega.size());
+            for (size_t j = 0; j < next.size(); ++j) {
+                next[j].omega = c_omega[j];
+                next[j].k = j < c_k.size() ? c_k[j] : 0.0;
+                next[j].amplitude = j < c_amplitude.size() ? c_amplitude[j] : 0.0;
+                next[j].phase = j < c_phase.size() ? c_phase[j] : 0.0;
+                next[j].direction = j < c_direction.size() ? c_direction[j] : 0.0;
+            }
+            wave->CrossfadeTo(std::move(next), start, duration);
+        }
+    } catch (const H5::Exception& e) {
+        *note = "The recorded sea changes (/events/waves) could not be read (" + e.getDetailMsg() +
+                "): the water shows the initial sea throughout.";
+        return make_initial();
+    } catch (const std::exception& e) {
+        *note = std::string("The recorded sea changes (/events/waves) could not be applied (") + e.what() +
+                "): the water shows the initial sea throughout.";
+        return make_initial();
+    }
     return wave;
 }
 

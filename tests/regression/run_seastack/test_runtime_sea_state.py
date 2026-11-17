@@ -26,6 +26,9 @@ Checks, on copies of the demo cases:
      runs, and one that moves energy above the BEM range is refused.
   7. Ten alternating period changes (IRF, NLFK): deterministic, all logged;
      with --reference-exe, equal to another build's results.
+  8. Height, period and direction changes in one run: /events/waves records
+     each change and the incident elevation as applied, and a rerun from the
+     schedule rebuilt from /events is bit-identical.
 
 Needs numpy and h5py (exit code 77, skipped, if missing). Usage:
     python test_runtime_sea_state.py --exe <path/to/run_seastack> [--reference-exe <other build>]
@@ -193,7 +196,8 @@ def main() -> int:
             check(len(ev.get("step", [])) == 1 and ev["step"][0] == CHANGE_STEP
                   and ev["parameter"][0].decode() == "waves.period"
                   and ev["value"][0] == new_period and ev["previous_value"][0] == period,
-                  f"/events records the period change: {dict((k, v[:1]) for k, v in ev.items())}")
+                  f"/events records the period change: "
+                  f"{dict((k, v[:1]) for k, v in ev.items() if not k.startswith('waves/'))}")
             row = first_differing_row(a, b)
             check(CHANGE_STEP <= row <= CHANGE_STEP + 5, f"period change: first differing row {row}")
 
@@ -329,6 +333,68 @@ def main() -> int:
                 else:
                     diff = max_relative_difference(res[2], res[0], VELOCITY)
                     check(diff <= tol, f"matches --reference-exe to {tol:g} ({diff:.2e})")
+
+        # 8. Height, period and direction changes in one run: /events/waves holds
+        #    each change and the incident elevation as applied, and a rerun from
+        #    the schedule rebuilt from /events (what the GUI exports) is
+        #    bit-identical. OSWEC: Hs 2 m, Tp 8 s, BEM headings 0-90 deg, dt 0.03 s.
+        print("oswec_mixed: oswec/irregular_waves, height, period and direction changes")
+        d = prepare(root, "oswec_mixed", "oswec/irregular_waves", 1.0)
+        dt = time_step(d)
+        set_end_time(d, 3300 * dt)
+        set_wave(d, "ramp_duration", 10.0)  # demo: 60 s; ends before the first change at 30 s
+        sched = d / "mixed.schedule.yaml"
+        write_schedule(sched, [(1000, "waves.height", 2.5), (1700, "waves.period", 9.0),
+                               (2500, "waves.direction", 20.0)], dt)
+        h5_mixed = run(exe, d, sched)
+        h5_plain = run(exe, d, None)
+        check(None not in (h5_mixed, h5_plain), "both runs succeed")
+        if None not in (h5_mixed, h5_plain):
+            ev = datasets(h5_mixed, "events")
+            rebuilt = d / "rebuilt.schedule.yaml"
+            write_schedule(rebuilt, [(int(s), p.decode(), float(v))
+                                     for s, p, v in zip(ev["step"], ev["parameter"], ev["value"])], dt)
+            h5_rerun = run(exe, d, rebuilt)
+            check(h5_rerun is not None, "rerun from the schedule rebuilt from /events succeeds")
+            if h5_rerun is not None:
+                ok, why = identical(datasets(h5_mixed, "results"), datasets(h5_rerun, "results"))
+                ok_ev, why_ev = identical(ev, datasets(h5_rerun, "events"))
+                check(ok and ok_ev, f"rerun is bit-identical in /results and /events {why} {why_ev}")
+            with h5py.File(h5_mixed, "r") as f, h5py.File(h5_plain, "r") as g:
+                w = f["events/waves"]
+                kinds = [w[f"change_{i}"].attrs["kind"] for i in range(int(w.attrs["count"]))]
+                kinds = [k.decode() if isinstance(k, bytes) else str(k) for k in kinds]
+                starts = [float(w[f"change_{i}"].attrs["start_time"]) for i in range(len(kinds))]
+                check(kinds == ["height", "period", "direction"] and np.allclose(starts, ev["time"], rtol=0, atol=0),
+                      f"/events/waves: kinds {kinds}, start times {starts} = /events/time")
+                check("components" not in w["change_0"] and
+                      all(w[f"change_{i}/components/omega"].shape[0] > 0 for i in (1, 2)),
+                      "component sets recorded for the period and direction changes")
+                check(float(f["inputs/simulation/waves"].attrs["changed_during_run"]) == 1.0
+                      and float(g["inputs/simulation/waves"].attrs["changed_during_run"]) == 0.0
+                      and "waves" not in g.get("events", {}),
+                      "changed_during_run 1 with changes, 0 (and no /events/waves) without")
+                t = f["results/time/time"][()]
+                eta = w["free_surface_eta"][()]
+                init_t = f["inputs/simulation/waves/irregular/free_surface_time"][()]
+                init_eta = f["inputs/simulation/waves/irregular/free_surface_eta"][()]
+                ramp = float(f["visualization"].attrs["wave_ramp_duration"])
+                idx = np.rint(t / dt).astype(int)
+                check(eta.shape == t.shape and np.allclose(init_t[idx], t, rtol=0, atol=1e-9),
+                      f"free_surface_eta sampled at /results/time/time ({eta.shape[0]} samples)")
+                scale = max(np.max(np.abs(init_eta)), 1e-12)
+                before = (t > ramp) & (t < 1000 * dt)
+                after_height = (t > 1000 * dt + 18.0) & (t < 1700 * dt)  # ramp: 2 x the peak period
+                err_before = np.max(np.abs(eta[before] - init_eta[idx[before]])) / scale
+                err_height = np.max(np.abs(eta[after_height] - 1.25 * init_eta[idx[after_height]])) / scale
+                check(before.any() and err_before < 1e-8,
+                      f"before the first change it is the initial elevation ({err_before:.1e})")
+                check(after_height.any() and err_height < 1e-8,
+                      f"after the height ramp it is 2.5/2 x the initial elevation ({err_height:.1e})")
+                late = t > 2500 * dt + 18.0
+                err_late = np.max(np.abs(eta[late] - init_eta[idx[late]])) / scale
+                check(late.any() and err_late > 1e-2,
+                      f"after the period and direction changes it differs from the initial sea ({err_late:.1e})")
     finally:
         shutil.rmtree(root, ignore_errors=True)
 

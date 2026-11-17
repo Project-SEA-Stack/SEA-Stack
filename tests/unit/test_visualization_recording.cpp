@@ -6,8 +6,11 @@
 #include <seastack/adapters/chrono/visualization_recording.h>
 #include <seastack/adapters/chrono/viz_extractor.h>
 #include <seastack/core/mooring_viz_data.h>
+#include <seastack/hydro/waves/amplitude_envelope.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
 #include <seastack/hydro/waves/wave_component.h>
+
+#include <H5Cpp.h>
 
 #include <chrono/assets/ChVisualShapeBox.h>
 #include <chrono/assets/ChVisualShapePointPoint.h>
@@ -221,9 +224,160 @@ int main() {
     TEST_ASSERT(seastack::chrono::LoadReplayRecording(path, 20 * 1024, &thin, &error), "thinned load");
     TEST_ASSERT(thin.frame_stride > 1 && thin.frames.size() < live.size(), "long record thinned");
     TEST_NEAR(thin.frames.back().time, live.back().time, 1e-12, "thinned record ends at the final state");
+    TEST_ASSERT(rec.wave_note.empty(), "no note for a run without sea changes");
+
+    // ---- Live sea changes: replay draws the sea the run applied ----
+    // A height ramp, a crossfade to the same component count (phases matched)
+    // and one to a different count, recorded as single_run does.
+    const std::string path_changes =
+        (std::filesystem::temp_directory_path() / "seastack_test_visualization_recording_waves.h5").string();
+    const std::string path_old =
+        (std::filesystem::temp_directory_path() / "seastack_test_visualization_recording_old.h5").string();
+    seastack::hydro::LinearDirectionalWaveField live_wave(components, 0.0);
+    live_wave.SetRampDuration(0.8);
+    std::vector<double> live_eta;
+    auto record_run = [&](const std::string& out_path, bool with_changes) {
+        ::chrono::ChSystemNSC sys;
+        auto body = chrono_types::make_shared<::chrono::ChBody>();
+        body->SetName("float");
+        body->AddVisualShape(chrono_types::make_shared<::chrono::ChVisualShapeBox>(1.0, 1.0, 1.0));
+        sys.AddBody(body);
+        seastack::chrono::SimulationExporter::Options options;
+        options.output_path = out_path;
+        options.log_final_output_path = false;
+        seastack::chrono::SimulationExporter exporter(options);
+        exporter.WriteSimulationInfo(&sys, "", "test", kDt, 3.0);
+        exporter.WriteModel(&sys);
+        exporter.BeginResults(&sys, 300);
+        std::vector<double> om, kk, am, ph, dir;
+        for (const auto& c : components) {
+            om.push_back(c.omega);
+            kk.push_back(c.k);
+            am.push_back(c.amplitude);
+            ph.push_back(c.phase);
+            dir.push_back(c.direction);
+        }
+        exporter.WriteWaveComponents(om, kk, am, ph, dir);
+        exporter.WriteVisualization(&sys, 0.8, 0.0, 9.81, false);
+        auto crossfade = [&](std::vector<seastack::hydro::WaveComponent> next, double t, double duration,
+                             const char* kind) {
+            const size_t n_new = next.size();
+            live_wave.CrossfadeTo(std::move(next), t, duration);
+            seastack::chrono::WaveChangeRecord change;
+            change.start_time_s = t;
+            change.duration_s = duration;
+            change.kind = kind;
+            change.parameter = std::string("waves.") + kind;
+            const auto& all = *live_wave.GetWaveComponents();
+            for (size_t i = all.size() - n_new; i < all.size(); ++i) {
+                change.omega_rad_s.push_back(all[i].omega);
+                change.k_rad_m.push_back(all[i].k);
+                change.amplitude_m.push_back(all[i].amplitude);
+                change.phase_rad.push_back(all[i].phase);
+                change.direction_rad.push_back(all[i].direction);
+            }
+            exporter.AddWaveChange(std::move(change));
+        };
+        for (int i = 0; i < 300; ++i) {
+            const double t = sys.GetChTime();
+            if (with_changes && i == 50) {
+                live_wave.GetAmplitudeEnvelope()->RampTo(t, 1.5, 0.4);
+                seastack::chrono::WaveChangeRecord change;
+                change.start_time_s = t;
+                change.duration_s = 0.4;
+                change.kind = "height";
+                change.parameter = "waves.height";
+                change.value = 1.5;
+                change.envelope_target = 1.5;
+                exporter.AddWaveChange(std::move(change));
+            }
+            if (with_changes && i == 100) {
+                std::vector<seastack::hydro::WaveComponent> turned = components;
+                for (auto& c : turned) c.direction += 0.5;
+                crossfade(turned, t, 0.6, "direction");
+            }
+            if (with_changes && i == 200) {
+                std::vector<seastack::hydro::WaveComponent> three = components;
+                three.push_back({1.9, 0.0, 0.2, 0.3, 0.7});
+                for (auto& c : three) c.omega *= 0.9;
+                crossfade(three, t, 0.5, "period");
+            }
+            sys.DoStepDynamics(kDt);
+            exporter.RecordStep(&sys);
+            const double t1 = sys.GetChTime();
+            const double eta = live_wave.GetExcitationRampForVisualization(t1) *
+                               live_wave.GetElevation(Eigen::Vector3d::Zero(), t1);
+            exporter.RecordIncidentElevation(eta);
+            if (with_changes) live_eta.push_back(eta);
+        }
+        if (!with_changes) {
+            // An older file: the event log names a sea change, /events/waves is absent.
+            exporter.SetRuntimeEvents({50}, {0.5}, {"waves.height"}, {1.5}, {1.0}, {"schedule"});
+        }
+        exporter.Finalize();
+    };
+    record_run(path_changes, true);
+    seastack::chrono::ReplayRecording waves_rec;
+    TEST_ASSERT(seastack::chrono::LoadReplayRecording(path_changes, size_t{64} << 20, &waves_rec, &error),
+                "load with sea changes: " + error);
+    TEST_ASSERT(waves_rec.wave != nullptr && waves_rec.wave_note.empty(),
+                "sea changes applied without a note: " + waves_rec.wave_note);
+    if (waves_rec.wave) {
+        double max_err = 0.0;
+        double max_eta = 0.0;
+        for (const Eigen::Vector3d p : {Eigen::Vector3d(0.0, 0.0, 0.0), Eigen::Vector3d(3.0, -2.0, 0.0)}) {
+            for (double t = 0.0; t <= 3.0; t += 0.0137) {
+                const double a = waves_rec.wave->GetExcitationRampForVisualization(t) *
+                                 waves_rec.wave->GetElevation(p, t);
+                const double b = live_wave.GetExcitationRampForVisualization(t) * live_wave.GetElevation(p, t);
+                max_err = std::max(max_err, std::abs(a - b));
+                max_eta = std::max(max_eta, std::abs(b));
+            }
+        }
+        TEST_ASSERT(max_err == 0.0, "replayed elevation equals the live elevation (max error " +
+                                        std::to_string(max_err) + " m)");
+        TEST_ASSERT(max_eta > 0.5, "the live sea is not flat");
+        TEST_ASSERT(waves_rec.wave->GetWaveComponents()->size() == 7, "two crossfades: 2 + 2 + 3 components");
+        // Without the changes the elevation differs: the check has teeth.
+        seastack::hydro::LinearDirectionalWaveField initial(components, 0.0);
+        initial.SetRampDuration(0.8);
+        const double t_late = 2.9;
+        TEST_ASSERT(std::abs(initial.GetExcitationRampForVisualization(t_late) *
+                                 initial.GetElevation(Eigen::Vector3d::Zero(), t_late) -
+                             live_wave.GetExcitationRampForVisualization(t_late) *
+                                 live_wave.GetElevation(Eigen::Vector3d::Zero(), t_late)) > 1e-3,
+                    "the changed sea differs from the initial one");
+    }
+    {
+        H5::H5File file(path_changes, H5F_ACC_RDONLY);
+        H5::DataSet ds = file.openDataSet("/events/waves/free_surface_eta");
+        hsize_t n = 0;
+        ds.getSpace().getSimpleExtentDims(&n);
+        std::vector<double> eta(n);
+        ds.read(eta.data(), H5::PredType::NATIVE_DOUBLE);
+        TEST_ASSERT(eta == live_eta, "/events/waves/free_surface_eta is the elevation recorded each step");
+        double changed = 0.0;
+        file.openGroup("/inputs/simulation/waves").openAttribute("changed_during_run")
+            .read(H5::PredType::NATIVE_DOUBLE, &changed);
+        TEST_ASSERT(changed == 1.0, "/inputs/simulation/waves flagged changed_during_run = 1");
+        TEST_ASSERT(file.openGroup("/events/waves").nameExists("change_2/components") &&
+                        !file.openGroup("/events/waves").nameExists("change_0/components"),
+                    "components recorded for the crossfades, not for the height change");
+    }
+
+    record_run(path_old, false);
+    seastack::chrono::ReplayRecording old_rec;
+    TEST_ASSERT(seastack::chrono::LoadReplayRecording(path_old, size_t{64} << 20, &old_rec, &error),
+                "load older file: " + error);
+    TEST_ASSERT(old_rec.wave != nullptr && old_rec.wave->GetWaveComponents()->size() == 2,
+                "older file: the initial sea, as before");
+    TEST_ASSERT(old_rec.wave_note.find("initial sea throughout") != std::string::npos,
+                "older file: note says the changes are not drawn: " + old_rec.wave_note);
 
     std::error_code ec;
     std::filesystem::remove(path, ec);
+    std::filesystem::remove(path_changes, ec);
+    std::filesystem::remove(path_old, ec);
     test_results.Summary();
     return test_results.failed > 0 ? 1 : 0;
 }

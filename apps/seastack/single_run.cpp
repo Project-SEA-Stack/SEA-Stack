@@ -1100,6 +1100,8 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             }
         }
 #endif
+        // Applied sea changes go to /events/waves (replay redraws them).
+        seastack::chrono::SimulationExporter* const wave_log = exporter.get();
         // Live wave height. The wave's amplitude envelope e(t) scales every
         // component in all excitation paths (FD, IRF, NLFK) and the drawn sea.
         // A change ramps in over two dominant wave periods (10 s if unknown) so
@@ -1134,8 +1136,21 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             const double period = wave->GetCharacteristicPeriod();
             const double transition = period > 0.0 ? 2.0 * period : 10.0;
             const std::shared_ptr<seastack::hydro::AmplitudeEnvelope> envelope = wave->GetAmplitudeEnvelope();
-            runtime_controls.AddParameter(p, [envelope, reference, transition](double value, double time) {
-                return envelope->RampTo(time, value / reference, transition);
+            const std::string id = p.id;
+            runtime_controls.AddParameter(p, [envelope, reference, transition, wave_log, id](double value,
+                                                                                              double time) {
+                const double end = envelope->RampTo(time, value / reference, transition);
+                if (wave_log) {
+                    seastack::chrono::WaveChangeRecord change;
+                    change.start_time_s = time;
+                    change.duration_s = transition;
+                    change.kind = "height";
+                    change.parameter = id;
+                    change.value = value;
+                    change.envelope_target = value / reference;
+                    wave_log->AddWaveChange(std::move(change));
+                }
+                return end;
             });
         }
         // Live wave period and direction (one regular or spectral sea state).
@@ -1201,8 +1216,8 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                                                          : seastack::hydro::SeaStateChangeKind::kDirection;
                     return seastack::hydro::CheckSeaStateChange(kind, proposed, limits);
                 };
-                auto apply = [field, modified, unchanged, sea](const std::string& what, double value,
-                                                               double time) {
+                auto apply = [field, modified, unchanged, sea, wave_log](const std::string& what, double value,
+                                                                         double time) {
                     if (unchanged(what, value)) {
                         return time;  // no new component set: the sea and its cost stay as they are
                     }
@@ -1218,7 +1233,27 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     }
                     const double period = std::max(field->GetCharacteristicPeriod(), new_period);
                     *sea = def;
-                    return field->CrossfadeTo(std::move(components), time, period > 0.0 ? 2.0 * period : 10.0);
+                    const size_t n_new = components.size();
+                    const double duration = period > 0.0 ? 2.0 * period : 10.0;
+                    const double end = field->CrossfadeTo(std::move(components), time, duration);
+                    if (wave_log) {
+                        seastack::chrono::WaveChangeRecord change;
+                        change.start_time_s = time;
+                        change.duration_s = duration;
+                        change.kind = what;
+                        change.parameter = "waves." + what;
+                        change.value = value;
+                        const auto& all = *field->GetWaveComponents();
+                        for (size_t i = all.size() - n_new; i < all.size(); ++i) {
+                            change.omega_rad_s.push_back(all[i].omega);
+                            change.k_rad_m.push_back(all[i].k);
+                            change.amplitude_m.push_back(all[i].amplitude);
+                            change.phase_rad.push_back(all[i].phase);
+                            change.direction_rad.push_back(all[i].direction);
+                        }
+                        wave_log->AddWaveChange(std::move(change));
+                    }
+                    return end;
                 };
                 for (const std::string what : {"period", "direction"}) {
                     seastack::chrono::RuntimeParameter q;
@@ -1275,6 +1310,17 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         // -----------------------------------------------------------------
         // 6. Run simulation
         // -----------------------------------------------------------------
+        // Incident elevation at the origin as the physics applies it (excitation
+        // ramp, envelope, crossfade weights), kept for /events/waves.
+        const std::shared_ptr<WaveBase> incident_wave = hydro_forces ? hydro_forces->GetWave() : nullptr;
+        auto record_incident_elevation = [&exporter, &system, &incident_wave]() {
+            if (exporter && incident_wave && exporter->LastStepWasRecorded()) {
+                const double t = system->GetChTime();
+                exporter->RecordIncidentElevation(incident_wave->GetExcitationRampForVisualization(t) *
+                                                  incident_wave->GetElevation(Eigen::Vector3d::Zero(), t));
+            }
+        };
+
         startup_line("[startup] Entering simulation loop");
         bool first_step = true;
         int step_count = 0;
@@ -1348,6 +1394,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     if (exporter) {
                         if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
                         exporter->RecordStep(system.get());
+                        record_incident_elevation();
 #ifdef SEASTACK_HAVE_MOORDYN
                         if (hydro_forces) {
                             exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
@@ -1538,6 +1585,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         ui.AfterStep(system->GetChTime());
                         if (exporter) {
                             exporter->RecordStep(system.get());
+                            record_incident_elevation();
 #ifdef SEASTACK_HAVE_MOORDYN
                             if (hydro_forces) {
                                 exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
