@@ -374,6 +374,15 @@ if(Python3_FOUND)
     )
     set_tests_properties(test_demo_features_python PROPERTIES
         LABELS "unit" COST 5 SKIP_RETURN_CODE 77)
+    # Capytaine phase fix runs once per file (exit code 77 = no h5py).
+    add_test(
+        NAME test_fix_capytaine_excitation_phase
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/python/test_fix_capytaine_excitation_phase.py"
+    )
+    set_tests_properties(test_fix_capytaine_excitation_phase PROPERTIES
+        LABELS "unit;chrono-free" COST 1 SKIP_RETURN_CODE 77)
+    seastack_python_interpreter_dll_path(test_fix_capytaine_excitation_phase)
     if(TARGET run_seastack)
         set_property(TEST test_demo_features_python APPEND PROPERTY
             ENVIRONMENT "SEASTACK_RUN_SEASTACK=$<TARGET_FILE:run_seastack>")

@@ -1076,6 +1076,10 @@ endif()
 install(FILES "${CMAKE_SOURCE_DIR}/tests/utilities/plot_helpers.py"
         DESTINATION tests/utilities COMPONENT runtime)
 
+# One-off fix for BEM files written by older Capytaine run_bem.py scripts (release notes).
+install(FILES "${CMAKE_SOURCE_DIR}/scripts/fix_capytaine_excitation_phase.py"
+        DESTINATION scripts COMPONENT runtime)
+
 # macOS: the Vulkan loader bundled via RUNTIME_DEPENDENCIES needs a driver. Ship MoltenVK and its
 # ICD manifest (library_path "../../../lib/libMoltenVK.dylib" matches share/vulkan/icd.d -> lib);
 # run_seastack points VK_DRIVER_FILES at it on startup (apps/seastack/app_init.cpp).

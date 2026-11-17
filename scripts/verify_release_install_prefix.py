@@ -32,6 +32,7 @@ def main() -> int:
         root / "demos" / "rm3" / "mooring" / "eta_rm3_mooring.txt",
         root / "tests" / "utilities" / "plot_helpers.py",
         root / "tests" / "compare_template.py",
+        root / "scripts" / "fix_capytaine_excitation_phase.py",
         root / "demos" / "f3of" / "decay_dt3" / "f3of_decay_dt3.setup.yaml",
         # External PTO demos (RM3 TSDA + OSWEC RSDA) + IPC helper + plot workflow.
         root / "python" / "seastack_external.py",
