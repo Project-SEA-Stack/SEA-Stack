@@ -158,9 +158,9 @@ int SmoothBodyMeshNormals(::chrono::ChBody& body) {
 // =============================================================================
 
 GUIImplVSG::GUIImplVSG()
-    : pVis(::chrono_types::make_shared<SeastackVisualSystemVSG>()),
+    : viewer_settings_(std::make_unique<ViewerSettings>()),
+      pVis(::chrono_types::make_shared<SeastackVisualSystemVSG>()),
       animated_water_(std::make_unique<AnimatedWaterSurface>()),
-      viewer_settings_(std::make_unique<ViewerSettings>()),
       radiated_waves_(std::make_unique<RadiatedWaveOverlay>()) {}
 
 GUIImplVSG::~GUIImplVSG() = default;

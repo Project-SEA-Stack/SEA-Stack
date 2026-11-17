@@ -103,6 +103,11 @@ class GUIImplVSG : public GUIImpl {
     /// Update clip planes for the current camera distance and water extent.
     void UpdateClipPlanes();
 
+    // Declared before pVis so they outlive it: pVis owns the GUI component,
+    // which holds raw pointers to both and saves preferences in its destructor.
+    std::unique_ptr<ViewerSettings> viewer_settings_;
+    std::unique_ptr<MooringLinesViz> mooring_viz_;
+
     std::shared_ptr<SeastackVisualSystemVSG> pVis;
     std::unique_ptr<OverlayBuilder> overlay_builder_;  ///< Water nodes via Chrono's shape builder
     ViewerOptions options_;
@@ -116,11 +121,9 @@ class GUIImplVSG : public GUIImpl {
     /// after Init() apart from Chrono's own body drawing.
     std::unique_ptr<seastack::chrono::VizExtractor> extractor_;
     std::unique_ptr<AnimatedWaterSurface> animated_water_;
-    std::unique_ptr<ViewerSettings> viewer_settings_;
     std::unique_ptr<RadiatedWaveOverlay> radiated_waves_;
 
     MooringVizProvider mooring_provider_;
-    std::unique_ptr<MooringLinesViz> mooring_viz_;
     vsg::ref_ptr<vsg::Group> mooring_scene_group_;
 
     double mooring_viz_line_radius_request_ = -1.0;
