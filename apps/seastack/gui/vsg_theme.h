@@ -19,6 +19,11 @@ struct SceneTheme {
     float ambient_intensity;               ///< Ambient light [-]
     float fill_intensity;                  ///< Fill light, opposite the key [-]
     float rim_intensity;                   ///< Rim light from behind / above [-]
+    /// SEA-Stack viewer: soft light straight down in the sky colour and
+    /// straight up in the water colour, so faces turned from the key light
+    /// keep their shape (a cheap stand-in for image-based lighting) [-].
+    float sky_fill_intensity;
+    float sea_bounce_intensity;
 
     // SEA-Stack viewer: procedural sky, drawn as the backdrop and reflected by
     // the water (sRGB, 0-1).

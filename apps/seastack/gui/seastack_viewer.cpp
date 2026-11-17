@@ -278,6 +278,12 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
                                       vsg::vec3(1.00f, 0.95f, 0.88f));
     scene_root_->addChild(fill_light_);
     scene_root_->addChild(rim_light_);
+    // Colours and levels set by ApplySceneTheme.
+    sky_fill_light_ = MakeDirectionalLight("seastack sky fill", 0.0, 0.5 * M_PI, 0.0f, vsg::vec3(1.0f, 1.0f, 1.0f));
+    sea_bounce_light_ =
+        MakeDirectionalLight("seastack sea bounce", 0.0, -0.5 * M_PI, 0.0f, vsg::vec3(1.0f, 1.0f, 1.0f));
+    scene_root_->addChild(sky_fill_light_);
+    scene_root_->addChild(sea_bounce_light_);
     {
         const vsg::vec3 towards_key(static_cast<float>(std::cos(kKeyElevation) * std::cos(kKeyAzimuth)),
                                     static_cast<float>(std::cos(kKeyElevation) * std::sin(kKeyAzimuth)),
@@ -868,6 +874,20 @@ void SeastackViewer::ApplySceneTheme(const SceneTheme& theme) {
     auto linear = [](const std::array<float, 3>& srgb) {
         return vsg::vec3(SrgbToLinear(srgb[0]), SrgbToLinear(srgb[1]), SrgbToLinear(srgb[2]));
     };
+    // Hue of a theme colour at full brightness; the light's intensity sets the level.
+    auto hue = [&linear](const std::array<float, 3>& srgb) {
+        const vsg::vec3 c = linear(srgb);
+        const float peak = std::max({c.x, c.y, c.z, 1e-6f});
+        return c / peak;
+    };
+    if (sky_fill_light_) {
+        sky_fill_light_->color = hue(theme.sky_zenith_srgb);
+        sky_fill_light_->intensity = theme.sky_fill_intensity;
+    }
+    if (sea_bounce_light_) {
+        sea_bounce_light_->color = hue(theme.water_scatter_srgb);
+        sea_bounce_light_->intensity = theme.sea_bounce_intensity;
+    }
     water_shader_.SetSky(linear(theme.sky_zenith_srgb), linear(theme.sky_horizon_srgb), linear(theme.sky_ground_srgb),
                          theme.sky_sun_haze);
     water_shader_.SetWaterColors(linear(theme.water_deep_srgb), linear(theme.water_scatter_srgb));

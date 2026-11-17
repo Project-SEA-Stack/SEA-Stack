@@ -19,6 +19,8 @@ SceneTheme GetSceneTheme(VisualTheme theme) {
         t.ambient_intensity = 0.22f;
         t.fill_intensity = 0.40f;
         t.rim_intensity = 0.20f;
+        t.sky_fill_intensity = 0.25f;
+        t.sea_bounce_intensity = 0.10f;
         // Clear day: blue overhead, pale at the horizon, a grey-blue distant
         // sea below it. The water is a deeper, more saturated blue than all
         // three, so it stands apart from the sky.
@@ -37,6 +39,8 @@ SceneTheme GetSceneTheme(VisualTheme theme) {
     t.ambient_intensity = 0.18f;
     t.fill_intensity = 0.38f;
     t.rim_intensity = 0.45f;
+    t.sky_fill_intensity = 0.20f;
+    t.sea_bounce_intensity = 0.08f;
     // Studio backdrop: dark overhead, a faint light band at the horizon and
     // a darker floor, no sun glow. The water is a mid-tone teal-blue, lighter
     // than all of it, so it reads against the dark.

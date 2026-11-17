@@ -167,6 +167,8 @@ class SeastackViewer : public OverlayBuilder {
     double model_radius_ = 10.0;  ///< Radius of the model bounds at Initialize() [m]
     vsg::ref_ptr<vsg::DirectionalLight> fill_light_;
     vsg::ref_ptr<vsg::DirectionalLight> rim_light_;
+    vsg::ref_ptr<vsg::DirectionalLight> sky_fill_light_;    ///< Straight down, sky colour; no shadow
+    vsg::ref_ptr<vsg::DirectionalLight> sea_bounce_light_;  ///< Straight up, water colour; no shadow
     WaterShader water_shader_;  ///< Shared by every water mesh; eye updated each frame
 
     /// One transform per scene body, in scene order (world <- body ref frame).
