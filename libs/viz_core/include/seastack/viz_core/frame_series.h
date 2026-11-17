@@ -43,9 +43,10 @@ inline std::vector<size_t> SampleIndices(const FrameHistory& history, double t_b
     return out;
 }
 
-/// Roll, pitch, yaw [rad] of unit quaternion q (w, x, y, z): Cardan angles
-/// X-Y'-Z'' (intrinsic), the same formula as Chrono's GetCardanAnglesXYZ and
-/// the euler_xyz datasets of the HDF5 output.
+/// Roll, pitch, yaw [rad] of unit quaternion q (w, x, y, z): Cardan angles,
+/// extrinsic X-Y-Z (R = Rz(yaw) Ry(pitch) Rx(roll), about the fixed world
+/// axes), the same formula as Chrono's GetCardanAnglesXYZ and the euler_xyz
+/// datasets of the HDF5 output.
 inline Vec3 CardanAnglesXYZ(const Quat& q) {
     const double w = q[0], x = q[1], y = q[2], z = q[3];
     const double sin_pitch = std::clamp(2.0 * (x * z - w * y), -1.0, 1.0);

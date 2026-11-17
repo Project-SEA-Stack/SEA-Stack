@@ -136,7 +136,7 @@ struct AnalysisState {
     static constexpr int kNone = -1;
 
     // --- Written by the viewer every frame ---
-    std::vector<std::string> force_sources;  ///< Empty = no force data (replay, or no hydro model)
+    std::vector<std::string> force_sources;  ///< Empty = no force data (no hydro model, or none in the file)
     double force_scale = 0.0;   ///< Arrow length per unit force in use [m/N]
     double moment_scale = 0.0;  ///< Arrow length per unit moment in use [m/(N m)]
 

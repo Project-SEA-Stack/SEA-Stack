@@ -2,7 +2,7 @@
 // SEA-Stack VSG Themes
 // =============================================================================
 // Scene and panel settings for the dark / light viewer themes. Everything here
-// can be switched at runtime (background, skybox, light levels, ImGui style).
+// can be switched at runtime (background, sky, light levels, ImGui style).
 // =============================================================================
 #pragma once
 
@@ -14,8 +14,8 @@ namespace seastack::viz {
 
 /// Runtime-switchable scene settings for one theme.
 struct SceneTheme {
-    std::array<float, 3> background_srgb;  ///< Clear colour when no skybox (sRGB, 0-1)
-    bool show_sky;                         ///< Show the skybox (Chrono viewer's cubemap)
+    std::array<float, 3> background_srgb;  ///< Clear colour behind the scene (sRGB, 0-1)
+    bool show_sky;                         ///< Chrono viewer only: show its cubemap skybox
     float ambient_intensity;               ///< Ambient light [-]
     float fill_intensity;                  ///< Fill light, opposite the key [-]
     float rim_intensity;                   ///< Rim light from behind / above [-]

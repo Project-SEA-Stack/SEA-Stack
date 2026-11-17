@@ -35,11 +35,11 @@ All times are wall-clock seconds.
 | --- | --- |
 | `wall_time_s` | Total elapsed time for the run, from start-up to the end of the time loop. Includes setup, GUI pauses and idle time after `end_time`. |
 | `setup_wall_time_s` | Time before the time loop starts (model load, hydro set-up, viewer start-up). |
-| `active_wall_time_s` | Time spent stepping. Use this for compute speed: simulated time / `active_wall_time_s`. |
+| `active_wall_time_s` | Headless: time spent stepping; use this for compute speed (simulated time / `active_wall_time_s`). GUI: time the simulation was playing, which includes drawing and the wait that paces it to the chosen speed, so it is not a measure of compute speed. |
 | `paused_wall_time_s` | Time inside the time loop that was not stepping: GUI paused, waiting for Play, or idle after `end_time`. About zero for headless runs. |
 | `mode` | `interactive` (GUI) or `headless` (`--nogui`). |
 
-Headless `active_wall_time_s` includes HDF5 recording done during stepping. The console "Simulation speed" uses `active_wall_time_s`.
+Headless `active_wall_time_s` includes HDF5 recording done during stepping. The console "Simulation speed" uses `active_wall_time_s`; for compute speed, time a `--nogui` run.
 
 Units, sign conventions, and dataset names are defined in code; treat the exporter implementation as the source of truth when extending the schema.
 

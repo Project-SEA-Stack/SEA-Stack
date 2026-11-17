@@ -1,6 +1,6 @@
 # SEA-Stack v1.1.0 release notes
 
-**Release date:** 13 November 2026. Changes since v1.0.0 (15 October 2026).
+**Release date:** 17 November 2026. Changes since v1.0.0 (15 October 2026).
 The v1.0.0 notes are unchanged:
 [RELEASE_NOTES_v1.0.0.md](RELEASE_NOTES_v1.0.0.md).
 
@@ -97,29 +97,42 @@ The v1.0.0 notes are unchanged:
 
 ## GUI and visualization
 
-Everything in this section is visual or opt-in: a run that is not changed
-from the GUI gives the same results as before, with or without the GUI.
-User guide: [docs/usage/GUI.md](../usage/GUI.md).
+A run that is not changed from the GUI gives the same results (`/results`)
+as before, with or without the GUI. The results file is larger: replay data
+is always recorded (see Timeline and replay). User guide:
+[docs/usage/GUI.md](../usage/GUI.md).
 
 - **SEA-Stack viewer, now the default.** `run_seastack` opens SEA-Stack's
   own viewer. The Chrono viewer stays for this release: use
   `--viewer=chrono` to choose it. It also opens automatically, with a
   warning, if a model contains something the new viewer cannot draw or if
   the new viewer fails to start. It will be removed in a later release.
-- **Timeline and replay.** Scrub, step and play back the run so far, at any
-  speed, then return to live; slow motion is interpolated. `run_seastack
-  --replay results.h5` plays a recorded run without Chrono, with the same
-  controls, force arrows and plots. Recording costs about 1% of step time;
-  the replay data (`/visualization`) adds to the results file, for example
-  about 2 MB of loads for RM3 written every step over 180 s.
+- **Timeline and replay.** Scrub, step and play back the run so far, at
+  0.05x to 20x, then return to live; slow motion is interpolated.
+  `run_seastack --replay results.h5` plays a recorded run without Chrono,
+  with the same controls, force arrows and plots, and shows any live sea
+  changes. Recording costs about 1% of step time and is always on. The
+  replay data (`/visualization`) makes results files 25 to 33% larger: RM3
+  irregular waves over 180 s grows from 9.4 MB to 12.5 MB.
+- **Mooring lines in the results file (`/results/mooring`).** Peak tension
+  per line at every recorded step, and node positions and tensions for
+  replay, following `--output-level`: none at `compact`, 10 Hz float32 at
+  `standard` (default), every recorded step at `detailed`. For RM3 with
+  moorings over 400 s the file is 21.4 MB, 33.4 MB and 113 MB at the three
+  levels, against 20.8 MB without mooring recording.
 - **Live changes while the model runs.** The Inspector has sliders for TSDA
   and RSDA stiffness, damping and rest length or angle, and for the sea
   state: wave height, period and direction. Changes apply at a step
-  boundary and are logged in the results file (`/events`).
-  - A height change ramps over two wave periods and is exact in linear
-    theory.
+  boundary and are logged in the results file (`/events`; wave changes
+  with their components under `/events/waves`).
+  - A height change ramps over two wave periods. After the ramp the forces
+    are those of the new sea; during it, IRF excitation differs slightly
+    from frequency-domain excitation, because the convolution scales each
+    past elevation sample by the ramp value at its own time.
   - A period or direction change cross-fades to the new sea over two
-    periods. It is refused, with the reason shown, if more than 1% of the
+    periods. The weights sum to one, so the wave height dips mid-fade (to
+    about 0.7 of Hs for unrelated seas, possibly lower). It is refused,
+    with the reason shown, if more than 1% of the
     wave energy would fall outside the BEM frequencies or headings. It is
     also refused for a period change with constant-coefficient radiation,
     for a direction change with one IRF excitation kernel for several
@@ -142,8 +155,14 @@ User guide: [docs/usage/GUI.md](../usage/GUI.md).
 - **Usability.** Dark and light themes, a docked transport bar and
   inspector, soft shadows between bodies, body frames and labels, and model-scaled
   camera framing. Viewer preferences are kept between runs. Playback
-  speed runs from 0.05x to unlimited. The status bar reports active wall
-  time; `/meta/run` records setup, active and paused time.
+  speed runs from 0.05x to 20x, plus Max (as fast as possible) for the live
+  run. The status bar reports active wall time; `/meta/run` records setup,
+  active and paused time. In a GUI run, active time includes drawing and
+  pacing, so use a `--nogui` run for compute speed.
+- **`enforce_realtime` is ignored.** The viewer always starts at real time
+  (1x) and the speed is set from the transport bar. In v1.0,
+  `enforce_realtime: false` (the default, and the setting in the shipped
+  demos) ran the GUI as fast as possible. Headless runs are unchanged.
 
 ## Fixes
 
@@ -153,9 +172,17 @@ User guide: [docs/usage/GUI.md](../usage/GUI.md).
   had the wrong excitation phase and a time-reversed excitation IRF. The
   writers are fixed; `trimaran.h5` and `wigley_directional.h5` are
   converted, and `5sa.h5` and `5sa_directional.h5` are re-solved with 200 and
-  400 frequencies (the old files had 30, which aliased the radiation IRF). Results for these demos change. If you made your own files
-  with these `run_bem.py` scripts, convert them with
-  `scripts/fix_capytaine_excitation_phase.py`.
+  400 frequencies (the old files had 30, which aliased the radiation IRF).
+  `5sa_directional.h5` also moves from 13 headings at 30 deg to 36 at
+  10 deg. Results for these demos change: in `5sa/spreading` the heave
+  standard deviation changes by −9% to +76% per body and pitch by −1% to
+  +56%; the heading grid alone accounts for up to 5% in heave and 10% in
+  pitch. If you made your own files with these `run_bem.py` scripts,
+  convert them with `scripts/fix_capytaine_excitation_phase.py` (in the
+  source tree and the release package). Run it once per file: it marks the
+  file and refuses to convert it again (`--force` overrides). Files written
+  by the fixed `run_bem.py` scripts are already converted and carry no
+  mark: do not run the script on them.
 
 - **Linear hydrodynamic forces now turn with the body's heading.**
   Hydrostatic restoring, radiation (RIRF, state-space and

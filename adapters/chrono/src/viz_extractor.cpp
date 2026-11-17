@@ -53,6 +53,7 @@ viz::Pose ToPose(const ::chrono::ChFrame<>& frame) {
 }
 
 /// Colour, opacity and PBR settings of a shape (first material, else shape colour).
+/// The colour is copied unchanged and taken as linear (see viz::Rgba).
 /// Non-const only because Chrono's GetMaterials() is non-const; nothing is modified.
 void CopyAppearance(::chrono::ChVisualShape& shape, viz::VisualShape* out) {
     const ::chrono::ChColor c = shape.GetColor();

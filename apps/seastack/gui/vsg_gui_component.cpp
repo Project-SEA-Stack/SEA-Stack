@@ -340,7 +340,8 @@ void SeastackGuiComponent::RenderTransportBar(const ImVec2& pos, const ImVec2& s
     ImGui::TextDisabled("wall %.1f s    %.1f steps/frame    %.0f fps", s.active_wall_time,
                         shown_steps_per_frame_, shown_fps_);
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Wall time counts only time spent stepping (pauses excluded).");
+        ImGui::SetTooltip("Wall time while playing (pauses excluded). It includes drawing and\n"
+                          "the wait that paces the run, so it is not a compute-speed measure.");
     }
     // Grow-only, so the progress bar does not jitter as the readouts change length.
     status_width_ = std::max(status_width_, ImGui::GetItemRectMax().x - status_x);
@@ -761,8 +762,10 @@ void SeastackGuiComponent::RenderRadiatedWaveRows() {
         "otherwise Approximate.",
         "Point multipoles per body (heave ring, surge / sway dipoles, yaw\n"
         "quadrupole) carrying the power the radiation damping B(w) takes\n"
-        "from each motion. Right wave height on average; pattern shape\n"
-        "and phase are assumed, not computed.",
+        "from each motion. Pattern shape and phase are assumed, not computed.\n"
+        "Each body is treated alone: coupling between bodies is ignored, so\n"
+        "where their waves cancel (RM3 float and spar heaving together) the\n"
+        "drawn wave is too high, by 2 to 3 times at 0.5 to 1 rad/s.",
         "Directional patterns from the BEM excitation force through the\n"
         "Haskind relation: the far field of the BEM radiation problem.",
         "Far-field patterns from the BEM solver's Kochin functions.",
@@ -804,7 +807,8 @@ void SeastackGuiComponent::RenderRadiatedWaveRows() {
                           "data and drawn on top of the incident sea. Radiated waves\n"
                           "only: the scattering (diffraction) of the incident sea by\n"
                           "the bodies is not drawn. Visual only; never affects the\n"
-                          "simulation.");
+                          "simulation. While on, the water is computed on the CPU\n"
+                          "instead of the GPU shader, which is slower on fine grids.");
     }
     if (requested == RadiatedWaveMethod::kOff) {
         return;
@@ -1036,15 +1040,24 @@ void SeastackGuiComponent::RenderParameterSlider(const std::string& key,
             const char* what =
                 (first.field == "period" || first.field == "direction")
                     ? "The sea is sampled again with the new value and crossfaded in\n"
-                      "over two wave periods (excitation and the drawn sea).\n"
+                      "over two wave periods (excitation and the drawn sea);\n"
+                      "the wave height dips mid-fade (to about 0.7 of Hs).\n"
                       "Refused if the BEM data does not cover the new sea,\n"
                       "or while the last period or direction change fades in."
                     : "Scales every wave component (excitation and the drawn sea).\n"
                       "A change ramps in over two wave periods; 0 = calm.";
-            ImGui::SetTooltip("Wave %s [%s], from %s. Start value %.6g.\n%s\n%s\n"
-                              "Every change is logged; Export schedule reruns it.",
-                              first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how,
-                              what);
+            if (first.field == "direction") {
+                ImGui::SetTooltip("Wave direction [deg]: the direction the waves travel towards,\n"
+                                  "counter-clockwise from +x (0 = along +x, 90 = along +y).\n"
+                                  "From %s. Start value %.6g.\n%s\n%s\n"
+                                  "Every change is logged; Export schedule reruns it.",
+                                  first.source.c_str(), first.default_value, how, what);
+            } else {
+                ImGui::SetTooltip("Wave %s [%s], from %s. Start value %.6g.\n%s\n%s\n"
+                                  "Every change is logged; Export schedule reruns it.",
+                                  first.label.c_str(), first.units.c_str(), first.source.c_str(),
+                                  first.default_value, how, what);
+            }
         } else if (members.size() == 1) {
             ImGui::SetTooltip("%s [%s], from %s. Start value %.6g.\n%s\nEvery change is logged; Export schedule reruns it.%s",
                               first.label.c_str(), first.units.c_str(), first.source.c_str(), first.default_value, how,
@@ -1608,8 +1621,8 @@ void SeastackGuiComponent::RenderSelectionPanel() {
     ImGui::Text("COM       %9.3f %9.3f %9.3f m", p[0], p[1], p[2]);
     ImGui::Text("Rotation  %9.2f %9.2f %9.2f deg", r[0], r[1], r[2]);
     if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Roll, pitch, yaw: Cardan angles X-Y'-Z''\n"
-                          "(as euler_xyz in the HDF5 output).");
+        ImGui::SetTooltip("Roll, pitch, yaw: Cardan angles, extrinsic X-Y-Z\n"
+                          "(about the fixed world axes; as euler_xyz in the HDF5 output).");
     }
     ImGui::Text("Velocity  %9.3f %9.3f %9.3f m/s", v[0], v[1], v[2]);
 
@@ -1695,7 +1708,7 @@ void SeastackGuiComponent::RenderLoadsPanel() {
     ImGui::Indent();
     if (a.force_sources.empty()) {
         const TimelineState& tl = settings_->timeline;
-        ImGui::TextDisabled(tl.replay                 ? "No force data in replays."
+        ImGui::TextDisabled(tl.replay                 ? "No loads recorded in this file."
                             : tl.end_time > tl.start_time ? "No hydro force data for this model."
                                                           : "Components appear once the run starts.");
     } else {

@@ -87,7 +87,7 @@ class SeastackViewer : public OverlayBuilder {
     /// Returns false if the pixel is outside the 3D view.
     bool WindowRay(float x_px, float y_px, Ray* ray) const;
 
-    /// Clear colour, skybox visibility and light levels for `theme`.
+    /// Clear colour, procedural sky and water colours, and light levels for `theme`.
     void ApplySceneTheme(const SceneTheme& theme);
 
     /// Soft shadows from the key light, cast by the bodies onto themselves
@@ -156,7 +156,7 @@ class SeastackViewer : public OverlayBuilder {
     vsg::ref_ptr<vsg::View> view_;  ///< The scene view; its ViewDependentState renders the shadow maps
     vsg::ref_ptr<vsg::Group> scene_root_;
     vsg::ref_ptr<vsg::Group> overlay_root_;
-    vsg::ref_ptr<vsg::Switch> sky_switch_;  ///< Holds the skybox, if it loaded
+    vsg::ref_ptr<vsg::Switch> sky_switch_;  ///< Holds the procedural sky backdrop
     vsg::ref_ptr<vsg::ShaderSet> pbr_shader_set_;
     vsg::ref_ptr<vsg::SharedObjects> shared_objects_;
 

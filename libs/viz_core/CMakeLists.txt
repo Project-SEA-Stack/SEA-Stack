@@ -2,9 +2,10 @@
 # Allowed deps: C++ stdlib only
 # Forbidden: Chrono, HDF5, VSG, Eigen, OpenMP
 #
-# Header-only for now: simulation pacing and run-time bookkeeping used by the
-# interactive GUI loop. Kept free of Chrono/VSG so it is unit-testable and can
-# later be shared by a SEA-Stack-owned viewer and recorded-result playback.
+# Header-only: the renderer-free part of the viewer (scene model, frame
+# series and timeline, simulation pacing, radiated waves, colour ranges,
+# theme names). Kept free of Chrono/VSG so it is unit-testable and shared by
+# the live viewer and recorded-result playback.
 
 add_library(seastack_viz_core INTERFACE)
 add_library(SEAStack::VizCore ALIAS seastack_viz_core)

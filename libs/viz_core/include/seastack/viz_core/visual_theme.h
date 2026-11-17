@@ -10,8 +10,8 @@ namespace seastack::viz {
 /// the GUI; the initial value comes from simulation.visualization.theme.
 /// Purely visual: never affects the simulation.
 enum class VisualTheme {
-    kDark,   ///< Studio Dark: dark background, no skybox, dark panels
-    kLight,  ///< Light: skybox, light panels
+    kDark,   ///< Studio Dark: dark studio backdrop, dark panels
+    kLight,  ///< Light: daylight sky, light panels
 };
 
 inline const char* VisualThemeName(VisualTheme theme) {

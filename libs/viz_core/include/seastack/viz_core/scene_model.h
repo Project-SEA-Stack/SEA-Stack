@@ -25,7 +25,10 @@ namespace seastack::viz {
 ///  - Angular velocity is expressed in the world frame.
 
 using Quat = std::array<double, 4>;  ///< (w, x, y, z)
-using Rgba = std::array<float, 4>;   ///< Linear-light colour, alpha = opacity [0, 1]
+/// Linear-light colour, alpha = opacity [0, 1]. Model colours (Chrono ChColor,
+/// as given in the model YAML) are copied unchanged and treated as linear, as
+/// Chrono's own VSG viewer does; no sRGB decoding is applied.
+using Rgba = std::array<float, 4>;
 
 inline constexpr Quat kIdentityQuat{1.0, 0.0, 0.0, 0.0};
 

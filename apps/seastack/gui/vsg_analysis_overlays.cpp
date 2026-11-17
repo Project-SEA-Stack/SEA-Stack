@@ -489,7 +489,7 @@ void AnalysisOverlays::DrawPlots(const SceneDescription& scene, const FrameHisto
     ImGui::SliderFloat("##window", &plot_window_s_, 5.0f, 3600.0f, "last %.0f s", ImGuiSliderFlags_Logarithmic);
 
     if (quantity.load && n_sources == 0) {
-        ImGui::TextDisabled("No force data (replay, or no hydro model).");
+        ImGui::TextDisabled("No force data (no hydro model, or none recorded in this file).");
         ImGui::End();
         return;
     }

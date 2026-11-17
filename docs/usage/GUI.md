@@ -23,7 +23,7 @@ run_seastack data/demos/run_seastack/rm3/irregular_waves --nogui   # no window
 
 ## Layout and controls
 
-The window has a transport bar along the top, the 3D view, and an Inspector
+The window has a transport bar along the bottom, the 3D view, and an Inspector
 on the right. The Inspector sections are Scene, Selected, Loads and motion,
 Sea state, PTO and connectors, Changes and Display. Hover over a control for
 a description.
@@ -40,10 +40,15 @@ a description.
 | `Home` / `End` | First frame / back to live (last frame in a replay) |
 Shortcuts are ignored while you type in a text field.
 
-**Speed.** The speed slider runs from 0.05x to unlimited; the default is real
-time. Speed only changes how many steps run per frame; it never changes the
-time step or the results. If the model cannot keep up, the bar shows the
-speed achieved in amber.
+**Speed.** The speed slider runs from 0.05x to 20x, and Max steps the live
+run as fast as the machine allows. Playing recorded frames (timeline or
+replay) at Max runs at 20x. The viewer always starts at real time (1x): the
+simulation YAML key `enforce_realtime` is ignored by `run_seastack` (in v1.0,
+`false` ran the GUI as fast as possible). Headless runs always run as fast as
+possible. Speed only changes how many steps run per frame; it never changes
+the time step or the results. If the model cannot keep up, the bar shows the
+speed achieved in amber. The wall time in the status bar includes drawing and
+pacing, so time a `--nogui` run to measure compute speed.
 
 ## Timeline and replay
 
@@ -52,13 +57,23 @@ through it to look back; the simulation pauses while you do. Press Live (or
 `End`) to return and carry on. When one time step lasts several frames, "Smooth slow
 motion" (Display) draws poses interpolated between steps.
 
-`--replay` plays a results file without running Chrono, at any speed. It
-needs a file written by v1.1 or later (HDF5 visualization schema 1.1); an
-older file gives a clear message. Long records are thinned to fit about
-512 MB. Force arrows and load plots work in a replay too: every run records
-the hydrodynamic loads by component under `/visualization/forces` (float32,
-about 2 MB for RM3 written every step over 180 s). The frame at t = 0 is the
-input pose, labelled as such, because results start after the first step.
+`--replay` plays a results file without running Chrono, at 0.05x to 20x. It
+needs a file written by v1.1 or later (results schema 1.1 in `/meta`, which
+adds `/visualization`); an older file gives a clear message. Long records are
+thinned to fit about 512 MB. Force arrows and load plots work in a replay too:
+every run records the hydrodynamic loads by component under
+`/visualization/forces` (float32). Recording is always on. It adds about a
+quarter to a third to the results file: RM3 irregular waves over 180 s grows
+from 9.4 MB to 12.5 MB. The frame at t = 0 is the input pose, labelled as such,
+because results start after the first step.
+
+**Mooring lines** are recorded for replay under `/results/mooring`, following
+`--output-level`. Peak tension per line is written at every recorded step at
+every level. Node positions and tensions are written at 10 Hz in float32 at
+`standard` (the default), at every recorded step at `detailed`, and not at all
+at `compact`, in which case a replay draws no mooring lines. For RM3 with
+moorings over 400 s, the file is 21.4 MB at `compact`, 33.4 MB at `standard`
+and 113 MB at `detailed`, against 20.8 MB in v1.1.0 before mooring recording.
 
 ## Changing parameters while the model runs
 
@@ -71,7 +86,7 @@ input pose, labelled as such, because results start after the first step.
 | Wave height H (regular) or Hs (spectral) | `waves.height` | m |
 | Height scale (several sea states or an elevation record) | `waves.height_scale` | - |
 | Period T or Tp | `waves.period` | s |
-| Direction | `waves.direction` | deg |
+| Direction the waves travel towards, counter-clockwise from +x (0 = along +x, 90 = along +y) | `waves.direction` | deg |
 
 Use the sliders in "PTO and connectors" and "Sea state". A change applies
 on slider release, at the next step boundary. Right-click a slider to change
@@ -81,10 +96,16 @@ its range; that changes only what the slider can reach, not the model.
 
 - A height change ramps in over two wave periods (half-cosine). It scales the
   excitation, its IRF convolution, nonlinear Froude-Krylov and the drawn sea
-  together, so it is exact in linear theory.
+  together. Once the ramp (and, for IRF excitation, the kernel's memory) has
+  passed, the forces are those of the new sea. During the ramp the two
+  excitation paths differ slightly: frequency-domain excitation scales the
+  force by the ramp value at each instant, while the IRF convolution scales
+  each past elevation sample by the ramp value at its own time.
 - A period or direction change cross-fades from the old sea to the new one
   over two dominant periods. Each new component starts in phase with the old
-  sea at the origin.
+  sea at the origin. The two weights sum to one, so the wave height dips
+  mid-fade: for unrelated seas the variance halves at the midpoint and Hs
+  falls to about 0.7 of its value; it can fall further.
 - A period or direction change is refused, with the reason shown, when:
   - more than 1% of the new wave energy lies outside the BEM frequencies or
     headings;
@@ -94,7 +115,11 @@ its range; that changes only what the slider can reach, not the model.
 
 **Record of changes.** Every applied change is listed in the Changes section
 and saved in the results file under `/events` (`step`, `time`, `parameter`,
-`value`, `previous_value`, `origin`).
+`value`, `previous_value`, `origin`). `/inputs/simulation/waves` describes the
+sea at t = 0 (attribute `changed_during_run`). Wave changes are also saved
+under `/events/waves`, with the new wave components and the incident
+elevation at the origin as run; a replay applies them, so it shows the
+changed sea.
 
 ## Schedules: rerun the changes without the GUI
 
@@ -125,11 +150,12 @@ that would be refused in the GUI stops a scheduled run with the reason.
 
 ## Analysis
 
-- **Selected body.** Centre-of-mass position, rotation (Cardan X-Y'-Z''),
+- **Selected body.** Centre-of-mass position, rotation (Cardan angles,
+  extrinsic X-Y-Z: about the fixed world axes, as `euler_xyz` in the HDF5),
   velocity and a breakdown of loads by source. Isolate hides the other
   bodies; Plot opens the plot window for it.
 - **Scene table.** One row per body: show, label, axes, force arrows, trail.
-  Click a column header to set it for every body.
+  The "All bodies" row at the top sets a column for every body.
 - **Force arrows.** One arrow per hydrodynamic component (and optionally the
   total and moments) at each centre of mass, in world axes. These are the
   solver's forces, copied for display. Hover over the legend to highlight a
@@ -152,6 +178,12 @@ The Scene section sets how the water is drawn.
   Approximate (from the radiation damping B(ω)). Methods the data cannot
   support are greyed out, with the reason. This is a visual approximation:
   diffraction is not drawn, and nothing feeds back into the simulation.
+  Approximate treats each body alone and ignores the coupling between
+  bodies. Where their waves cancel, the drawn wave is too high: for RM3
+  (where Auto picks Approximate), with float and spar heaving together at the
+  same velocity, it is 2 to 3 times too high at 0.5 to 1 rad/s. While radiated
+  waves are on (the default), the water is computed on the CPU instead of the
+  GPU shader, which is slower on fine grids.
 
 **Shadows** (Scene section, on by default) draws soft shadows from the main
 light. Bodies shadow themselves and each other; they cast no shadow on the
