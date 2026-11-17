@@ -62,6 +62,7 @@ class GUIImpl {
     virtual void SetRuntimeControls(seastack::chrono::RuntimeControls* /*controls*/,
                                     const std::string& /*schedule_path*/, double /*time_step*/) {}
     virtual void SetHydroForces(seastack::chrono::HydroSystem* /*hydro*/) {}
+    virtual void AfterStep(double /*sim_time*/) {}
 };
 
 #ifdef SEASTACK_HAVE_VSG
@@ -69,6 +70,7 @@ class GUIImpl {
 class AnimatedWaterSurface;
 class MooringLinesViz;
 class OverlayBuilder;
+class RadiatedWaveOverlay;
 struct ViewerSettings;
 
 class GUIImplVSG : public GUIImpl {
@@ -88,6 +90,8 @@ class GUIImplVSG : public GUIImpl {
     virtual void SetMooringVisualizationRadii(double line_radius_m,
                                             double endpoint_radius_m,
                                             double node_marker_radius_m) override;
+    virtual void SetHydroForces(seastack::chrono::HydroSystem* hydro) override;
+    virtual void AfterStep(double sim_time) override;
 
   private:
     /// Ensure water surface is created (animated if wave model set, static otherwise).
@@ -113,6 +117,7 @@ class GUIImplVSG : public GUIImpl {
     std::unique_ptr<seastack::chrono::VizExtractor> extractor_;
     std::unique_ptr<AnimatedWaterSurface> animated_water_;
     std::unique_ptr<ViewerSettings> viewer_settings_;
+    std::unique_ptr<RadiatedWaveOverlay> radiated_waves_;
 
     MooringVizProvider mooring_provider_;
     std::unique_ptr<MooringLinesViz> mooring_viz_;
@@ -150,6 +155,7 @@ class GUIImplSeastack : public GUIImpl {
     void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
                             const std::string& schedule_path, double time_step) override;
     void SetHydroForces(seastack::chrono::HydroSystem* hydro) override;
+    void AfterStep(double sim_time) override;
 
   private:
     /// Copy parameters and applied changes to the GUI panel and pass its edit
@@ -197,6 +203,7 @@ class GUIImplSeastack : public GUIImpl {
     std::string reported_screenshot_;  ///< Last screenshot whose result the GUI has shown
     std::shared_ptr<seastack::hydro::WaveBase> wave_model_;
     std::unique_ptr<AnimatedWaterSurface> water_;
+    std::unique_ptr<RadiatedWaveOverlay> radiated_waves_;
     bool water_tried_ = false;  ///< Water creation attempted (it is not retried)
     /// The start-up framing used the full window; redo it once the panel layout is known.
     bool reframe_pending_ = false;

@@ -84,6 +84,10 @@ void UI::SetHydroForces(seastack::chrono::HydroSystem* /*hydro*/) {
     // Default (headless) UI does not draw forces.
 }
 
+void UI::AfterStep(double /*sim_time*/) {
+    // Default (headless) UI records nothing.
+}
+
 // -----------------------------------------------------------------------------
 
 GUI::GUI(ViewerBackend backend) : backend_(backend) {
@@ -179,4 +183,8 @@ void GUI::SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
 
 void GUI::SetHydroForces(seastack::chrono::HydroSystem* hydro) {
     pImpl->SetHydroForces(hydro);
+}
+
+void GUI::AfterStep(double sim_time) {
+    pImpl->AfterStep(sim_time);
 }

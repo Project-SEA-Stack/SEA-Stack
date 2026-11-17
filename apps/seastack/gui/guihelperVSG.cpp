@@ -7,12 +7,12 @@
 // =============================================================================
 #include "guihelper_impl.h"
 
+#include "radiated_wave_overlay.h"
 #include "vsg_config.h"
 #include "vsg_gui_component.h"
 #include "vsg_lighting.h"
 #include "vsg_materials.h"
 #include "vsg_mooring_lines.h"
-#include "vsg_radiation_surface.h"
 #include "vsg_theme.h"
 #include "vsg_water_surface.h"
 
@@ -161,9 +161,14 @@ int SmoothBodyMeshNormals(::chrono::ChBody& body) {
 GUIImplVSG::GUIImplVSG()
     : pVis(::chrono_types::make_shared<SeastackVisualSystemVSG>()),
       animated_water_(std::make_unique<AnimatedWaterSurface>()),
-      viewer_settings_(std::make_unique<ViewerSettings>()) {}
+      viewer_settings_(std::make_unique<ViewerSettings>()),
+      radiated_waves_(std::make_unique<RadiatedWaveOverlay>()) {}
 
 GUIImplVSG::~GUIImplVSG() = default;
+
+void GUIImplVSG::SetHydroForces(seastack::chrono::HydroSystem* hydro) { radiated_waves_->SetHydro(hydro); }
+
+void GUIImplVSG::AfterStep(double sim_time) { radiated_waves_->RecordStep(sim_time); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Init sequence (must be single-threaded, called after Chrono system is fully
@@ -460,10 +465,10 @@ bool GUIImplVSG::IsRunning(double timestep) {
     if (animated_water_ && animated_water_->IsInitialized()) {
         const double t = frame.time;
 
-        // Radiation overlay sources (visualization only; never affects physics).
-        if (viewer_settings_ && viewer_settings_->show_radiation_viz && extractor_) {
-            UpdateRadiationSources(animated_water_.get(), *viewer_settings_, wave_model_.get(),
-                                   extractor_->Scene(), frame);
+        if (viewer_settings_ && extractor_) {
+            animated_water_->SetRadiationField(radiated_waves_->Update(
+                viewer_settings_.get(), extractor_->Scene(), t,
+                animated_water_->NeedsUpdate(t, viewer_settings_.get())));
         }
 
         // Update() handles null wave_model_ gracefully (keeps surface flat).

@@ -4,7 +4,6 @@
 #include "vsg_config.h"
 #include "vsg_gui_component.h"
 #include "vsg_materials.h"
-#include "vsg_radiation_surface.h"
 
 #include <algorithm>
 #include <array>
@@ -283,7 +282,7 @@ void AnimatedWaterSurface::InitializeInternal(OverlayBuilder* builder, int resol
         water_material.color = {1.0f, 1.0f, 1.0f, kWaterOpacity};
         water_material.roughness = kWaterRoughness;
         water_material.metallic = kWaterMetallic;
-        vsg_node_ = builder->CreateWaterMesh(grid_, water_material);
+        vsg_node_ = builder->CreateWaterMesh(grid_, counts_.nx, water_material);
     }
 
     if (!vsg_node_) {
@@ -646,12 +645,27 @@ void AnimatedWaterSurface::UpdateWireframe() {
     wireframe_vertices_->dirty();
 }
 
+bool AnimatedWaterSurface::NeedsUpdate(double t, const ViewerSettings* settings) const {
+    if (gpu_) {
+        return true;
+    }
+    if (!initialized_ || !visible_ || (last_update_time_ >= 0.0 && t == last_update_time_)) {
+        return false;
+    }
+    if (settings && settings->update_hz > 0 && last_update_time_ >= 0.0) {
+        const double since_last =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - last_update_wall_).count();
+        return since_last >= 1.0 / settings->update_hz;
+    }
+    return true;
+}
+
 void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBase>& wave, double t,
                                   const ViewerSettings* settings) {
     // GPU path unless the shader cannot draw this sea: it needs discrete
-    // components, and the radiation overlay is only on the CPU.
+    // components, and the radiated-wave field is only on the CPU.
     if (initialized_ && builder_) {
-        const bool use_radiation = settings && settings->show_radiation_viz;
+        const bool use_radiation = radiation_field_ != nullptr;
         const bool want_gpu = !use_radiation && (!wave || wave->GetWaveMode() == WaveMode::kNoWave ||
                                                  wave->GetWaveComponents() != nullptr);
         if (want_gpu != prefer_gpu_) {
@@ -706,10 +720,8 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     // Get visual scale from settings (default 1.0).
     float visual_scale = (settings) ? settings->wave_visual_scale : 1.0f;
 
-    // Check if radiation visualization is enabled.
-    // Note: Params are set in UpdateRadiationSourceBody() BEFORE SetSourceState()
-    // to ensure amplitude computation uses the correct source radius.
-    const bool use_radiation = settings && settings->show_radiation_viz;
+    const double radiation_scale =
+        (radiation_field_ && settings) ? static_cast<double>(settings->radiation_visual_scale) : 0.0;
 
     const auto& orig_verts = grid_.vertices;
     const auto& faces = grid_.faces;
@@ -737,8 +749,8 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
     // point and then copying to the soup, we avoid redundant wave calculations.
     //
     // For irregular sea states with ~1000 frequency components:
-    //   - Without optimization: ~24,000 × 1000 = 24M trig operations/frame
-    //   - With optimization:     ~4,000 × 1000 = 4M trig operations/frame
+    //   - Without optimization: ~24,000 ï¿½ 1000 = 24M trig operations/frame
+    //   - With optimization:     ~4,000 ï¿½ 1000 = 4M trig operations/frame
     // -------------------------------------------------------------------------
     std::vector<float> grid_eta(orig_verts.size(), 0.0f);
 
@@ -757,10 +769,9 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
                 wave->GetElevation(pos, t, kVizFrequencyLimit) * excitation_ramp;
         }
 
-        // Radiated wave visualization (approximate, for visual feedback only).
         double eta_radiation = 0.0;
-        if (use_radiation && radiation_viz_.IsInitialized()) {
-            eta_radiation = radiation_viz_.EvaluateEta(grid_pos[0], grid_pos[1], t);
+        if (radiation_scale != 0.0) {
+            eta_radiation = radiation_scale * radiation_field_->Evaluate(grid_pos[0], grid_pos[1]);
         }
 
         // Total surface elevation with visual scaling.
@@ -897,9 +908,11 @@ void AnimatedWaterSurface::Update(const std::shared_ptr<seastack::hydro::WaveBas
         vsg_colors_->dirty();
     }
 
-    // Handle wireframe visibility toggle.
+    // Grid lines: drawn by the water shader if the viewer has one, else a line mesh.
     if (settings) {
-        bool want_wireframe = settings->show_water_grid;
+        const bool show_lines = settings->show_water_grid;
+        const bool shader_lines = builder_ && builder_->SetWaterGridLines(show_lines ? 1.0f : 0.0f);
+        const bool want_wireframe = show_lines && !shader_lines;
         if (want_wireframe != wireframe_visible_) {
             SetWireframeVisible(want_wireframe);
         }
@@ -974,7 +987,7 @@ void AnimatedWaterSurface::UpdateGpu(const std::shared_ptr<seastack::hydro::Wave
 
     // Wireframe: every mesh edge, as on the CPU path.
     const bool show_lines = settings && settings->show_water_grid;
-    builder_->SetGpuWaterGridLines(show_lines ? 1.0f : 0.0f);
+    builder_->SetWaterGridLines(show_lines ? 1.0f : 0.0f);
 
     // Every frame: the CPU work is a sort of the component amplitudes, and
     // the shader does the rest. The scale is the CPU path's, so both draw the
@@ -1111,61 +1124,6 @@ void UpdateWaterReadouts(const AnimatedWaterSurface& water, const WaveBase* wave
     if (wave && wave->GetWaveMode() != WaveMode::kNoWave) {
         settings->water_wavelength_m = DeepWaterWavelength(wave->GetCharacteristicPeriod(), wave->GetGravity());
     }
-}
-
-void UpdateRadiationSources(AnimatedWaterSurface* water, const ViewerSettings& settings, const WaveBase* wave,
-                            const SceneDescription& scene, const VizFrame& frame) {
-    if (!water || !IsConsistent(scene, frame)) {
-        return;
-    }
-
-    RadiationSurfaceViz::Params rad_params;
-    rad_params.visual_scale = static_cast<double>(settings.radiation_visual_scale);
-    rad_params.wave_period = 8.0;  // Default; should match body oscillation frequency
-    if (wave) {
-        // Water depth and gravity (available in all wave models).
-        if (wave->GetWaterDepth() > 0.0) {
-            rad_params.water_depth = wave->GetWaterDepth();
-        }
-        rad_params.gravity = wave->GetGravity();
-        const double T_char = wave->GetCharacteristicPeriod();
-        if (T_char > 0.0) {
-            rad_params.wave_period = T_char;
-        }
-    }
-    water->GetRadiationViz().SetParams(rad_params);
-
-    // Log source bodies once.
-    static bool logged_sources = false;
-
-    // Every moving, named model body is a source (water bodies are not in the scene).
-    for (size_t i = 0; i < scene.bodies.size(); ++i) {
-        const BodyDescription& body = scene.bodies[i];
-        const BodyState& state = frame.bodies[i];
-        const std::string& name = body.name;
-        if (body.fixed || name == "ground" || name == "floor" || name.empty()) {
-            continue;
-        }
-
-        // Body radius in plan from its visual bounds (rough approximation).
-        double radius = 5.0;  // m, fallback for bodies without visual shapes
-        if (body.local_bounds.IsValid()) {
-            const Vec3 s = body.local_bounds.Size();
-            // Guard against degenerate bounds only; a larger floor would
-            // over-amplify lab-scale bodies.
-            radius = std::max(0.5 * std::max(s[0], s[1]), 0.05);
-        }
-
-        const auto to_ch = [](const Vec3& v) { return ::chrono::ChVector3d(v[0], v[1], v[2]); };
-        water->GetRadiationViz().SetSourceState(name, to_ch(state.com_position), to_ch(state.linear_velocity),
-                                                to_ch(state.angular_velocity), radius, frame.time);
-
-        if (!logged_sources) {
-            std::cout << "[RadiationViz] Source: " << name << " (r=" << radius << "m)" << std::endl;
-        }
-    }
-
-    logged_sources = true;
 }
 
 }  // namespace seastack::viz

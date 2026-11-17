@@ -381,13 +381,25 @@ void PatchBounds(const TriangleMesh& mesh, vsg::vec2* patch_min, vsg::vec2* patc
 
 }  // namespace
 
-vsg::ref_ptr<vsg::Node> SeastackViewer::CreateWaterMesh(const TriangleMesh& mesh, const OverlayMaterial& material) {
+vsg::ref_ptr<vsg::Node> SeastackViewer::CreateWaterMesh(const TriangleMesh& mesh, int nx,
+                                                        const OverlayMaterial& material) {
     if (mesh.faces.empty()) {
         return {};
     }
     vsg::vec2 patch_min, patch_max;
     PatchBounds(mesh, &patch_min, &patch_max);
     const MeshArrays arrays = UnsharedArrays(mesh);
+    if (nx > 0) {
+        // Grid column and row of each corner, for the shader's grid lines.
+        for (size_t f = 0; f < mesh.faces.size(); ++f) {
+            for (int k = 0; k < 3; ++k) {
+                const auto v = static_cast<size_t>(mesh.faces[f][k]);
+                (*arrays.texcoords)[3 * f + static_cast<size_t>(k)] =
+                    vsg::vec2(static_cast<float>(v % static_cast<size_t>(nx)),
+                              static_cast<float>(v / static_cast<size_t>(nx)));
+            }
+        }
+    }
     for (vsg::Data* data : {static_cast<vsg::Data*>(arrays.vertices.get()),
                             static_cast<vsg::Data*>(arrays.normals.get()),
                             static_cast<vsg::Data*>(arrays.colors.get())}) {

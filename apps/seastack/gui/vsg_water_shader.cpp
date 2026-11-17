@@ -86,7 +86,7 @@ void main() {
     // The water mesh is placed directly in world coordinates (no transform).
     world_pos = vsg_Vertex;
     world_normal = vsg_Normal;
-    grid_coord = vec2(0.0);  // grid lines are a separate mesh on this path
+    grid_coord = vsg_TexCoord0;  // grid column and row
     gl_Position = pc.projection * pc.modelView * vec4(vsg_Vertex, 1.0);
 }
 )";
@@ -234,7 +234,7 @@ void main() {
         }
     }
 
-    // Grid lines (GPU grid): about one pixel wide at any distance, fading out
+    // Grid lines: about one pixel wide at any distance, fading out
     // where cells are under a few pixels so far water does not turn solid.
     float cells_per_line = u.p[7].z;
     if (cells_per_line > 0.0) {
@@ -426,9 +426,8 @@ vsg::ref_ptr<vsg::Node> WaterShader::CreateNode(vsg::ref_ptr<vsg::vec3Array> ver
         return {};
     }
     SetPatch(patch_min, patch_max);
-    // GPU-grid inputs are unused here; clear them in case a GPU grid came before.
+    // GPU-grid waves are unused here; clear them in case a GPU grid came before.
     (*params_)[kWaves].x = 0.0f;
-    (*params_)[kWaves].z = 0.0f;
 
     const vsg::VertexInputState::Bindings vertex_bindings{
         VkVertexInputBindingDescription{0, sizeof(vsg::vec3), VK_VERTEX_INPUT_RATE_VERTEX},

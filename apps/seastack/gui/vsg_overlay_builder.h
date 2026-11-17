@@ -41,10 +41,12 @@ class OverlayBuilder {
     virtual vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) = 0;
 
     /// Water surface node: same vertex layout as CreateOverlayMesh, with the
-    /// vertex colours as the water tint (alpha = opacity). A viewer with its
-    /// own water shader adds sky reflection and soft edges; by default it is
-    /// a plain PBR overlay mesh.
-    virtual vsg::ref_ptr<vsg::Node> CreateWaterMesh(const TriangleMesh& mesh, const OverlayMaterial& material) {
+    /// vertex colours as the water tint (alpha = opacity). `mesh` is a grid:
+    /// vertex j nx + i is column i, row j (for grid lines). A viewer with its
+    /// own water shader adds sky reflection, soft edges and grid lines; by
+    /// default it is a plain PBR overlay mesh.
+    virtual vsg::ref_ptr<vsg::Node> CreateWaterMesh(const TriangleMesh& mesh, int /*nx*/,
+                                                    const OverlayMaterial& material) {
         return CreateOverlayMesh(mesh, material);
     }
 
@@ -70,8 +72,11 @@ class OverlayBuilder {
         return false;
     }
 
-    /// GPU water grid lines every `cells_per_line` cells; 0 hides them.
-    virtual void SetGpuWaterGridLines(float /*cells_per_line*/) {}
+    /// Water grid lines every `cells_per_line` cells (0 hides them), drawn by
+    /// the water shader on either path, fading out where cells get too small
+    /// to see. Returns false if this viewer cannot (the caller then draws a
+    /// line mesh).
+    virtual bool SetWaterGridLines(float /*cells_per_line*/) { return false; }
 
     /// Compiled mesh node with shared vertices: vertex i is mesh vertex i.
     /// Same array layout as CreateOverlayMesh; colours start at `color`

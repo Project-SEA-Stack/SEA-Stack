@@ -9,6 +9,7 @@
 
 #include "guihelper_impl.h"
 
+#include "radiated_wave_overlay.h"
 #include "seastack_viewer.h"
 #include "vsg_analysis_overlays.h"
 #include "vsg_config.h"
@@ -44,6 +45,7 @@ using namespace vsg_config;
 
 GUIImplSeastack::GUIImplSeastack()
     : water_(std::make_unique<AnimatedWaterSurface>()),
+      radiated_waves_(std::make_unique<RadiatedWaveOverlay>()),
       viewer_(std::make_unique<SeastackViewer>()),
       viewer_settings_(std::make_unique<ViewerSettings>()),
       analysis_(std::make_unique<AnalysisOverlays>()) {}
@@ -206,17 +208,8 @@ void GUIImplSeastack::UpdateWater(const VizFrame& frame) {
     ChooseWaterResolution(wave_model_.get(), viewer_settings_.get());
     ApplyWaterSettings(water_.get(), viewer_settings_.get());
     UpdateWaterReadouts(*water_, wave_model_.get(), viewer_settings_.get());
-    if (viewer_settings_->timeline.playback) {
-        // The radiation overlay keeps per-source state from live frames; it
-        // is hidden while recorded frames are shown.
-        ViewerSettings no_radiation = *viewer_settings_;
-        no_radiation.show_radiation_viz = false;
-        water_->Update(wave_model_, frame.time, &no_radiation);
-        return;
-    }
-    if (viewer_settings_->show_radiation_viz) {
-        UpdateRadiationSources(water_.get(), *viewer_settings_, wave_model_.get(), extractor_->Scene(), frame);
-    }
+    water_->SetRadiationField(radiated_waves_->Update(viewer_settings_.get(), Scene(), frame.time,
+                                                      water_->NeedsUpdate(frame.time, viewer_settings_.get())));
     water_->Update(wave_model_, frame.time, viewer_settings_.get());
 }
 
@@ -263,7 +256,10 @@ void GUIImplSeastack::SetHydroForces(seastack::chrono::HydroSystem* hydro) {
     if (extractor_) {
         extractor_->SetForceProvider(seastack::chrono::MakeHydroForceProvider(hydro));
     }
+    radiated_waves_->SetHydro(hydro);
 }
+
+void GUIImplSeastack::AfterStep(double sim_time) { radiated_waves_->RecordStep(sim_time); }
 
 void GUIImplSeastack::UpdateClipPlanes() {
     const double view_distance =

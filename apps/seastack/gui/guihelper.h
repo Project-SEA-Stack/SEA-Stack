@@ -137,6 +137,13 @@ class UI {
      */
     virtual void SetHydroForces(seastack::chrono::HydroSystem* hydro);
 
+    /**@brief Call after every solver step (simulated time `sim_time` [s]).
+     *
+     * Lets the GUI record body motion between rendered frames (radiated-wave
+     * overlay). Read-only; never changes the system. No effect in headless UI.
+     */
+    virtual void AfterStep(double sim_time);
+
     /**@brief return the internal system.
      *
      * Should be called after init.
@@ -186,6 +193,7 @@ class GUI : public UI {
     void SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
                             const std::string& schedule_path, double time_step) override;
     void SetHydroForces(seastack::chrono::HydroSystem* hydro) override;
+    void AfterStep(double sim_time) override;
 
   private:
     std::shared_ptr<seastack::viz::GUIImpl> pImpl;

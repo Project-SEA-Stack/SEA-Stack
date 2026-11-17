@@ -161,6 +161,11 @@ build_unit_test(test_primitive_meshes)
 target_link_libraries(test_primitive_meshes PRIVATE SEAStack::VizCore)
 set_tests_properties(test_primitive_meshes PROPERTIES LABELS "unit;chrono-free")
 
+# Radiated-wave overlay: patterns from B(w) / excitation and time-domain synthesis (viz_core only)
+build_unit_test(test_radiated_waves)
+target_link_libraries(test_radiated_waves PRIVATE SEAStack::VizCore)
+set_tests_properties(test_radiated_waves PROPERTIES LABELS "unit;chrono-free")
+
 # PTO tests (Chrono-free, HDF5-free)
 build_unit_test(test_linear_pto)
 target_link_libraries(test_linear_pto PRIVATE SEAStack::PTO)
@@ -478,6 +483,14 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
         "SEASTACK_TEST_SPHERE_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/iea_sphere/assets/hydroData/sphere.h5\""
         "SEASTACK_TEST_RM3_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3/assets/hydroData/rm3.h5\"")
     set_tests_properties(test_radiation_constant_coefficients PROPERTIES LABELS "unit;chrono")
+
+    # Radiated-wave overlay inputs: B(w) from the RIRF, Haskind power, heading-frame velocities.
+    build_unit_test(test_radiation_viz_inputs)
+    target_link_libraries(test_radiation_viz_inputs PRIVATE SEAStack::ChronoAdapter)
+    target_compile_definitions(test_radiation_viz_inputs PRIVATE
+        "SEASTACK_TEST_RM3_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3/assets/hydroData/rm3.h5\""
+        "SEASTACK_TEST_WIGLEY_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/wigley/assets/hydroData/wigley_directional.h5\"")
+    set_tests_properties(test_radiation_viz_inputs PROPERTIES LABELS "unit;chrono")
 
     # Block-style hull damping in hydro YAML reaches the simulation (TALOS-style:
     # one body, regular waves, constant_coefficients).

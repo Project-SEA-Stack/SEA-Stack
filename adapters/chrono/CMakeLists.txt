@@ -13,6 +13,7 @@ add_library(seastack_chrono_adapter STATIC
     src/helper.cpp
     src/pto_chrono_adapter.cpp
     src/viz_extractor.cpp
+    src/radiation_viz.cpp
     src/visualization_recording.cpp
     src/runtime_controls.cpp
 )

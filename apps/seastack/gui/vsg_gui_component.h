@@ -9,6 +9,7 @@
 #include <chrono_vsg/ChGuiComponentVSG.h>
 #include <chrono_vsg/ChVisualSystemVSG.h>
 
+#include <seastack/viz_core/radiated_waves.h>
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/scene_model.h>
 #include <seastack/viz_core/simulation_pacer.h>
@@ -16,6 +17,7 @@
 #include <seastack/viz_core/visual_theme.h>
 #include <seastack/viz_core/water_colormap.h>
 
+#include <array>
 #include <cstddef>
 #include <map>
 #include <string>
@@ -215,12 +217,16 @@ struct ViewerSettings {
     double grid_center_y = 0.0;       ///< Grid center Y coordinate [m]
     bool grid_extent_changed = false; ///< Triggers mesh rebuild when extent changes
 
-    // --- Radiation Visualization (Approximate) ---
-    // Visual-only representation of radiated waves from moving bodies.
-    // NOT physically accurate; wavelength derived from dispersion relation,
-    // amplitude scales with body velocity and size.
-    bool show_radiation_viz = false;       ///< Enable radiated wave visualization
-    float radiation_visual_scale = 1.0f;   ///< Visual amplification [0.1x - 5x]
+    // --- Radiated waves (visual only; see radiated_waves.h) ---
+    /// Method chosen in the panel; the one drawn is radiation_active.
+    RadiatedWaveMethod radiation_method = RadiatedWaveMethod::kAuto;
+    float radiation_visual_scale = 1.0f;  ///< Visual amplification [0.1x - 5x]
+    /// Readouts written by the viewer: what each method needs, the method
+    /// drawn (kOff if none), its description, and whether it is approximate.
+    std::array<MethodAvailability, kNumRadiatedWaveMethods> radiation_availability{};
+    RadiatedWaveMethod radiation_active = RadiatedWaveMethod::kOff;
+    std::string radiation_label;
+    bool radiation_approximate = false;
 
     // --- Mooring Colour Mapping ---
     bool show_mooring_colors = true;       ///< Colour lines by tension magnitude
@@ -329,8 +335,10 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// Scene: one row per body (show, label, axes, forces, trail), then the
     /// mooring lines and the water surface.
     void RenderScenePanel();
-    /// Water surface rows of the Scene section (show, wireframe, grid, radiation preview).
+    /// Water surface rows of the Scene section (show, wireframe, grid, radiated waves).
     void RenderWaterRows();
+    /// Radiated-wave method (unavailable methods disabled, with the reason), status and scale.
+    void RenderRadiatedWaveRows();
     /// Selected body: state readout, isolate / frame, and its load breakdown.
     void RenderSelectionPanel();
     /// Force components, moments, arrow scale, trail length and plots (SEA-Stack viewer).

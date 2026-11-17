@@ -107,7 +107,7 @@ class SeastackViewer : public OverlayBuilder {
     vsg::ref_ptr<vsg::Node> CreateOverlayMesh(const TriangleMesh& mesh, const OverlayMaterial& material) override;
     /// Water shader (Fresnel sky reflection, sun glint, soft edges); the PBR
     /// overlay if the shader cannot be compiled.
-    vsg::ref_ptr<vsg::Node> CreateWaterMesh(const TriangleMesh& mesh, const OverlayMaterial& material) override;
+    vsg::ref_ptr<vsg::Node> CreateWaterMesh(const TriangleMesh& mesh, int nx, const OverlayMaterial& material) override;
     vsg::ref_ptr<vsg::Node> CreateGpuWaterGrid(const TriangleMesh& flat_grid, int nx) override;
     int SetGpuWaterWaves(const std::vector<DisplayWaveComponent>& components) override {
         return water_shader_.SetWaves(components);
@@ -117,7 +117,10 @@ class SeastackViewer : public OverlayBuilder {
         water_shader_.SetElevationStyle(on, range_m, contour_m, palette);
         return true;
     }
-    void SetGpuWaterGridLines(float cells_per_line) override { water_shader_.SetGridLines(cells_per_line); }
+    bool SetWaterGridLines(float cells_per_line) override {
+        water_shader_.SetGridLines(cells_per_line);
+        return true;
+    }
     vsg::ref_ptr<vsg::Node> CreateIndexedOverlayMesh(const TriangleMesh& mesh, const Rgba& color) override;
     vsg::ref_ptr<vsg::Node> CreateSphereOverlay(const OverlayMaterial& material,
                                                 vsg::ref_ptr<vsg::MatrixTransform> transform) override;

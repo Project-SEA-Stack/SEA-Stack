@@ -10,6 +10,7 @@
 
 #include <chrono/physics/ChBody.h>
 
+#include <seastack/viz_core/radiated_wave_synthesis.h>
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/scene_model.h>
 #include <seastack/viz_core/water_colormap.h>
@@ -17,7 +18,6 @@
 #include <vsg/all.h>
 
 #include "vsg_overlay_builder.h"
-#include "vsg_radiation_surface.h"
 #include "water_display_components.h"
 
 namespace seastack::viz {
@@ -29,11 +29,12 @@ struct ViewerSettings;
 ///
 /// Two paths, chosen each frame:
 ///  - GPU: if the viewer supports it (OverlayBuilder::CreateGpuWaterGrid),
-///    the wave model has discrete components and the radiation overlay is
-///    off. A flat grid is displaced in the vertex shader by the same
+///    the wave model has discrete components and no radiated-wave field is
+///    set. A flat grid is displaced in the vertex shader by the same
 ///    components GetElevation(pos, t, 500) sums; updated every frame.
-///  - CPU: otherwise (e.g. tabulated elevation records, the radiation
-///    overlay, the Chrono viewer). Vertex Z from GetElevation at update_hz.
+///  - CPU: otherwise (e.g. tabulated elevation records, the radiated-wave
+///    field, the Chrono viewer). Vertex Z from GetElevation plus the
+///    radiated field at update_hz.
 class AnimatedWaterSurface {
   public:
     /// Largest grid resolution on the CPU path; finer settings use this.
@@ -77,8 +78,12 @@ class AnimatedWaterSurface {
     double GetCellSize() const;
     std::string GetStatusString() const;
 
-    RadiationSurfaceViz& GetRadiationViz() { return radiation_viz_; }
-    const RadiationSurfaceViz& GetRadiationViz() const { return radiation_viz_; }
+    /// Radiated-wave field added to the elevation (not owned; null = none).
+    /// Set before each Update(); scaled by settings->radiation_visual_scale.
+    void SetRadiationField(const RadiatedWaveSynthesizer* field) { radiation_field_ = field; }
+    /// True if Update(t) would recompute the surface (always on the GPU path):
+    /// compute the radiated field only then.
+    bool NeedsUpdate(double t, const ViewerSettings* settings) const;
 
     void SetWireframeVisible(bool visible);
     bool IsWireframeVisible() const { return wireframe_visible_; }
@@ -118,7 +123,7 @@ class AnimatedWaterSurface {
     double last_update_time_ = -1.0;  ///< Simulated time of the last surface update [s]
     std::chrono::steady_clock::time_point last_update_wall_{};
 
-    RadiationSurfaceViz radiation_viz_;
+    const RadiatedWaveSynthesizer* radiation_field_ = nullptr;
 
     vsg::ref_ptr<vsg::vec3Array> wireframe_vertices_;
     vsg::ref_ptr<vsg::Node> wireframe_node_;
@@ -161,12 +166,5 @@ void ApplyWaterSettings(AnimatedWaterSurface* water, ViewerSettings* settings);
 /// wave's characteristic period now (0 for no waves).
 void UpdateWaterReadouts(const AnimatedWaterSurface& water, const seastack::hydro::WaveBase* wave,
                          ViewerSettings* settings);
-
-/// Feed the radiation overlay: wave parameters, and every moving, named body
-/// of `frame` as a source. Visual only; never affects physics.
-void UpdateRadiationSources(AnimatedWaterSurface* water, const ViewerSettings& settings,
-                            const seastack::hydro::WaveBase* wave, const SceneDescription& scene,
-                            const VizFrame& frame);
-
 }  // namespace seastack::viz
 

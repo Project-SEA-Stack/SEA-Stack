@@ -1481,6 +1481,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         system->DoStepDynamics(loop_dt);
                         step_count++;
                         steps_taken++;
+                        ui.AfterStep(system->GetChTime());
                         if (exporter) {
                             exporter->RecordStep(system.get());
 #ifdef SEASTACK_HAVE_MOORDYN

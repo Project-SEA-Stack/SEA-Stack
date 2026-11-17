@@ -772,22 +772,88 @@ void SeastackGuiComponent::RenderWaterRows() {
         }
     }
 
-    ImGui::Checkbox("Radiated waves (approx.)", &settings_->show_radiation_viz);
-    if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("Qualitative visual approximation of radiated waves.\n"
-                          "Heights are empirical - not a quantitative result.\n"
-                          "Does NOT affect physics - for feedback only.");
+    RenderRadiatedWaveRows();
+}
+
+void SeastackGuiComponent::RenderRadiatedWaveRows() {
+    static constexpr const char* kMethodHelp[kNumRadiatedWaveMethods] = {
+        "No radiated waves.",
+        "Haskind if the BEM file has excitation for headings all round,\n"
+        "otherwise Approximate.",
+        "Point multipoles per body (heave ring, surge / sway dipoles, yaw\n"
+        "quadrupole) carrying the power the radiation damping B(w) takes\n"
+        "from each motion. Right wave height on average; pattern shape\n"
+        "and phase are assumed, not computed.",
+        "Directional patterns from the BEM excitation force through the\n"
+        "Haskind relation: the far field of the BEM radiation problem.",
+        "Far-field patterns from the BEM solver's Kochin functions.",
+        "Elevation computed by the BEM solver near the body.",
+    };
+    const auto method_index = [](RadiatedWaveMethod m) { return static_cast<int>(m); };
+    const RadiatedWaveMethod requested = settings_->radiation_method;
+    const RadiatedWaveMethod active = settings_->radiation_active;
+
+    std::string preview = RadiatedWaveMethodName(requested);
+    if (requested == RadiatedWaveMethod::kAuto && active != RadiatedWaveMethod::kOff) {
+        preview += std::string(" (") + RadiatedWaveMethodName(active) + ")";
     }
-    if (settings_->show_radiation_viz) {
-        ImGui::Indent();
-        ImGui::SliderFloat("Visual Scale##rad", &settings_->radiation_visual_scale, 0.1f, 5.0f, "%.1fx");
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Visual amplification for inspection.\n"
-                              "1.0x = baseline, increase to see small ripples.\n"
-                              "Does NOT affect physics.");
+    ImGui::TextUnformatted("Radiated waves");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(150.0f * ui_scale_);
+    if (ImGui::BeginCombo("##radiated_waves", preview.c_str())) {
+        for (int i = 0; i < kNumRadiatedWaveMethods; ++i) {
+            const auto method = static_cast<RadiatedWaveMethod>(i);
+            const MethodAvailability& availability = settings_->radiation_availability[i];
+            const bool enabled = availability.available || method == RadiatedWaveMethod::kOff;
+            ImGui::BeginDisabled(!enabled);
+            if (ImGui::Selectable(RadiatedWaveMethodName(method), method == requested)) {
+                settings_->radiation_method = method;
+            }
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                if (enabled) {
+                    ImGui::SetTooltip("%s", kMethodHelp[i]);
+                } else {
+                    ImGui::SetTooltip("%s\n\nNot available: %s.", kMethodHelp[i], availability.reason.c_str());
+                }
+            }
         }
-        ImGui::Unindent();
+        ImGui::EndCombo();
     }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Waves the bodies' own motion makes, computed from the BEM\n"
+                          "data and drawn on top of the incident sea. Radiated waves\n"
+                          "only: the scattering (diffraction) of the incident sea by\n"
+                          "the bodies is not drawn. Visual only; never affects the\n"
+                          "simulation.");
+    }
+    if (requested == RadiatedWaveMethod::kOff) {
+        return;
+    }
+
+    ImGui::Indent();
+    if (active == RadiatedWaveMethod::kOff) {
+        const MethodAvailability& availability = settings_->radiation_availability[method_index(requested)];
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.25f, 1.0f), "Not drawn: %s.",
+                           availability.reason.empty() ? "no field yet" : availability.reason.c_str());
+        ImGui::PopTextWrapPos();
+    } else {
+        if (settings_->radiation_approximate) {
+            ImGui::TextColored(ImVec4(0.95f, 0.70f, 0.25f, 1.0f), "Approximate - not a BEM result");
+        } else {
+            ImGui::TextDisabled("From BEM data");
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%s\nRadiated waves only (no diffraction).", settings_->radiation_label.c_str());
+        }
+        ImGui::SliderFloat("Scale##rad", &settings_->radiation_visual_scale, 0.1f, 5.0f, "%.1fx");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Exaggerate the radiated waves for inspection (1.0x = computed\n"
+                              "height). Multiplies the Wave scale. Visual only.");
+        }
+    }
+    ImGui::Unindent();
 }
 
 // ---------------------------------------------------------------------------
