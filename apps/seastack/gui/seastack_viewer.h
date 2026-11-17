@@ -64,7 +64,9 @@ class SeastackViewer : public OverlayBuilder {
     /// e.g. the area the GUI panels leave free. Clamped to the window.
     void SetSceneViewport(int x, int y, int width, int height);
 
-    /// Display scale [-] (e.g. 1.5 at 150 %); window and font are scaled by it.
+    /// Scale [-] for the font, ImGui style and panel sizes. 1 at 96 DPI,
+    /// 1.5 at 150 %, 2 when a Retina framebuffer is twice the window size.
+    /// The window is not multiplied by the framebuffer part of this scale.
     float UiScale() const { return ui_scale_; }
 
     void SetClipPlanes(const ClipPlanes& clip);

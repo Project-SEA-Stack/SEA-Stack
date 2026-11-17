@@ -103,9 +103,29 @@ class SeastackImGuiEvents : public vsg::Inherit<vsgImGui::SendEventsToImGui, Sea
     }
 
   private:
-    /// VSG buttons 1 / 2 / 3 = left / middle / right; ImGui 0 / 2 / 1.
+    /// ImGui buttons are 0 left, 1 right, 2 middle.
+    /// Windows VSG ids are 1 / 2 / 3 = left / middle / right.
+    /// macOS passes NSEvent buttonNumber: 0 / 1 / 2 = left / right / middle.
+    /// Treating every other id as middle made a Mac left click (0) a middle
+    /// click, so ImGui widgets never saw it.
     static int ToImGuiButton(uint32_t button) {
-        return button == 1 ? 0 : button == 3 ? 1 : 2;
+#ifdef __APPLE__
+        if (button == 1) {
+            return 1;  // right
+        }
+        if (button == 2) {
+            return 2;  // middle
+        }
+        return 0;  // left
+#else
+        if (button == 1) {
+            return 0;  // left
+        }
+        if (button == 3) {
+            return 1;  // right
+        }
+        return 2;  // middle
+#endif
     }
 
     bool imgui_owns_drag_ = false;  ///< Current press went to ImGui (not the camera)
@@ -176,7 +196,9 @@ vsg::dmat4 ToMatrix(const Pose& pose) {
 /// Tell Windows this process draws at full resolution (otherwise it renders
 /// at 96 DPI and stretches the window, blurring text and geometry) and return
 /// the display scale [-], e.g. 1.5 at 150 %. Process-wide; must run before
-/// the first window is created. Returns 1 on other platforms.
+/// the first window is created. Returns 1 on other platforms: the window
+/// size there is already in points. A Retina framebuffer is larger than that
+/// request; FramebufferUiScale accounts for it after the window exists.
 float EnableDpiAwareness() {
 #ifdef _WIN32
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -184,6 +206,21 @@ float EnableDpiAwareness() {
 #else
     return 1.0f;
 #endif
+}
+
+/// Framebuffer pixels per requested window unit [-]. VSG on macOS takes the
+/// window size in points and sizes the framebuffer (extent2D, mouse events
+/// and the ImGui display size) by the screen backing scale, 2 on a Retina
+/// display. vsgImGui leaves DisplayFramebufferScale at (1, 1), so the 15 px
+/// font authored for 100 % scale is 15 framebuffer pixels, about 7.5 pt.
+/// Windows and X11 copy the pixel size back into the window traits, so the
+/// ratio is 1 and this does not compound EnableDpiAwareness. A framebuffer
+/// no larger than the request (a 1 px client-rect difference) stays at 1.
+float FramebufferUiScale(uint32_t requested_width, uint32_t framebuffer_width) {
+    if (requested_width == 0 || framebuffer_width <= requested_width) {
+        return 1.0f;
+    }
+    return static_cast<float>(framebuffer_width) / static_cast<float>(requested_width);
 }
 
 /// Axis length [m] for a body's frame triad: scaled to the body, but kept
@@ -232,11 +269,18 @@ vsg::ref_ptr<vsg::DirectionalLight> MakeDirectionalLight(const char* name, doubl
 }  // namespace
 
 bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& options, GuiCallback draw_gui) {
-    ui_scale_ = EnableDpiAwareness();
+    // Window size uses the Windows DPI scale only. On macOS the size is in
+    // points; multiplying it by the Retina backing scale would make a
+    // 1280x720 window larger than a MacBook Air screen. Fonts and panels
+    // pick up that backing scale below, because ImGui is in framebuffer pixels.
+    const float dpi_scale = EnableDpiAwareness();
+    ui_scale_ = dpi_scale;
     auto traits = vsg::WindowTraits::create();
     traits->windowTitle = options.title;
-    traits->width = static_cast<uint32_t>(options.width * ui_scale_);
-    traits->height = static_cast<uint32_t>(options.height * ui_scale_);
+    const uint32_t window_w = static_cast<uint32_t>(options.width * dpi_scale);
+    const uint32_t window_h = static_cast<uint32_t>(options.height * dpi_scale);
+    traits->width = window_w;
+    traits->height = window_h;
     traits->x = 100;
     traits->y = 100;
     traits->samples = VK_SAMPLE_COUNT_4_BIT;                                 // 4x MSAA
@@ -246,6 +290,7 @@ bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& op
         std::cerr << "[SeastackViewer] Could not create window." << std::endl;
         return false;
     }
+    ui_scale_ *= FramebufferUiScale(window_w, window_->extent2D().width);
     viewer_ = vsg::Viewer::create();
     viewer_->addWindow(window_);
 
