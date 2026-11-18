@@ -42,4 +42,14 @@ SceneTheme GetSceneTheme(VisualTheme theme);
 /// `ui_scale` (display scale, e.g. 1.5 at 150 %). Call inside an ImGui frame.
 void ApplyImGuiTheme(VisualTheme theme, float ui_scale = 1.0f);
 
+/// UI scale [-] from a desktop DPI setting [px/in]. 96 DPI is 1, so an
+/// Xft.dpi of 192 is 2. Values outside 48..384, including non-finite
+/// values, return 1 so a bad resource cannot resize the window.
+inline float UiScaleFromDpi(float dpi) {
+    if (!(dpi >= 48.0f && dpi <= 384.0f)) {
+        return 1.0f;
+    }
+    return dpi / 96.0f;
+}
+
 }  // namespace seastack::viz

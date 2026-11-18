@@ -10,6 +10,7 @@
 #include <vector>
 
 using seastack::viz::ApplyImGuiTheme;
+using seastack::viz::UiScaleFromDpi;
 using seastack::viz::VisualTheme;
 
 namespace {
@@ -59,6 +60,13 @@ int main() {
     const std::vector<float> light = Sizes(style);
     ApplyImGuiTheme(VisualTheme::kLight, 1.5f);
     TEST_ASSERT(Sizes(style) == light, "applying the light theme twice gives identical sizes");
+
+    TEST_NEAR(UiScaleFromDpi(96.0f), 1.0f, 1e-6, "96 DPI is 100 %");
+    TEST_NEAR(UiScaleFromDpi(144.0f), 1.5f, 1e-6, "144 DPI is 150 %");
+    TEST_NEAR(UiScaleFromDpi(192.0f), 2.0f, 1e-6, "192 DPI, the Linux Xft.dpi on a 2x desktop, is 200 %");
+    TEST_NEAR(UiScaleFromDpi(0.0f), 1.0f, 0.0, "a missing DPI stays at 100 %");
+    TEST_NEAR(UiScaleFromDpi(-10.0f), 1.0f, 0.0, "a negative DPI stays at 100 %");
+    TEST_NEAR(UiScaleFromDpi(10000.0f), 1.0f, 0.0, "an out-of-range DPI stays at 100 %");
 
     ImGui::DestroyContext();
     test_results.Summary();

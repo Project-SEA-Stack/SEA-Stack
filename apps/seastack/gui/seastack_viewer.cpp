@@ -44,6 +44,11 @@ namespace seastack::viz {
 
 using namespace vsg_config;
 
+#if defined(__linux__)
+/// Desktop UI scale [-] from Xft.dpi. Defined in linux_display_scale.cpp.
+float LinuxDisplayScale();
+#endif
+
 namespace {
 
 /// Crease angle [deg] for meshes without authored normals (as the Chrono viewer).
@@ -193,16 +198,17 @@ vsg::dmat4 ToMatrix(const Pose& pose) {
     return m;
 }
 
-/// Tell Windows this process draws at full resolution (otherwise it renders
-/// at 96 DPI and stretches the window, blurring text and geometry) and return
-/// the display scale [-], e.g. 1.5 at 150 %. Process-wide; must run before
-/// the first window is created. Returns 1 on other platforms: the window
-/// size there is already in points. A Retina framebuffer is larger than that
-/// request; FramebufferUiScale accounts for it after the window exists.
+/// Display scale [-], e.g. 1.5 at 150 %. Process-wide on Windows, where it
+/// also opts out of bitmap stretching; must run before the first window.
+/// Windows reads the system DPI. Linux reads Xft.dpi, because an X11 window
+/// is sized in pixels. macOS returns 1: the window size is already in points,
+/// and FramebufferUiScale accounts for a Retina framebuffer afterwards.
 float EnableDpiAwareness() {
 #ifdef _WIN32
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     return static_cast<float>(GetDpiForSystem()) / 96.0f;
+#elif defined(__linux__)
+    return LinuxDisplayScale();
 #else
     return 1.0f;
 #endif
@@ -269,10 +275,12 @@ vsg::ref_ptr<vsg::DirectionalLight> MakeDirectionalLight(const char* name, doubl
 }  // namespace
 
 bool SeastackViewer::Initialize(const SceneDescription& scene, const Options& options, GuiCallback draw_gui) {
-    // Window size uses the Windows DPI scale only. On macOS the size is in
-    // points; multiplying it by the Retina backing scale would make a
-    // 1280x720 window larger than a MacBook Air screen. Fonts and panels
-    // pick up that backing scale below, because ImGui is in framebuffer pixels.
+    // Windows and Linux multiply the window by the desktop DPI scale. On
+    // macOS the size is in points; multiplying it by the Retina backing
+    // scale would make a 1280x720 window larger than a MacBook Air screen.
+    // Fonts and panels pick up that backing scale below, because ImGui is
+    // in framebuffer pixels. X11 copies the requested pixel size into the
+    // framebuffer, so FramebufferUiScale stays 1 and does not compound this.
     const float dpi_scale = EnableDpiAwareness();
     ui_scale_ = dpi_scale;
     auto traits = vsg::WindowTraits::create();

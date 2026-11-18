@@ -65,7 +65,8 @@ class SeastackViewer : public OverlayBuilder {
     void SetSceneViewport(int x, int y, int width, int height);
 
     /// Scale [-] for the font, ImGui style and panel sizes. 1 at 96 DPI,
-    /// 1.5 at 150 %, 2 when a Retina framebuffer is twice the window size.
+    /// 1.5 at 150 %, 2 when a Retina framebuffer is twice the window size
+    /// or when the Linux desktop sets Xft.dpi to 192.
     /// The window is not multiplied by the framebuffer part of this scale.
     float UiScale() const { return ui_scale_; }
 

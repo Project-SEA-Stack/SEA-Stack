@@ -21,6 +21,9 @@ if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
         gui/radiated_wave_overlay.cpp
         gui/vsg_water_shader.cpp
     )
+    if(UNIX AND NOT APPLE)
+        list(APPEND GUI_SOURCES gui/linux_display_scale.cpp)
+    endif()
 endif()
 
 # Runner library (not an executable itself)
@@ -76,6 +79,10 @@ endif()
 
 if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
     target_link_libraries(seastack_app_lib PUBLIC Chrono::Chrono_vsg)
+    if(UNIX AND NOT APPLE)
+        find_package(X11 REQUIRED)
+        target_link_libraries(seastack_app_lib PRIVATE X11::X11)
+    endif()
 endif()
 
 target_compile_features(seastack_app_lib PUBLIC ${SEASTACK_CXX_STANDARD})
