@@ -13,6 +13,7 @@
 #ifndef SEASTACK_ADAPTERS_CHRONO_SIMULATION_EXPORT_H
 #define SEASTACK_ADAPTERS_CHRONO_SIMULATION_EXPORT_H
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -295,6 +296,44 @@ class SimulationExporter {
     /// by decimation). Used by callers that sample auxiliary channels in sync
     /// with the animation geometry rate.
     bool LastStepWasRecorded() const;
+
+    /// Static (undeformed) description of one FEA beam, written under /inputs.
+    struct StructureExportStatic {
+        std::string beam_name;
+        /// Node-index pairs 0-1, 1-2, ... for element connectivity.
+        std::vector<int> connectivity;
+        std::vector<std::array<double, 3>> undeformed_node_positions;  ///< world [m]
+        double section_width = 0.0;  ///< m, extent across the section's local z
+        double section_depth = 0.0;  ///< m, extent across the section's local y
+    };
+
+    /// One deformed sample of one FEA beam.
+    struct StructureExportFrame {
+        std::string beam_name;
+        std::vector<std::array<double, 3>> node_positions;          ///< world [m]
+        std::vector<std::array<double, 4>> node_orientations_wxyz;  ///< world
+        /// Fx Fy Fz [N], Mx My Mz [N*m] per element at the element mid-point,
+        /// in the element's local (section) frame.
+        std::vector<std::array<double, 6>> element_forces;
+    };
+
+    /**
+     * @brief Write static FEA beam geometry under /inputs/structure/<beam>.
+     *
+     * Call once after BeginResults. Writes connectivity,
+     * undeformed_node_positions and the section width/depth attributes.
+     */
+    void WriteStructureStatic(const std::vector<StructureExportStatic>& beams);
+
+    /**
+     * @brief Append one deformed FEA frame per beam.
+     *
+     * Call after RecordStep, only when LastStepWasRecorded() is true, so the
+     * samples align with /results/time/time. Every call must list the same
+     * beams in the same order. Flushed under /results/structure/<beam> by
+     * Finalize.
+     */
+    void RecordStructure(const std::vector<StructureExportFrame>& frames);
 
     /**
      * @brief Follow a runtime change of a TSDA/RSDA parameter (RuntimeControls).

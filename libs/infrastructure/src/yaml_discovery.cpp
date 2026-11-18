@@ -127,6 +127,9 @@ SetupConfig ParseSetupFile(const std::filesystem::path& setup_path) {
         } else if (key == "ropes_file" && indent == 0) {
             config.ropes_file = value;
             config.has_ropes_file = true;
+        } else if (key == "structure_file" && indent == 0) {
+            config.structure_file = value;
+            config.has_structure_file = true;
         }
     }
     

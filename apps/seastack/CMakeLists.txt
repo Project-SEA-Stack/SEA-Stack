@@ -36,6 +36,9 @@ add_library(seastack_app_lib STATIC
     app_init.cpp
     misc_options.cpp
     doctor.cpp
+    setup_checks.cpp
+    structure_config.cpp
+    structure_subsystem.cpp
     ${GUI_SOURCES}
 )
 
@@ -63,12 +66,13 @@ endif()
 
 if(SEASTACK_ENABLE_EXTERNAL AND TARGET seastack_external)
     target_link_libraries(seastack_app_lib PUBLIC SEAStack::External)
-    # external_pto_yaml.cpp uses yaml-cpp directly
-    if(TARGET yaml-cpp::yaml-cpp)
-        target_link_libraries(seastack_app_lib PRIVATE yaml-cpp::yaml-cpp)
-    elseif(TARGET Chrono::yaml-cpp)
-        target_link_libraries(seastack_app_lib PRIVATE Chrono::yaml-cpp)
-    endif()
+endif()
+
+# structure_config.cpp, setup_checks.cpp and external_pto_yaml.cpp use yaml-cpp directly
+if(TARGET yaml-cpp::yaml-cpp)
+    target_link_libraries(seastack_app_lib PRIVATE yaml-cpp::yaml-cpp)
+elseif(TARGET Chrono::yaml-cpp)
+    target_link_libraries(seastack_app_lib PRIVATE Chrono::yaml-cpp)
 endif()
 
 # Campaign summary HDF5 (power_matrix_summary.h5): define for this target's TUs only.

@@ -535,5 +535,22 @@ if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
             set_tests_properties(test_crane_lift PROPERTIES
                 ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
         endif()
+
+        # Crane beam_check: flexible FEA jib coupled to the floating vessel and
+        # hoist rope; 10 s calm-water run with the structure load-path check.
+        add_test(
+            NAME test_crane_beam_check
+            COMMAND ${Python3_EXECUTABLE}
+                "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_crane_beam_check.py"
+                --exe $<TARGET_FILE:run_seastack>
+        )
+        set_tests_properties(test_crane_beam_check PROPERTIES
+            LABELS "external;chrono;execute"
+            COST 10
+        )
+        if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+            set_tests_properties(test_crane_beam_check PROPERTIES
+                ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+        endif()
     endif()
 endif()

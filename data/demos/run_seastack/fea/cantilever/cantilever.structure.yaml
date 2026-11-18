@@ -1,0 +1,36 @@
+# 6 m aluminium box cantilever (300 x 300 x 10 mm), clamped to the fixed
+# `ground` body at x = 0 and to the 322.66 kg `tip_mass` body at x = 6 m.
+# See README.md for the analytic sag, root moment and load-path values.
+structure:
+  automatic_gravity: true    # beam self-weight on (uses the simulation gravity)
+  materials:
+    - { name: alu, density: 2700.0, youngs_modulus: 7.0e+10, shear_modulus: 2.63e+10 }
+  sections:
+    # depth is measured along the beam's y_direction (vertical here).
+    # torsion_constant: Bredt thin-wall J for this box; omit it to use Iyy + Izz.
+    # rayleigh_beta: heavy on purpose (zeta_1 ~ beta * omega_1 ~ 0.10 with
+    # Chrono's Euler beam) so the beam settles before the 4 s static check.
+    - { name: rhs, type: BOX, material: alu, width: 0.3, depth: 0.3, wall: 0.01,
+        rayleigh_beta: 0.005, torsion_constant: 0.00024389 }
+  beams:
+    - name: connector
+      section: rhs
+      start: [0.0, 0.0, 3.5]
+      end:   [6.0, 0.0, 3.5]
+      elements: 6
+      y_direction: [0.0, 0.0, 1.0]
+  mates:
+    # constrain = [x, y, z, rot_x, rot_y, rot_z] in world axes
+    - { name: root_clamp, node: connector.first, body: ground,
+        constrain: [true, true, true, true, true, true] }
+    - { name: tip_clamp, node: connector.last, body: tip_mass,
+        constrain: [true, true, true, true, true, true] }
+  diagnostics:
+    file: structure_diagnostics.csv   # relative to output_directory
+    every_n_steps: 10
+  visualization:
+    data_type: ELEM_BEAM_MZ
+    colormap: JET
+    range: [-5.0e4, 5.0e4]
+    beam_resolution: 12
+    beam_resolution_section: 8

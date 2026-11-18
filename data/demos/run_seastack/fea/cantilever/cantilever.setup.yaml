@@ -1,0 +1,14 @@
+model_file: cantilever.model.yaml
+simulation_file: cantilever.simulation.yaml
+structure_file: cantilever.structure.yaml
+output_directory: outputs
+output:
+  level: standard
+  decimation: 10
+
+# Fails the run (exit code 1) if, at t = 4 s, the mate reactions along gravity
+# differ from the beam weight (1.843 kN) by more than 2 %.
+checks:
+  - type: structure_static_load_path
+    time_s: 4.0
+    tolerance_percent: 2.0

@@ -15,6 +15,8 @@
 #include <seastack/adapters/chrono/simulation_export.h>
 #include <seastack/infra/config/yaml_discovery.h>
 
+#include "setup_checks.h"
+
 #include <memory>
 #include <string>
 #include <variant>
@@ -82,6 +84,13 @@ struct SingleRunConfig {
     /// Optional tension-only ropes YAML (resolved path; empty = none).
     /// Requires a build with SEASTACK_ENABLE_EXTERNAL.
     std::string ropes_file;
+
+    /// Optional Chrono::FEA structure YAML (resolved path; empty = none).
+    std::string structure_file;
+
+    /// Setup YAML `checks:` evaluated after the run (e.g. structure_static_load_path).
+    /// A requested check that fails or cannot be evaluated makes the run fail.
+    std::vector<CheckConfig> checks;
 
     /// Optional runtime schedule YAML (--schedule): parameter changes applied
     /// at step boundaries, e.g. exported from a GUI run. Empty = none.

@@ -134,8 +134,38 @@ are typical:
 4. **No real set-down.** The target z sat 0.15 m above the resting centre, so
    the payload hovered and swung above the deck.
 
+## Flexible jib (`beam_check`, FEA preview)
+
+`beam_check` replaces the rigid jib with a 12-element Chrono::FEA Euler beam
+(same 320 × 320 × 10 mm S460 box), clamped to the boom at the knuckle and to
+`jib_head` at the tip ([`common/crane.structure.yaml`](common/crane.structure.yaml),
+schema in [`docs/usage/STRUCTURE_YAML.md`](../../../../docs/usage/STRUCTURE_YAML.md)).
+The plant is `common/crane.model.fea.yaml`: the rigid model without the `jib`
+body and knuckle motor. The crane is parked in calm water with the payload on
+the hoist; there is no controller, so the slew and luff motors hold.
+
+```powershell
+.\build\bin\Release\run_seastack.exe data\demos\run_seastack\crane\beam_check --nogui
+```
+
+The 10 s run takes about 3 s of wall time. Its setup requests a
+`structure_static_load_path` check at 8 s: the jib mate reactions along gravity
+must equal the jib weight (13.37 kN) within 5 %, else the run fails.
+
+| Quantity | Estimate | Run |
+|----------|----------|-----|
+| Load-path check at 8 s | 13.369 kN | 13.369 kN (0.006 %) |
+| Jib-tip bending sag (root rotation removed) | (3000 + 150) kg tip load: PL³/3EI + wL⁴/8EI = 0.677 + 0.110 = 0.787 m | 0.786 m |
+
+The estimate treats the jib (3° above horizontal) as a horizontal cantilever.
+The root also rotates 0.28° as the vessel trims under the load, which adds
+about 0.07 m at the tip in world coordinates. `rayleigh_beta: 0.08` is heavy on
+purpose so the jib settles before the check.
+
 ## Tests
 
+- `test_crane_beam_check` (labels `external;chrono;execute`): runs
+  `beam_check`; the run and its load-path check must pass.
 - `test_crane_lift` (labels `external;chrono;execute`): 15 s runs of
   `lift_baseline` and `lift_3dmc`; finite output, rope tension never negative,
   no slack after 1 s, 3D-MC tip error below 0.2 m and below a quarter of the

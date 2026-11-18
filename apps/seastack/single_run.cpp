@@ -14,6 +14,10 @@
 
 #include "single_run.h"
 
+#include "setup_checks.h"
+#include "structure_config.h"
+#include "structure_subsystem.h"
+
 #include <seastack/config.h>
 #include <seastack/version.h>
 #include <seastack/infra/logging.h>
@@ -50,6 +54,7 @@
 #include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChLinkMate.h>
 #include <chrono/timestepper/ChAssemblyAnalysis.h>
+#include <chrono/solver/ChIterativeSolverVI.h>
 #include <yaml-cpp/yaml.h>
 
 #include "gui/guihelper.h"
@@ -492,6 +497,43 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 seastack::infra::cli::LogWarning(
                     "DoAssembly(POSITION|VELOCITY) did not converge. "
                     "Joint frames or initial coordinates may be inconsistent.");
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // 1b. Optional scenario subsystems (Chrono::FEA structure)
+        // -----------------------------------------------------------------
+        // Attached after Populate so mates can find the model bodies, and
+        // before hydro attach so everything is in the system before stepping.
+        std::vector<std::shared_ptr<IScenarioSubsystem>> subsystems;
+        if (!config.structure_file.empty()) {
+            try {
+                if (std::dynamic_pointer_cast<::chrono::ChIterativeSolverVI>(system->GetSolver())) {
+                    throw std::runtime_error(
+                        "structure_file needs a solver that handles FEA stiffness, but the "
+                        "simulation YAML selects a variational-inequality solver (e.g. PSOR, "
+                        "APGD, BB). Use solver type SPARSE_LU, SPARSE_QR, PARDISO_MKL or MINRES.");
+                }
+                const CheckConfig* load_path = FindCheck(config.checks, kStructureStaticLoadPathCheck);
+                auto structure = std::make_shared<StructureSubsystem>(
+                    LoadStructureConfigFromYaml(config.structure_file),
+                    load_path ? load_path->time_s : std::numeric_limits<double>::infinity());
+                structure->SetDiagnosticsOutputDirectory(config.output_directory);
+                structure->Attach(*system);
+                subsystems.push_back(std::move(structure));
+                startup_line("[startup] FEA structure attached from " + config.structure_file);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+        for (const auto& check : config.checks) {
+            if (check.type == kStructureStaticLoadPathCheck && config.structure_file.empty()) {
+                result.error_message = std::string(kStructureStaticLoadPathCheck) +
+                                       " check requested, but the case has no structure_file.";
+                seastack::infra::cli::LogError(result.error_message);
+                return result;
             }
         }
 
@@ -1390,13 +1432,22 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         controller->BeforeStep(system->GetChTime());
                     }
 #endif
+                    for (const auto& subsystem : subsystems) {
+                        subsystem->OnBeforeStep(system->GetChTime(), loop_dt);
+                    }
                     system->DoStepDynamics(loop_dt);
+                    for (const auto& subsystem : subsystems) {
+                        subsystem->OnAfterStep(system->GetChTime(), loop_dt);
+                    }
                     if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
                     step_count++;
                     if (exporter) {
                         if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
                         exporter->RecordStep(system.get());
                         record_incident_elevation();
+                        for (const auto& subsystem : subsystems) {
+                            subsystem->OnRecord(*exporter);
+                        }
 #ifdef SEASTACK_HAVE_MOORDYN
                         if (hydro_forces) {
                             exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
@@ -1581,13 +1632,22 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                             controller->BeforeStep(system->GetChTime());
                         }
 #endif
+                        for (const auto& subsystem : subsystems) {
+                            subsystem->OnBeforeStep(system->GetChTime(), loop_dt);
+                        }
                         system->DoStepDynamics(loop_dt);
+                        for (const auto& subsystem : subsystems) {
+                            subsystem->OnAfterStep(system->GetChTime(), loop_dt);
+                        }
                         step_count++;
                         steps_taken++;
                         ui.AfterStep(system->GetChTime());
                         if (exporter) {
                             exporter->RecordStep(system.get());
                             record_incident_elevation();
+                            for (const auto& subsystem : subsystems) {
+                                subsystem->OnRecord(*exporter);
+                            }
 #ifdef SEASTACK_HAVE_MOORDYN
                             if (hydro_forces) {
                                 exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
@@ -1819,6 +1879,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         result.exit_code = diverged ? 2 : (step_error.empty() ? 0 : 1);
         if (!step_error.empty()) {
             result.error_message = step_error;
+        }
+        if (result.exit_code == 0 && !config.checks.empty() &&
+            !EvaluatePostRunChecks(config.checks, subsystems, system->GetChTime())) {
+            result.exit_code = 1;
+            result.error_message = "One or more setup checks failed (see the log above).";
         }
         result.wall_time_s = wall_s;
         result.sim_time_final = system->GetChTime();

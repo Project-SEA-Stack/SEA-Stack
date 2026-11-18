@@ -72,6 +72,11 @@ struct SetupConfig {
     /// requires SEASTACK_ENABLE_EXTERNAL). Path as given in setup.
     std::string ropes_file;
     bool has_ropes_file = false;
+
+    /// Optional Chrono::FEA structure YAML (`structure_file`, preview): Euler
+    /// beams, sections and mates to model bodies. Path as given in setup.
+    std::string structure_file;
+    bool has_structure_file = false;
 };
 
 /// Parse a model.setup.yaml file and return configuration

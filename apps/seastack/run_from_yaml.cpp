@@ -7,6 +7,8 @@
 #include "run_from_yaml.h"
 #include "single_run.h"
 #include "app_init.h"
+#include "setup_checks.h"
+#include "structure_config.h"
 
 #include <seastack/config.h>
 #include <seastack/version.h>
@@ -104,7 +106,8 @@ static bool ResolveInputFiles(const std::filesystem::path& input_dir,
                       const std::string& sim_file_arg,
                       std::string& model_file, 
                       std::string& sim_file, 
-                      SetupConfig& setup_config) {
+                      SetupConfig& setup_config,
+                      std::vector<CheckConfig>& checks) {
     
     seastack::infra::debug::LogDebug("Checking for setup file...");
     auto setup_file_path = FindSetupFile(input_dir);
@@ -164,6 +167,26 @@ static bool ResolveInputFiles(const std::filesystem::path& input_dir,
                 "without external module support (-DSEASTACK_ENABLE_EXTERNAL=ON).");
             return false;
 #endif
+        }
+        if (setup_config.has_structure_file) {
+            std::filesystem::path structure_path(setup_config.structure_file);
+            if (structure_path.is_relative()) {
+                structure_path = input_dir / structure_path;
+            }
+            setup_config.structure_file = structure_path.lexically_normal().generic_string();
+            try {
+                // Validate early so YAML mistakes show before the solver starts.
+                (void)LoadStructureConfigFromYaml(setup_config.structure_file);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                return false;
+            }
+        }
+        try {
+            checks = LoadChecksFromSetupYaml(setup_file_path);
+        } catch (const std::exception& e) {
+            seastack::infra::cli::LogError(e.what());
+            return false;
         }
         
         if (!model_file_arg.empty()) {
@@ -298,6 +321,12 @@ static void DisplaySimulationSummary(const std::string& input_directory,
         summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
             "🪢", "Ropes",
             std::filesystem::path(setup_config.ropes_file).filename().string() +
+                " (preview)"));
+    }
+    if (setup_config.has_structure_file) {
+        summary_content.push_back(seastack::infra::cli::CreateAlignedLine(
+            "🏗️", "FEA Structure",
+            std::filesystem::path(setup_config.structure_file).filename().string() +
                 " (preview)"));
     }
     
@@ -451,8 +480,10 @@ int RunFromYAML(int argc, char* argv[]) {
         std::string model_file;
         std::string sim_file;
         SetupConfig setup_config;
+        std::vector<CheckConfig> setup_checks;
         
-        if (!ResolveInputFiles(input_dir, model_file_arg, sim_file_arg, model_file, sim_file, setup_config)) {
+        if (!ResolveInputFiles(input_dir, model_file_arg, sim_file_arg, model_file, sim_file, setup_config,
+                               setup_checks)) {
             seastack::infra::cli::LogError("[startup] Input file resolution failed. Check that the input directory contains valid YAML files.");
             seastack::infra::Shutdown();
             return 1;
@@ -511,6 +542,8 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.external_ptos = setup_config.external_ptos;
         run_config.controller_file = setup_config.controller_file;
         run_config.ropes_file = setup_config.ropes_file;
+        run_config.structure_file = setup_config.structure_file;
+        run_config.checks = setup_checks;
         run_config.schedule_file = schedule_file;
 
         SingleRunResult result = RunSingleCase(run_config);

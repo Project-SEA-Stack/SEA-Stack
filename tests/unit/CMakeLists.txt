@@ -583,6 +583,23 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
             "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
         set_tests_properties(test_single_run_failures PROPERTIES LABELS "unit;chrono" COST 20)
 
+        # FEA structure YAML: strict parser and setup checks
+        build_unit_test(test_structure_config)
+        target_link_libraries(test_structure_config PRIVATE seastack_app_lib)
+        set_tests_properties(test_structure_config PROPERTIES LABELS "unit;chrono")
+
+        # FEA structure beams against closed-form Euler-Bernoulli solutions
+        build_unit_test(test_structure_fea_analytic)
+        target_link_libraries(test_structure_fea_analytic PRIVATE seastack_app_lib)
+        set_tests_properties(test_structure_fea_analytic PROPERTIES LABELS "unit;chrono" COST 10)
+
+        # structure_file runs end to end: HDF5 structure groups and setup checks
+        build_unit_test(test_structure_run)
+        target_link_libraries(test_structure_run PRIVATE seastack_app_lib)
+        target_compile_definitions(test_structure_run PRIVATE
+            "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+        set_tests_properties(test_structure_run PROPERTIES LABELS "unit;chrono" COST 10)
+
         # Panel theme switches do not compound the display scale
         if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
             build_unit_test(test_vsg_theme)

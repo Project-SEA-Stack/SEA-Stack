@@ -74,6 +74,8 @@ parameters**, and an **available cases** table (paths below are relative to
 | f3of | decay_dt3 | F3OF platform, DT3 flap pitch decay (base locked) | `f3of/decay_dt3/f3of_decay_dt3.setup.yaml` |
 | f3of | decay_dt1, decay_dt2 | *(source repo only; omitted from release ZIP)* | `f3of/decay_dt1/…`, `f3of/decay_dt2/…` |
 | trimaran | rigid | Three-hull trimaran with rigid cross-arms, irregular waves | `trimaran/model.setup.yaml` or `trimaran/rigid/trimaran_rigid.setup.yaml` |
+| fea | cantilever | Chrono::FEA Euler-beam cantilever with a tip mass; analytic sag and load-path check (`structure_file`, preview) | `fea/cantilever/cantilever.setup.yaml` |
+| crane | beam_check | Parked crane in calm water with a flexible FEA jib and the payload on the hoist rope (`structure_file`, preview) | `crane/beam_check/crane.setup.yaml` |
 
 **Note:** RM3 `irregular_waves` and OSWEC `irregular_waves` use **long-crested** seas with single-heading BEMIO data (`rm3.h5`, `oswec.h5`). For **bimodal** or **directional spreading** examples, see **5sa** `bimodal` / `spreading` and scripts under `5sa/assets/` (and `wigley/assets/` in the source repository; Wigley cases are not included in the release package).
 

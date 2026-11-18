@@ -206,6 +206,17 @@ struct SimulationExporter::Impl {
     std::vector<MooringLineBuffers> mooring_lines;
     bool mooring_initialized = false;
     bool last_step_was_recorded = false;
+
+    // ── FEA structure buffers (deformed frames at output rate) ──────────
+    struct StructureBeamBuffers {
+        std::string beam_name;
+        unsigned int num_nodes = 0;
+        unsigned int num_elements = 0;
+        std::vector<double> node_positions;     // N_frames * num_nodes * 3
+        std::vector<double> node_orientations;  // N_frames * num_nodes * 4 (wxyz)
+        std::vector<double> element_forces;     // N_frames * num_elements * 6
+    };
+    std::vector<StructureBeamBuffers> structure_beams;
     /// MoorDyn endpoint types per line (start, end), for /visualization.
     std::vector<std::array<int, 2>> mooring_end_types;
 
@@ -1419,6 +1430,80 @@ bool SimulationExporter::LastStepWasRecorded() const {
     return impl_->last_step_was_recorded;
 }
 
+void SimulationExporter::WriteStructureStatic(const std::vector<StructureExportStatic>& beams) {
+    if (beams.empty()) {
+        return;
+    }
+    auto g_struct = impl_->writer.RequireGroup("/inputs/structure");
+    g_struct.WriteAttribute("description",
+        std::string("Undeformed Chrono::FEA Euler-beam geometry from the structure_file."));
+    for (const auto& b : beams) {
+        const std::string name = b.beam_name.empty() ? std::string("beam") : b.beam_name;
+        auto g_beam = g_struct.CreateGroup(Impl::SanitizeName(name));
+        g_beam.WriteAttribute("section_width", b.section_width);
+        g_beam.WriteAttribute("section_depth", b.section_depth);
+        g_beam.WriteAttribute("units_length", std::string("m"));
+        g_beam.WriteAttribute("frame", std::string("world"));
+
+        if (!b.connectivity.empty()) {
+            std::vector<double> conn(b.connectivity.begin(), b.connectivity.end());
+            const hsize_t n_pairs = static_cast<hsize_t>(b.connectivity.size() / 2);
+            g_beam.WriteDataset("connectivity", conn, std::array<hsize_t, 2>{n_pairs, 2});
+            g_beam.WriteAttribute("connectivity_description",
+                                  std::string("node index pairs per element (i, i+1)"));
+        }
+        if (!b.undeformed_node_positions.empty()) {
+            std::vector<double> flat;
+            flat.reserve(b.undeformed_node_positions.size() * 3);
+            for (const auto& p : b.undeformed_node_positions) {
+                flat.insert(flat.end(), {p[0], p[1], p[2]});
+            }
+            const hsize_t n_nodes = static_cast<hsize_t>(b.undeformed_node_positions.size());
+            g_beam.WriteDataset("undeformed_node_positions", flat,
+                                std::array<hsize_t, 2>{n_nodes, 3});
+        }
+    }
+}
+
+void SimulationExporter::RecordStructure(const std::vector<StructureExportFrame>& frames) {
+    if (frames.empty()) {
+        return;
+    }
+    if (impl_->structure_beams.empty()) {
+        impl_->structure_beams.resize(frames.size());
+        for (size_t i = 0; i < frames.size(); ++i) {
+            auto& buf = impl_->structure_beams[i];
+            buf.beam_name = frames[i].beam_name;
+            buf.num_nodes = static_cast<unsigned int>(frames[i].node_positions.size());
+            buf.num_elements = static_cast<unsigned int>(frames[i].element_forces.size());
+        }
+    }
+    if (frames.size() != impl_->structure_beams.size()) {
+        throw std::logic_error("RecordStructure: the number of beams changed between frames");
+    }
+
+    for (size_t i = 0; i < frames.size(); ++i) {
+        auto& buf = impl_->structure_beams[i];
+        const auto& src = frames[i];
+        if (src.beam_name != buf.beam_name || src.node_positions.size() != buf.num_nodes ||
+            src.node_orientations_wxyz.size() != buf.num_nodes ||
+            src.element_forces.size() != buf.num_elements) {
+            throw std::logic_error("RecordStructure: beam '" + src.beam_name +
+                                   "' changed name or size between frames");
+        }
+        for (const auto& p : src.node_positions) {
+            buf.node_positions.insert(buf.node_positions.end(), {p[0], p[1], p[2]});
+        }
+        for (const auto& q : src.node_orientations_wxyz) {
+            buf.node_orientations.insert(buf.node_orientations.end(), {q[0], q[1], q[2], q[3]});
+        }
+        for (const auto& f : src.element_forces) {
+            buf.element_forces.insert(buf.element_forces.end(),
+                                      {f[0], f[1], f[2], f[3], f[4], f[5]});
+        }
+    }
+}
+
 void SimulationExporter::UpdateLinkParameter(const std::string& link_name, const std::string& field,
                                              double value) {
     for (auto& t : impl_->tsdas) {
@@ -1809,6 +1894,50 @@ void SimulationExporter::Finalize() {
                     g_line.WriteDataset("node_positions", buf.node_positions, d3, wopts);
                     g_line.WriteDataset("node_tensions", buf.node_tensions, d2, wopts);
                 }
+            }
+        }
+    }
+
+    // ── FEA structure deformed frames ────────────────────────────────────────
+    if (!impl_->structure_beams.empty()) {
+        auto g_struct = impl_->writer.RequireGroup("/results/structure");
+        g_struct.WriteAttribute("time_ref", std::string("/results/time/time"));
+        g_struct.WriteAttribute("description",
+            std::string("Deformed Euler-beam node states and per-element section forces at "
+                        "every output step. node_positions [N, num_nodes, 3], "
+                        "node_orientations [N, num_nodes, 4] (wxyz), element_forces "
+                        "[N, num_elements, 6] (Fx Fy Fz Mx My Mz)."));
+        for (auto& buf : impl_->structure_beams) {
+            const std::string name = buf.beam_name.empty() ? std::string("beam") : buf.beam_name;
+            auto g_beam = g_struct.CreateGroup(Impl::SanitizeName(name));
+            g_beam.WriteAttribute("num_nodes", static_cast<double>(buf.num_nodes));
+            g_beam.WriteAttribute("num_elements", static_cast<double>(buf.num_elements));
+            g_beam.WriteAttribute("frame", std::string("world"));
+            g_beam.WriteAttribute("units_position", std::string("m"));
+            g_beam.WriteAttribute("units_force", std::string("N"));
+            g_beam.WriteAttribute("units_torque", std::string("N*m"));
+
+            const hsize_t Nn = static_cast<hsize_t>(buf.num_nodes);
+            const hsize_t Ne = static_cast<hsize_t>(buf.num_elements);
+            auto write3d = [&](const std::string& ds, const std::vector<double>& data,
+                               std::array<hsize_t, 3> dims) {
+                if (f32) g_beam.WriteDatasetF32(ds, data, dims, wopts);
+                else     g_beam.WriteDataset(ds, data, dims, wopts);
+            };
+            if (Nn > 0 && !buf.node_positions.empty()) {
+                const hsize_t Nf = static_cast<hsize_t>(buf.node_positions.size() / (Nn * 3));
+                write3d("node_positions", buf.node_positions, {Nf, Nn, 3});
+                write3d("node_orientations", buf.node_orientations, {Nf, Nn, 4});
+                g_beam.WriteAttribute("node_orientations_order", std::string("wxyz"));
+            }
+            if (Ne > 0 && !buf.element_forces.empty()) {
+                const hsize_t Nf = static_cast<hsize_t>(buf.element_forces.size() / (Ne * 6));
+                write3d("element_forces", buf.element_forces, {Nf, Ne, 6});
+                g_beam.WriteAttribute("element_forces_components",
+                                      std::string("Fx Fy Fz Mx My Mz at element mid-point (eta=0)"));
+                // ChElementBeamEuler::EvaluateSectionForceTorque: Fx axial, Fy/Fz
+                // shear, Mx torsion, My/Mz bending, in the element's local frame.
+                g_beam.WriteAttribute("element_forces_frame", std::string("element_local"));
             }
         }
     }
@@ -2221,6 +2350,8 @@ void SimulationExporter::RecordMooringLines(
     throw std::runtime_error("SimulationExporter requires HDF5 support (SEASTACK_ENABLE_HYDRO_IO=ON)");
 }
 bool SimulationExporter::LastStepWasRecorded() const { return false; }
+void SimulationExporter::WriteStructureStatic(const std::vector<StructureExportStatic>&) {}
+void SimulationExporter::RecordStructure(const std::vector<StructureExportFrame>&) {}
 void SimulationExporter::UpdateLinkParameter(const std::string&, const std::string&, double) {}
 void SimulationExporter::SetRuntimeEvents(const std::vector<long long>&, const std::vector<double>&,
                                           const std::vector<std::string>&, const std::vector<double>&,
