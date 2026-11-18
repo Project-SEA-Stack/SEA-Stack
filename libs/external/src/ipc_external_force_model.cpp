@@ -36,6 +36,7 @@ constexpr socket_t kInvalidSocket = INVALID_SOCKET;
 #  include <arpa/inet.h>
 #  include <fcntl.h>
 #  include <netinet/in.h>
+#  include <netinet/tcp.h>
 #  include <signal.h>
 #  include <sys/socket.h>
 #  include <sys/types.h>
@@ -81,6 +82,22 @@ void CloseSocket(socket_t s) {
 #else
     close(s);
 #endif
+}
+
+/// This socket carries one request and one reply per step. Nagle holds a
+/// second small write until the first is acknowledged, and a HZ=1000 Linux
+/// kernel delays that ACK by 40 ms. Disable it on every connected socket.
+void DisableNagle(socket_t s) {
+    const int one = 1;
+#ifdef _WIN32
+    const int rc = setsockopt(s, IPPROTO_TCP, TCP_NODELAY,
+                              reinterpret_cast<const char*>(&one), sizeof(one));
+#else
+    const int rc = setsockopt(s, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+#endif
+    if (rc != 0) {
+        throw std::runtime_error("Failed to set TCP_NODELAY on external-module socket");
+    }
 }
 
 /// Toggle blocking mode so timed select()/send()/recv() loops can run.
@@ -173,19 +190,21 @@ void RecvAll(socket_t s, char* data, size_t len, int timeout_ms) {
 }
 
 /// Wire framing: 4-byte big-endian length, then UTF-8 JSON payload.
+/// One send, so the length is not a separate segment that Nagle can stall.
 void SendFramed(socket_t s, const std::string& payload, int timeout_ms) {
     if (payload.size() > 0xffffffffu) {
         throw std::runtime_error("IPC message too large");
     }
     const uint32_t len = static_cast<uint32_t>(payload.size());
-    unsigned char hdr[4] = {
-        static_cast<unsigned char>((len >> 24) & 0xff),
-        static_cast<unsigned char>((len >> 16) & 0xff),
-        static_cast<unsigned char>((len >> 8) & 0xff),
-        static_cast<unsigned char>(len & 0xff),
-    };
-    SendAll(s, reinterpret_cast<const char*>(hdr), 4, timeout_ms);
-    SendAll(s, payload.data(), payload.size(), timeout_ms);
+    std::string frame(4 + payload.size(), '\0');
+    frame[0] = static_cast<char>((len >> 24) & 0xff);
+    frame[1] = static_cast<char>((len >> 16) & 0xff);
+    frame[2] = static_cast<char>((len >> 8) & 0xff);
+    frame[3] = static_cast<char>(len & 0xff);
+    if (!payload.empty()) {
+        std::memcpy(&frame[4], payload.data(), payload.size());
+    }
+    SendAll(s, frame.data(), frame.size(), timeout_ms);
 }
 
 /// Read one framed message (header + body). Caps body at 16 MiB.
@@ -537,6 +556,7 @@ ExternalMeta IpcExternalForceModel::Initialize(const ExternalInit& init) {
         TerminateChild(impl_->child);
         throw std::runtime_error("accept() failed for external force module");
     }
+    DisableNagle(impl_->client_sock);
     SetNonBlocking(impl_->client_sock, true);
 
     // Listener no longer needed.

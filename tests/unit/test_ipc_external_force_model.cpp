@@ -4,6 +4,7 @@
 
 #include "test_macros.h"
 
+#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <string>
@@ -158,6 +159,21 @@ int main(int argc, char** argv) {
 
         ipc.Evaluate(0.01, {0.1, -1.0}, out);
         TEST_NEAR(out[0], 50.0, 1e-9, "F = -c*(-1)");
+
+        // A localhost round trip must not wait out the Linux delayed-ACK
+        // timer (~40 ms when Nagle is left on). 40 calls at that stall
+        // would be well over a second.
+        constexpr int kRoundTrips = 40;
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; i < kRoundTrips; ++i) {
+            ipc.Evaluate(0.02 + 0.01 * i, {0.0, 1.0}, out);
+        }
+        const double ms = std::chrono::duration<double, std::milli>(
+                              std::chrono::steady_clock::now() - t0)
+                              .count();
+        TEST_ASSERT(ms / kRoundTrips < 5.0,
+                    "mean IPC round trip under 5 ms (got " + std::to_string(ms / kRoundTrips) +
+                        " ms)");
 
         ipc.Reset();
         ipc.Commit();

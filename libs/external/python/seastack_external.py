@@ -255,6 +255,9 @@ class ExternalForceModule:
         args = parser.parse_args()
 
         sock = socket.create_connection(("127.0.0.1", args.seastack_port), timeout=30.0)
+        # One request/reply per step. Without this, Nagle plus a delayed ACK
+        # stalls each small message for ~40 ms on Linux (HZ=1000).
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         sock.settimeout(60.0)
         try:
             while True:

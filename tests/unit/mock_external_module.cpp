@@ -26,6 +26,7 @@ using socket_t = SOCKET;
 #else
 #  include <arpa/inet.h>
 #  include <netinet/in.h>
+#  include <netinet/tcp.h>
 #  include <sys/socket.h>
 #  include <unistd.h>
 using socket_t = int;
@@ -73,14 +74,15 @@ void RecvAll(socket_t s, char* data, size_t len) {
 
 void SendFramed(socket_t s, const std::string& payload) {
     const uint32_t len = static_cast<uint32_t>(payload.size());
-    unsigned char hdr[4] = {
-        static_cast<unsigned char>((len >> 24) & 0xff),
-        static_cast<unsigned char>((len >> 16) & 0xff),
-        static_cast<unsigned char>((len >> 8) & 0xff),
-        static_cast<unsigned char>(len & 0xff),
-    };
-    SendAll(s, reinterpret_cast<const char*>(hdr), 4);
-    SendAll(s, payload.data(), payload.size());
+    std::string frame(4 + payload.size(), '\0');
+    frame[0] = static_cast<char>((len >> 24) & 0xff);
+    frame[1] = static_cast<char>((len >> 16) & 0xff);
+    frame[2] = static_cast<char>((len >> 8) & 0xff);
+    frame[3] = static_cast<char>(len & 0xff);
+    if (!payload.empty()) {
+        std::memcpy(&frame[4], payload.data(), payload.size());
+    }
+    SendAll(s, frame.data(), frame.size());
 }
 
 std::string RecvFramed(socket_t s) {
@@ -188,6 +190,15 @@ int main(int argc, char** argv) {
     if (connect(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
         CloseSock(sock);
         return 5;
+    }
+    {
+        const int one = 1;
+#ifdef _WIN32
+        setsockopt(sock, IPPROTO_TCP, TCP_NODELAY,
+                   reinterpret_cast<const char*>(&one), sizeof(one));
+#else
+        setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+#endif
     }
 
     double damping = 50.0;
