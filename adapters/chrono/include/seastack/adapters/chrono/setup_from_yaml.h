@@ -10,6 +10,7 @@
 #define SEASTACK_ADAPTERS_CHRONO_SETUP_FROM_YAML_H
 
 #include <seastack/hydro/config/hydro_config.h>
+#include <seastack/hydro/waves/wave_component.h>
 #include <chrono/physics/ChBody.h>
 #include <memory>
 #include <vector>
@@ -62,6 +63,15 @@ std::unique_ptr<HydroSystem> SetupHydroFromYAMLFile(
     double sim_duration,
     double ramp_duration
 );
+
+/**
+ * @brief The sea state SetupHydroFromYAML samples for `waves` (regular or
+ *        spectral seas; not eta_file imports).
+ *
+ * Changing the period or direction in it and sampling again
+ * (ComponentSampler::Build) gives the matching component set for a live change.
+ */
+seastack::hydro::SeaStateDefinition SeaStateDefinitionFromYAML(const seastack::hydro::WaveSettings& waves);
 
 }  // namespace seastack::chrono
 

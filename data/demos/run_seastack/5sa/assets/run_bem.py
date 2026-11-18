@@ -274,7 +274,8 @@ def write_bemio_h5(
 
     Fk = dataset["Froude_Krylov_force"].values               # (n_freq, n_dir, n_dof) complex
     Fd = dataset["diffraction_force"].values                  # (n_freq, n_dir, n_dof) complex
-    F_exc = Fk + Fd
+    # Capytaine uses exp(-i*omega*t); BEMIO and SEA-Stack use exp(+i*omega*t).
+    F_exc = np.conj(Fk + Fd)
 
     if "hydrostatic_stiffness" in dataset:
         C_full = dataset["hydrostatic_stiffness"].values      # (n_dof, n_dof)

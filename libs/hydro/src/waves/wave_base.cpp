@@ -57,8 +57,17 @@ WaveBase::ComputeElevationTimeSeries(double t_start, double t_end, double dt) co
     return {times, elevations};
 }
 
-double WaveBase::GetExcitationRampForVisualization(double /*time*/) const {
-    return 1.0;
+double WaveBase::GetExcitationRampForVisualization(double time) const {
+    return amplitude_envelope_->Value(time);
+}
+
+void WaveBase::GetComponentWeights(double time, Eigen::VectorXd& weights) const {
+    const auto* comps = GetWaveComponents();
+    weights.setOnes(comps ? static_cast<Eigen::Index>(comps->size()) : 0);
+    for (const auto& layer : layers_) {
+        weights.segment(static_cast<Eigen::Index>(layer.begin), static_cast<Eigen::Index>(layer.end - layer.begin))
+            .setConstant(layer.weight.Value(time));
+    }
 }
 
 }  // namespace seastack::hydro

@@ -15,8 +15,13 @@
 
 #include <seastack/core/force_component.h>
 #include <seastack/core/system_state.h>
+#include <seastack/hydro/excitation_transfer.h>
+#include <seastack/hydro/waves/amplitude_envelope.h>
+#include <seastack/hydro/waves/wave_base.h>
 
 #include <Eigen/Dense>
+#include <functional>
+#include <memory>
 #include <vector>
 
 namespace seastack::hydro {
@@ -45,12 +50,22 @@ class ExcitationComponent : public IHydroForceComponent {
      * @param excitation_im Per-body Im(H*) matrices, shape (6 x n_components)
      * @param num_bodies Number of bodies
      * @param ramp_duration Cosine ramp duration [s], 0 = no ramp
+     * @param envelope Runtime amplitude envelope e(t) of the wave (multiplies
+     *                 the ramp); null = 1
+     * @param wave     The wave the components came from, for live period and
+     *                 direction changes (WaveBase::GetWaveLayers); null = none
+     * @param transfer Interpolates the excitation TF for components added by
+     *                 such a change; needed when `wave` is set
      */
+    using TransferFunction = std::function<ExcitationTFData(const std::vector<WaveComponent>&)>;
     ExcitationComponent(WaveComponentData wave_data,
                         std::vector<Eigen::MatrixXd> excitation_re,
                         std::vector<Eigen::MatrixXd> excitation_im,
                         int num_bodies,
-                        double ramp_duration = 0.0);
+                        double ramp_duration = 0.0,
+                        std::shared_ptr<const AmplitudeEnvelope> envelope = nullptr,
+                        std::shared_ptr<const WaveBase> wave = nullptr,
+                        TransferFunction transfer = nullptr);
 
     HydroComponentType Type() const override { return HydroComponentType::kExcitation; }
 
@@ -64,6 +79,13 @@ class ExcitationComponent : public IHydroForceComponent {
     std::vector<Eigen::MatrixXd> excitation_im_;
     int num_bodies_;
     double ramp_duration_ = 0.0;
+    std::shared_ptr<const AmplitudeEnvelope> envelope_;
+    std::shared_ptr<const WaveBase> wave_;
+    TransferFunction transfer_;
+    Eigen::VectorXd weights_;  ///< Layer weight of each component [-] (work buffer)
+
+    /// Append TF data for components the wave gained since the last call.
+    void AddNewWaveComponents();
 
     /// Excitation in each body's heading frame, rotated to world (heading_frame.h).
     /// The BEM heading used for the coefficients is the world wave direction.

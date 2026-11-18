@@ -21,8 +21,13 @@
 #include <seastack/hydro/config/yaml_parser.h>
 #include <seastack/adapters/chrono/hydro_system.h>
 #include <seastack/adapters/chrono/simulation_export.h>
+#include <seastack/adapters/chrono/runtime_controls.h>
+#include <seastack/adapters/chrono/viz_extractor.h>
 #include <seastack/hydro/waves/wave_base.h>
 #include <seastack/hydro/waves/linear_directional_wave_field.h>
+#include <seastack/hydro/waves/component_sampler.h>
+#include <seastack/hydro/waves/sea_state_change.h>
+#include <seastack/core/math_constants.h>
 
 #ifdef SEASTACK_HAVE_EXTERNAL
 #include "external_controller.h"
@@ -42,6 +47,7 @@
 #include <chrono/core/ChMatrix33.h>
 #include <chrono/geometry/ChTriangleMeshConnected.h>
 #include <chrono/physics/ChLinkLock.h>
+#include <chrono/physics/ChLinkTSDA.h>
 #include <chrono/physics/ChLinkMate.h>
 #include <chrono/timestepper/ChAssemblyAnalysis.h>
 #include <yaml-cpp/yaml.h>
@@ -61,6 +67,8 @@
 #include <chrono>
 #include <iomanip>
 #include <cmath>
+#include <limits>
+#include <thread>
 
 #ifdef SEASTACK_HAVE_HYDRO_IO
 #include <H5Cpp.h>
@@ -715,23 +723,81 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 
         std::shared_ptr<seastack::viz::UI> pui;
         bool gui_init_ok = false;
-        try {
-            pui = seastack::viz::CreateUI(!nogui);
-        } catch (const std::exception& e) {
-            seastack::infra::cli::LogWarning(std::string("[viz] CreateUI failed: ") + e.what());
-        } catch (...) {
-            seastack::infra::cli::LogWarning("[viz] CreateUI failed (unknown error)");
+        if (config.ui_override) {
+            nogui = false;
+            pui = config.ui_override;
+            pui->Init(system.get(), "SEA-Stack test");
+            gui_init_ok = true;
+        } else {
+            try {
+                seastack::viz::ViewerBackend backend = seastack::viz::ViewerBackend::kSeastack;
+                if (!seastack::viz::ParseViewerBackend(config.viewer, &backend)) {
+                    seastack::infra::cli::LogWarning("[viz] Unknown viewer '" + config.viewer + "'; using seastack.");
+                }
+                pui = seastack::viz::CreateUI(!nogui, backend);
+            } catch (...) {
+                seastack::infra::cli::LogWarning("[viz] CreateUI failed: " +
+                                                 seastack::viz::CurrentExceptionMessage());
+            }
         }
 
-        if (pui && !nogui) {
+        if (pui && !nogui && !config.ui_override) {
+            // Start-up viewer options from simulation.visualization (all optional):
+            //   theme: dark | light       initial theme (switchable in the GUI)
+            //   body_colors: model | palette   model (default) keeps colours set in the
+            //                                  model YAML; palette repaints every body
+            //   mooring_tension_range: [min, max]   fixed tension colour range [N]
+            // The Chrono key enable_shadows is ignored: Chrono VSG shadows crash
+            // when SEA-Stack adds its water and mooring meshes after Initialize().
+            seastack::viz::ViewerOptions viewer_options;
+            try {
+                const YAML::Node sim_yaml = YAML::LoadFile(config.simulation_file);
+                if (sim_yaml["simulation"] && sim_yaml["simulation"]["visualization"]) {
+                    const YAML::Node vis = sim_yaml["simulation"]["visualization"];
+                    if (vis["theme"]) {
+                        const std::string theme = vis["theme"].as<std::string>();
+                        if (seastack::viz::ParseVisualTheme(theme, &viewer_options.theme)) {
+                            viewer_options.theme_from_model = true;
+                        } else {
+                            seastack::infra::cli::LogWarning("Unknown visualization.theme '" + theme +
+                                                             "' (expected dark or light); using dark");
+                        }
+                    }
+                    if (vis["body_colors"]) {
+                        const std::string colors = vis["body_colors"].as<std::string>();
+                        viewer_options.use_model_colors = (colors == "model");
+                        if (colors != "model" && colors != "palette") {
+                            seastack::infra::cli::LogWarning("Unknown visualization.body_colors '" + colors +
+                                                             "' (expected model or palette); using model");
+                        }
+                    }
+                    if (vis["mooring_tension_range"]) {
+                        const YAML::Node range = vis["mooring_tension_range"];
+                        const bool valid = range.IsSequence() && range.size() == 2 &&
+                                           range[1].as<double>() > range[0].as<double>() &&
+                                           range[0].as<double>() >= 0.0;
+                        if (valid) {
+                            viewer_options.has_mooring_tension_range = true;
+                            viewer_options.mooring_tension_min = range[0].as<float>();
+                            viewer_options.mooring_tension_max = range[1].as<float>();
+                        } else {
+                            seastack::infra::cli::LogWarning(
+                                "visualization.mooring_tension_range must be [min, max] in N with "
+                                "0 <= min < max; using auto range");
+                        }
+                    }
+                }
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogWarning(std::string("Ignoring invalid visualization options: ") + e.what());
+            }
+            pui->SetViewerOptions(viewer_options);
+
             try {
                 pui->Init(system.get(), "SEA-Stack YAML");
                 gui_init_ok = true;
-            } catch (const std::exception& e) {
-                seastack::infra::cli::LogWarning(std::string("[viz] GUI initialization failed: ") + e.what());
-                pui.reset();
             } catch (...) {
-                seastack::infra::cli::LogWarning("[viz] GUI initialization failed (unknown error)");
+                seastack::infra::cli::LogWarning("[viz] GUI initialization failed: " +
+                                                 seastack::viz::CurrentExceptionMessage());
                 pui.reset();
             }
         }
@@ -745,15 +811,32 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     "[viz] To suppress this warning, run with --nogui.");
                 nogui = true;
             }
-            pui = seastack::viz::CreateUI(true);
+            pui = seastack::viz::CreateUI(false);
             pui->Init(system.get(), "SEA-Stack");
         }
 
         seastack::viz::UI& ui = *pui;
 
         if (gui_init_ok) {
+            // The GUI frames the model automatically. An explicit camera in
+            // simulation.visualization.camera (location and target [m], world
+            // frame, Chrono YAML keys) overrides that default.
             try {
-                ui.SetCamera(0, -50, -10, 0, 0, -10);
+                const YAML::Node sim_yaml = YAML::LoadFile(config.simulation_file);
+                YAML::Node camera;
+                if (sim_yaml["simulation"] && sim_yaml["simulation"]["visualization"]) {
+                    camera = sim_yaml["simulation"]["visualization"]["camera"];
+                }
+                if (camera && camera["location"] && camera["target"]) {
+                    const auto loc = camera["location"].as<std::vector<double>>();
+                    const auto tgt = camera["target"].as<std::vector<double>>();
+                    if (loc.size() == 3 && tgt.size() == 3) {
+                        ui.SetCamera(loc[0], loc[1], loc[2], tgt[0], tgt[1], tgt[2]);
+                    } else {
+                        seastack::infra::cli::LogWarning(
+                            "visualization.camera location/target must have 3 components; using automatic framing");
+                    }
+                }
             } catch (const std::exception& e) {
                 seastack::infra::cli::LogWarning(std::string("Camera setup failed: ") + e.what());
             }
@@ -779,6 +862,9 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                                                  hydro_data.moordyn_visualization_node_marker_radius);
             }
 #endif
+            if (hydro_forces) {
+                ui.SetHydroForces(hydro_forces.get());
+            }
         }
 
         if (gui_init_ok) {
@@ -925,16 +1011,58 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         }
 #if defined(SEASTACK_HAVE_HYDRO_IO)
                         catch (const H5::Exception& e) {
-                            seastack::infra::debug::LogDebug(
-                                std::string("Skipping spectrum HDF5 export (HDF5): ") + e.getDetailMsg());
+                            seastack::infra::cli::LogWarning("Wave spectrum and input elevation not written (HDF5: " +
+                                                             e.getDetailMsg() + "); the results are unaffected.");
                         }
 #endif
                         catch (const std::exception& e) {
-                            seastack::infra::debug::LogDebug(std::string("Skipping spectrum HDF5 export: ") + e.what());
+                            seastack::infra::cli::LogWarning(std::string("Wave spectrum and input elevation not "
+                                                                         "written (") +
+                                                             e.what() + "); the results are unaffected.");
                         }
                     }
                 }
 
+                // Visual scene and wave components for `run_seastack --replay`.
+                // Optional: a failure here drops only the replay data.
+                try {
+                    const auto wave_ptr = hydro_forces ? hydro_forces->GetWave() : nullptr;
+                    const auto* comps = wave_ptr ? wave_ptr->GetWaveComponents() : nullptr;
+                    if (comps != nullptr && !comps->empty()) {
+                        std::vector<double> om, kk, am, ph, dir;
+                        for (const auto& c : *comps) {
+                            om.push_back(c.omega);
+                            kk.push_back(c.k);
+                            am.push_back(c.amplitude);
+                            ph.push_back(c.phase);
+                            dir.push_back(c.direction);
+                        }
+                        exporter->WriteWaveComponents(om, kk, am, ph, dir);
+                    }
+                    const double gravity = wave_ptr ? wave_ptr->GetGravity()
+                                                    : system->GetGravitationalAcceleration().Length();
+                    exporter->WriteVisualization(system.get(), wave_ptr ? wave_ptr->GetRampDuration() : 0.0,
+                                                 wave_ptr ? wave_ptr->GetWaterDepth() : 0.0, gravity,
+                                                 gui_init_ok);
+                    if (config.test_fail_visual_recording) {
+                        throw std::runtime_error("injected visual recording failure");
+                    }
+                    exporter->RecordVisualizationForces(
+                        seastack::chrono::MakeHydroForceProvider(hydro_forces.get()));
+                }
+#if defined(SEASTACK_HAVE_HYDRO_IO)
+                catch (const H5::Exception& e) {
+                    seastack::infra::cli::LogWarning("Replay data not written (HDF5: " + e.getFuncName() +
+                                                     " - " + e.getDetailMsg() + "); the results are unaffected.");
+                    exporter->DiscardVisualization();
+                }
+#endif
+                catch (...) {
+                    seastack::infra::cli::LogWarning("Replay data not written (" +
+                                                     seastack::viz::CurrentExceptionMessage() +
+                                                     "); the results are unaffected.");
+                    exporter->DiscardVisualization();
+                }
             }
 #if defined(SEASTACK_HAVE_HYDRO_IO)
             catch (const H5::Exception& e) {
@@ -955,8 +1083,246 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         }
 
         // -----------------------------------------------------------------
+        // 5b. Runtime controls: TSDA/RSDA parameters changed from the GUI or
+        //     a schedule file, applied at step boundaries and logged.
+        // -----------------------------------------------------------------
+        seastack::chrono::RuntimeControls runtime_controls(system.get());
+#ifdef SEASTACK_HAVE_EXTERNAL
+        for (const auto& link : system->GetLinks()) {
+            auto* tsda = dynamic_cast<::chrono::ChLinkTSDA*>(link.get());
+            if (tsda && std::dynamic_pointer_cast<seastack::app::TensionOnlyRopeForce>(tsda->GetForceFunctor())) {
+                const std::string prefix = "tsda." + tsda->GetName() + ".";
+                runtime_controls.SetOwner(prefix + "spring_coefficient", "tension-only rope (ropes file)");
+                runtime_controls.SetOwner(prefix + "damping_coefficient", "tension-only rope (ropes file)");
+            }
+        }
+        if (controller) {
+            for (const auto& channel : controller->actuator_names()) {
+                runtime_controls.SetOwner(channel, "controller");
+            }
+        }
+#endif
+        // Applied sea changes go to /events/waves (replay redraws them).
+        seastack::chrono::SimulationExporter* const wave_log = exporter.get();
+        // Live wave height. The wave's amplitude envelope e(t) scales every
+        // component in all excitation paths (FD, IRF, NLFK) and the drawn sea.
+        // A change ramps in over two dominant wave periods (10 s if unknown) so
+        // the excitation does not jump.
+        if (hydro_forces && hydro_forces->GetWave() &&
+            hydro_forces->GetWave()->GetWaveMode() != WaveMode::kNoWave) {
+            const std::shared_ptr<WaveBase> wave = hydro_forces->GetWave();
+            const auto& ws = hydro_data.waves;
+            seastack::chrono::RuntimeParameter p;
+            p.element = "waves";
+            p.min_value = 0.0;
+            if (ws.partitions.empty() && ws.eta_file.empty() && ws.height > 0.0) {
+                // One sea state: H (regular) or Hs (spectral), both proportional to e.
+                const bool regular = wave->GetWaveMode() == WaveMode::kRegular;
+                p.id = "waves.height";
+                p.field = "height";
+                p.label = regular ? "H" : "Hs";
+                p.units = "m";
+                p.default_value = ws.height;
+                p.source = "hydro YAML";
+            } else {
+                // Several partitions or an imported record: no single height to show.
+                p.id = "waves.height_scale";
+                p.field = "height_scale";
+                p.label = "Scale";
+                p.units = "-";
+                p.default_value = 1.0;
+                p.source = "1 = sea state of the hydro YAML";
+            }
+            p.value = p.default_value;
+            const double reference = p.default_value;
+            const double period = wave->GetCharacteristicPeriod();
+            const double transition = period > 0.0 ? 2.0 * period : 10.0;
+            const std::shared_ptr<seastack::hydro::AmplitudeEnvelope> envelope = wave->GetAmplitudeEnvelope();
+            const std::string id = p.id;
+            runtime_controls.AddParameter(p, [envelope, reference, transition, wave_log, id](double value,
+                                                                                              double time) {
+                const double end = envelope->RampTo(time, value / reference, transition);
+                if (wave_log) {
+                    seastack::chrono::WaveChangeRecord change;
+                    change.start_time_s = time;
+                    change.duration_s = transition;
+                    change.kind = "height";
+                    change.parameter = id;
+                    change.value = value;
+                    change.envelope_target = value / reference;
+                    wave_log->AddWaveChange(std::move(change));
+                }
+                return end;
+            });
+        }
+        // Live wave period and direction (one regular or spectral sea state).
+        // A change samples the sea again with the new value and crossfades to
+        // it over two dominant periods (the longer of the old and new one),
+        // keeping each component's phase at the origin when the component
+        // count is unchanged (see CrossfadeTo). It is refused while a
+        // crossfade runs, or when the BEM data does not cover the new sea
+        // (CheckSeaStateChange). Eta-file seas and partitions have no single
+        // period or direction to change.
+        if (hydro_forces) {
+            const auto field = std::dynamic_pointer_cast<LinearDirectionalWaveField>(hydro_forces->GetWave());
+            const auto& ws = hydro_data.waves;
+            if (field && ws.partitions.empty() && ws.eta_file.empty() && ws.period > 0.0) {
+                const bool regular = field->GetWaveMode() == WaveMode::kRegular;
+                auto sea = std::make_shared<seastack::hydro::SeaStateDefinition>(
+                    seastack::chrono::SeaStateDefinitionFromYAML(ws));
+                const seastack::hydro::SeaStateChangeLimits limits = hydro_forces->GetSeaStateChangeLimits();
+                // `sea` with its period [s] or direction [deg] set to `value`.
+                auto modified = [sea, regular](const std::string& what, double value) {
+                    seastack::hydro::SeaStateDefinition def = *sea;
+                    if (what == "period") {
+                        if (regular) {
+                            def.omega = seastack::kTwoPi / value;
+                        } else {
+                            def.partitions[0].spectrum.Tp = value;
+                        }
+                    } else if (regular) {
+                        def.direction_deg = value;
+                    } else {
+                        def.partitions[0].spreading.mean_direction_deg = value;
+                    }
+                    return def;
+                };
+                // True if `value` is the period [s] or direction [deg] now in effect.
+                auto unchanged = [sea, regular](const std::string& what, double value) {
+                    double current = 0.0;
+                    if (what == "period") {
+                        current = regular ? seastack::kTwoPi / sea->omega : sea->partitions[0].spectrum.Tp;
+                    } else {
+                        current = regular ? sea->direction_deg : sea->partitions[0].spreading.mean_direction_deg;
+                    }
+                    return std::abs(value - current) <= 1e-12 * std::max(1.0, std::abs(current));
+                };
+                auto check = [field, modified, unchanged, limits](const std::string& what, double value,
+                                                                  double time) -> std::string {
+                    if (what == "period" && !(value > 0.0)) {
+                        return "the period must be > 0";
+                    }
+                    if (unchanged(what, value)) {
+                        return "";  // nothing to change, nothing to check
+                    }
+                    if (field->IsCrossfading(time)) {
+                        return "the last period or direction change is still fading in";
+                    }
+                    std::vector<seastack::hydro::WaveComponent> proposed;
+                    try {
+                        proposed = seastack::hydro::ComponentSampler::Build(modified(what, value));
+                    } catch (const std::exception& e) {
+                        return e.what();
+                    }
+                    const auto kind = (what == "period") ? seastack::hydro::SeaStateChangeKind::kPeriod
+                                                         : seastack::hydro::SeaStateChangeKind::kDirection;
+                    return seastack::hydro::CheckSeaStateChange(kind, proposed, limits);
+                };
+                auto apply = [field, modified, unchanged, sea, wave_log](const std::string& what, double value,
+                                                                         double time) {
+                    if (unchanged(what, value)) {
+                        return time;  // no new component set: the sea and its cost stay as they are
+                    }
+                    const seastack::hydro::SeaStateDefinition def = modified(what, value);
+                    auto components = seastack::hydro::ComponentSampler::Build(def);
+                    double new_period = 0.0;
+                    double max_amplitude = -1.0;
+                    for (const auto& c : components) {
+                        if (c.amplitude > max_amplitude && c.omega > 0.0) {
+                            max_amplitude = c.amplitude;
+                            new_period = seastack::kTwoPi / c.omega;
+                        }
+                    }
+                    const double period = std::max(field->GetCharacteristicPeriod(), new_period);
+                    *sea = def;
+                    const size_t n_new = components.size();
+                    const double duration = period > 0.0 ? 2.0 * period : 10.0;
+                    const double end = field->CrossfadeTo(std::move(components), time, duration);
+                    if (wave_log) {
+                        seastack::chrono::WaveChangeRecord change;
+                        change.start_time_s = time;
+                        change.duration_s = duration;
+                        change.kind = what;
+                        change.parameter = "waves." + what;
+                        change.value = value;
+                        const auto& all = *field->GetWaveComponents();
+                        for (size_t i = all.size() - n_new; i < all.size(); ++i) {
+                            change.omega_rad_s.push_back(all[i].omega);
+                            change.k_rad_m.push_back(all[i].k);
+                            change.amplitude_m.push_back(all[i].amplitude);
+                            change.phase_rad.push_back(all[i].phase);
+                            change.direction_rad.push_back(all[i].direction);
+                        }
+                        wave_log->AddWaveChange(std::move(change));
+                    }
+                    return end;
+                };
+                for (const std::string what : {"period", "direction"}) {
+                    seastack::chrono::RuntimeParameter q;
+                    q.element = "waves";
+                    q.id = "waves." + what;
+                    q.field = what;
+                    if (what == "period") {
+                        q.label = regular ? "T" : "Tp";
+                        q.units = "s";
+                        q.default_value = ws.period;
+                        q.min_value = 0.0;
+                    } else {
+                        q.label = "Direction";
+                        q.units = "deg";
+                        q.default_value = ws.direction;
+                        q.min_value = -std::numeric_limits<double>::infinity();
+                    }
+                    q.value = q.default_value;
+                    q.source = "hydro YAML";
+                    runtime_controls.AddParameter(
+                        q, [apply, what](double value, double time) { return apply(what, value, time); },
+                        [check, what](double value, double time) { return check(what, value, time); });
+                }
+            }
+        }
+        if (exporter) {
+            seastack::chrono::SimulationExporter* exp = exporter.get();
+            runtime_controls.SetChangeCallback([exp](const seastack::chrono::RuntimeParameter& p) {
+                exp->UpdateLinkParameter(p.link_name, p.field, p.value);
+            });
+        }
+        if (!config.schedule_file.empty()) {
+            try {
+                const auto schedule = seastack::chrono::ReadRuntimeSchedule(config.schedule_file);
+                runtime_controls.LoadSchedule(schedule, system->GetChTime(), loop_dt);
+                seastack::infra::cli::LogInfo("Schedule: " + std::to_string(schedule.commands.size()) +
+                                              " parameter change(s) from " + config.schedule_file);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogError(e.what());
+                result.error_message = e.what();
+                return result;
+            }
+        }
+        // Where the GUI writes the schedule of its edits (next to the results).
+        std::string schedule_export_path;
+        if (!persisted_hdf5_path.empty()) {
+            std::filesystem::path p(persisted_hdf5_path);
+            schedule_export_path = (p.parent_path() / (p.stem().string() + ".schedule.yaml")).generic_string();
+        }
+        if (gui_init_ok) {
+            ui.SetRuntimeControls(&runtime_controls, schedule_export_path, loop_dt);
+        }
+
+        // -----------------------------------------------------------------
         // 6. Run simulation
         // -----------------------------------------------------------------
+        // Incident elevation at the origin as the physics applies it (excitation
+        // ramp, envelope, crossfade weights), kept for /events/waves.
+        const std::shared_ptr<WaveBase> incident_wave = hydro_forces ? hydro_forces->GetWave() : nullptr;
+        auto record_incident_elevation = [&exporter, &system, &incident_wave]() {
+            if (exporter && incident_wave && exporter->LastStepWasRecorded()) {
+                const double t = system->GetChTime();
+                exporter->RecordIncidentElevation(incident_wave->GetExcitationRampForVisualization(t) *
+                                                  incident_wave->GetElevation(Eigen::Vector3d::Zero(), t));
+            }
+        };
+
         startup_line("[startup] Entering simulation loop");
         bool first_step = true;
         int step_count = 0;
@@ -975,19 +1341,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
         double yaml_end_time = 0.0;
         TryFindYamlDouble(config.simulation_file, "end_time", yaml_end_time);
 
-        // Chrono YAML parses enforce_realtime, but run_seastack steps via
-        // DoStepDynamics directly (not ChParserMbsYAML::Advance), so honour it
-        // here. It only affects the GUI loop: true paces simulated time to
-        // wall-clock time, false (default) runs as fast as possible.
-        // Headless runs always run as fast as possible.
-        bool enforce_realtime = false;
-        try {
-            auto sim_yaml = YAML::LoadFile(config.simulation_file);
-            if (sim_yaml["simulation"] && sim_yaml["simulation"]["enforce_realtime"]) {
-                enforce_realtime = sim_yaml["simulation"]["enforce_realtime"].as<bool>();
-            }
-        } catch (...) {
-        }
+        // run_seastack steps via DoStepDynamics directly (not
+        // ChParserMbsYAML::Advance), so the YAML enforce_realtime flag has no
+        // effect. The GUI always starts at 1x (real time) and the speed is set
+        // at runtime from the toolbar. Headless runs always run as fast as
+        // possible.
 
         // Diagnostic dump: compare system state to compiled regression tests.
         if (config.debug_mode) {
@@ -1006,6 +1364,12 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             seastack::infra::debug::LogDebug(diag.str());
         }
 
+        // Wall-time breakdown (SIM-161): total elapsed = setup + active + paused
+        // (+ export). Active is the time spent stepping; GUI pauses, waiting
+        // before Play and idling after end_time count as paused.
+        const auto loop_start = std::chrono::steady_clock::now();
+        double active_wall_s = 0.0;
+
         if (nogui) {
             const double end_time_bound = (yaml_end_time > 0.0) ? yaml_end_time : 40.0;
             const double remaining_time = std::max(0.0, end_time_bound - initial_time);
@@ -1020,6 +1384,7 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 double current_time = system->GetChTime();
                 try {
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
+                    runtime_controls.ApplyDue(step_count, system->GetChTime());
 #ifdef SEASTACK_HAVE_EXTERNAL
                     if (controller) {
                         controller->BeforeStep(system->GetChTime());
@@ -1031,6 +1396,12 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     if (exporter) {
                         if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
                         exporter->RecordStep(system.get());
+                        record_incident_elevation();
+#ifdef SEASTACK_HAVE_MOORDYN
+                        if (hydro_forces) {
+                            exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
+                        }
+#endif
                         if (export_detailed_hydro) {
                             exporter->RecordHydroForces(hydro_forces->GetLastComponentForces());
                         }
@@ -1075,17 +1446,72 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
             } else {
                 seastack::infra::cli::StopProgress();
             }
+            active_wall_s =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - loop_start).count();
         } else {
             // GUI-driven loop
             startup_line("Tip: if the GUI becomes unresponsive, try --nogui for headless mode.");
-            ::chrono::ChRealtimeStepTimer realtime_timer;
+
+            // Playback pacing. The pacer only decides how many fixed-dt steps
+            // to take per rendered frame; it never changes loop_dt, so results
+            // are identical at every playback speed.
+            using SteadyClock = std::chrono::steady_clock;
+            const auto pacing_epoch = SteadyClock::now();
+            auto wall_seconds = [&pacing_epoch]() {
+                return std::chrono::duration<double>(SteadyClock::now() - pacing_epoch).count();
+            };
+            constexpr double kGuiFrameWallBudget = 1.0 / 30.0;  // max stepping time per frame [s]
+            constexpr double kGuiRunningFrameRate = 60.0;       // frame cap while paced [Hz]
+            constexpr double kGuiPausedFrameRate = 30.0;        // frame cap while paused [Hz]
+#ifdef _WIN32
+            // Default Windows timer resolution (~15.6 ms) makes 60 Hz frame
+            // pacing visibly uneven; request 1 ms while the GUI loop runs.
+            timeBeginPeriod(1);
+#endif
+            ui.playbackSpeed = 1.0;
+            seastack::viz::SimulationPacer pacer;
+            seastack::viz::RunClock run_clock;
+            double paced_speed = ui.playbackSpeed;
+            bool was_stepping = false;
+            ui.runStatus.end_time = yaml_end_time;
+            ui.runStatus.time_step = loop_dt;
+            ui.runStatus.sim_time = system->GetChTime();
+
+            // Start of the previous frame, used to accumulate active wall time
+            // over whole frames (stepping + rendering + pacing wait).
+            double prev_frame_wall = wall_seconds();
+            double prev_frame_sim = system->GetChTime();
+
             bool announced_end_time = false;
-            while (ui.IsRunning(loop_dt)) {
+            // Drawing a frame must not lose the run: a viewer error ends the
+            // loop as closing the window would, and the results are still written.
+            std::string viewer_error;
+            auto gui_running = [&]() {
+                try {
+                    return ui.IsRunning(loop_dt);
+                } catch (...) {
+                    viewer_error = seastack::viz::CurrentExceptionMessage();
+                }
+                return false;
+            };
+            while (gui_running()) {
+                const double frame_wall_start = wall_seconds();
+                if (was_stepping) {
+                    run_clock.AddActiveInterval(prev_frame_wall, frame_wall_start,
+                                                system->GetChTime() - prev_frame_sim);
+                    ui.runStatus.active_wall_time = run_clock.ActiveWallTime();
+                    ui.runStatus.achieved_speed = run_clock.AchievedSpeed();
+                    ui.runStatus.has_achieved_speed = run_clock.HasAchievedSpeed();
+                }
+                prev_frame_wall = frame_wall_start;
+                prev_frame_sim = system->GetChTime();
+
                 if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
                     // Keep the window open at end_time; do not quit (that looks like a crash).
                     if (ui.simulationStarted) {
                         ui.simulationStarted = false;
                     }
+                    ui.runStatus.finished = true;
                     if (!announced_end_time) {
                         seastack::infra::cli::LogInfo(
                             std::string("Reached configured end_time: ") +
@@ -1094,6 +1520,22 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                         announced_end_time = true;
                     }
                 }
+
+                // Re-anchor pacing when stepping starts or the speed changes,
+                // so paused time or an old speed never causes a catch-up burst.
+                if (ui.simulationStarted && (!was_stepping || ui.playbackSpeed != paced_speed)) {
+                    pacer.SetSpeed(ui.playbackSpeed);
+                    pacer.Reset(system->GetChTime(), frame_wall_start);
+                    run_clock.ResetSpeedWindow();
+                    paced_speed = ui.playbackSpeed;
+                }
+                was_stepping = ui.simulationStarted;
+
+                if (!ui.simulationStarted) {
+                    ui.runStatus.steps_last_frame = 0;
+                    ui.runStatus.falling_behind = false;
+                }
+
                 if (ui.simulationStarted) {
                 double current_time = system->GetChTime();
 
@@ -1115,31 +1557,25 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                 }
 
                 try {
-                    // Small Chrono steps (e.g. MoorDyn dt = 0.5 ms) need many
-                    // substeps per render frame or the GUI crawls at ~0.03× realtime.
-                    // Realtime: step 1/60 s of simulated time per frame, then pace.
-                    // As fast as possible: step until the frame's wall-clock
-                    // budget is used, so the window still redraws ~30 times/s.
-                    constexpr double kGuiFrameSimBudget = 1.0 / 60.0;   // s (simulated)
-                    constexpr double kGuiFrameWallBudget = 1.0 / 30.0;  // s (wall clock)
-                    constexpr int kGuiMaxSubsteps = 400;
-                    int n_substeps = 1;
-                    if (enforce_realtime && loop_dt > 0.0) {
-                        n_substeps = static_cast<int>(std::ceil(kGuiFrameSimBudget / loop_dt));
-                        n_substeps = std::max(1, std::min(n_substeps, kGuiMaxSubsteps));
-                    }
-                    const auto frame_wall_start = std::chrono::steady_clock::now();
+                    // Steps due to keep simulated time on track at the requested
+                    // speed (unlimited: as many as fit in the frame's wall budget).
+                    // Stepping is always capped by the wall budget so the window
+                    // keeps redrawing; if the cap is hit, re-anchor and report
+                    // that the requested speed cannot be sustained.
+                    const int steps_due = pacer.StepsDue(current_time, frame_wall_start, loop_dt);
+                    int steps_taken = 0;
+                    bool budget_exhausted = false;
 
                     if (config.profile_mode) { t = std::chrono::steady_clock::now(); }
-                    for (int sub = 0; !enforce_realtime || sub < n_substeps; ++sub) {
+                    while (steps_taken < steps_due) {
                         if (yaml_end_time > 0.0 && system->GetChTime() >= yaml_end_time) {
                             break;
                         }
-                        if (!enforce_realtime && sub > 0 &&
-                            std::chrono::duration<double>(std::chrono::steady_clock::now() - frame_wall_start)
-                                    .count() >= kGuiFrameWallBudget) {
+                        if (steps_taken > 0 && wall_seconds() - frame_wall_start >= kGuiFrameWallBudget) {
+                            budget_exhausted = true;
                             break;
                         }
+                        runtime_controls.ApplyDue(step_count, system->GetChTime());
 #ifdef SEASTACK_HAVE_EXTERNAL
                         if (controller) {
                             controller->BeforeStep(system->GetChTime());
@@ -1147,8 +1583,16 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 #endif
                         system->DoStepDynamics(loop_dt);
                         step_count++;
+                        steps_taken++;
+                        ui.AfterStep(system->GetChTime());
                         if (exporter) {
                             exporter->RecordStep(system.get());
+                            record_incident_elevation();
+#ifdef SEASTACK_HAVE_MOORDYN
+                            if (hydro_forces) {
+                                exporter->RecordMooringLines(hydro_forces->GetMooringLineStates());
+                            }
+#endif
                             if (export_detailed_hydro) {
                                 exporter->RecordHydroForces(hydro_forces->GetLastComponentForces());
                             }
@@ -1157,12 +1601,16 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                             break;
                         }
                     }
-                    if (enforce_realtime) {
-                        realtime_timer.Spin(static_cast<double>(n_substeps) * loop_dt);
-                    }
                     if (config.profile_mode) { prof_loop_seconds += std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - t).count(); }
 
-                    if (first_step) {
+                    const bool falling_behind = budget_exhausted && !pacer.IsUnlimited();
+                    if (falling_behind) {
+                        pacer.Reset(system->GetChTime(), wall_seconds());
+                    }
+                    ui.runStatus.steps_last_frame = steps_taken;
+                    ui.runStatus.falling_behind = falling_behind;
+
+                    if (first_step && steps_taken > 0) {
                         double new_time = system->GetChTime();
                         if (std::abs(new_time - current_time) < 1e-12) {
                             seastack::infra::cli::LogWarning("⚠️ Simulation did not progress — check constraints, initial state, or instability");
@@ -1236,16 +1684,89 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
                     break;
                 }
             }
+
+            ui.runStatus.sim_time = system->GetChTime();
+
+            // Frame limiter: when paced or paused there is no need to render
+            // faster than the display can show; in unlimited mode the wall
+            // budget already bounds the frame time.
+            const bool unlimited = ui.simulationStarted && pacer.IsUnlimited();
+            if (!unlimited) {
+                const double frame_rate = (ui.simulationStarted || ui.animatingWithoutStepping)
+                                              ? kGuiRunningFrameRate
+                                              : kGuiPausedFrameRate;
+                const double remaining = 1.0 / frame_rate - (wall_seconds() - frame_wall_start);
+                if (remaining > 0.0) {
+                    std::this_thread::sleep_for(std::chrono::duration<double>(remaining));
+                }
+            }
+
+            // Slow motion (a step lasts longer than a frame): the time to draw
+            // next lies between the last two steps, one step behind the pacer
+            // target. The GUI interpolates there; visual only.
+            const bool slow_motion = ui.simulationStarted && !pacer.IsUnlimited() && pacer.IsAnchored() &&
+                                     loop_dt > ui.playbackSpeed / kGuiRunningFrameRate;
+            ui.runStatus.display_time = slow_motion ? pacer.TargetSimTime(wall_seconds()) - loop_dt
+                                                    : std::numeric_limits<double>::quiet_NaN();
+            }
+            active_wall_s = run_clock.ActiveWallTime();
+#ifdef _WIN32
+            timeEndPeriod(1);
+#endif
+            if (!viewer_error.empty()) {
+                seastack::infra::cli::LogError("Viewer error at t = " +
+                                               seastack::infra::FormatNumber(system->GetChTime(), 3) +
+                                               " s: " + viewer_error +
+                                               ". The run stopped; results up to this time are written.");
+                if (step_error.empty()) {
+                    step_error = "viewer error: " + viewer_error;
+                }
             }
         }
 
         auto wall_end = std::chrono::steady_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start);
         const double wall_s = std::chrono::duration_cast<std::chrono::duration<double>>(wall_end - wall_start).count();
+        const double setup_wall_s = std::chrono::duration<double>(loop_start - wall_start).count();
+        const double loop_wall_s = std::chrono::duration<double>(wall_end - loop_start).count();
+        active_wall_s = std::min(active_wall_s, loop_wall_s);
+        const double paused_wall_s = std::max(0.0, loop_wall_s - active_wall_s);
+
+        if (runtime_controls.UnappliedScheduledCount() > 0) {
+            seastack::infra::cli::LogWarning(
+                "Schedule: " + std::to_string(runtime_controls.UnappliedScheduledCount()) +
+                " parameter change(s) not applied (scheduled after the run ended)");
+        }
+        if (runtime_controls.HasGuiEvents() && !schedule_export_path.empty()) {
+            try {
+                seastack::chrono::WriteRuntimeSchedule(
+                    schedule_export_path, runtime_controls.events(), loop_dt,
+                    "Parameter changes from the GUI run that wrote " +
+                        std::filesystem::path(persisted_hdf5_path).filename().string());
+                seastack::infra::cli::LogInfo("Schedule of GUI parameter changes: " + schedule_export_path);
+            } catch (const std::exception& e) {
+                seastack::infra::cli::LogWarning(e.what());
+            }
+        }
 
         // Finalize HDF5 output with runtime metadata
         if (exporter) {
+            {
+                std::vector<long long> steps;
+                std::vector<double> times, values, previous;
+                std::vector<std::string> parameters, origins;
+                for (const auto& e : runtime_controls.events()) {
+                    steps.push_back(e.command.step);
+                    times.push_back(e.command.time);
+                    parameters.push_back(e.command.parameter);
+                    values.push_back(e.command.value);
+                    previous.push_back(e.previous_value);
+                    origins.push_back(e.origin);
+                }
+                exporter->SetRuntimeEvents(steps, times, parameters, values, previous, origins);
+            }
             exporter->SetRunMetadata(std::string(""), std::string(""), wall_s, step_count, loop_dt, system->GetChTime());
+            exporter->SetRunTiming(setup_wall_s, active_wall_s, paused_wall_s, !nogui);
             exporter->Finalize();
         }
 
@@ -1287,10 +1808,11 @@ SingleRunResult RunSingleCase(const SingleRunConfig& config) {
 
         if (show_system_banner) {
             const double sim_elapsed = system->GetChTime() - initial_time;
-            const double rtf = (wall_s > 1e-9) ? (sim_elapsed / wall_s) : -1.0;
+            // Simulation speed uses compute time, so GUI pauses and setup do not dilute it.
+            const double rtf = (active_wall_s > 1e-9) ? (sim_elapsed / active_wall_s) : -1.0;
             seastack::infra::cli::ShowSimulationResults(system->GetChTime(), step_count, wall_s, rtf,
                                                         result.primary_artifact_path, result.artifact_note,
-                                                        config.cli_log_file_path);
+                                                        config.cli_log_file_path, active_wall_s);
         }
 
         // Populate result

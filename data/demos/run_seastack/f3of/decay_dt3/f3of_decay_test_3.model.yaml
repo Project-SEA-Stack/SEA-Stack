@@ -22,7 +22,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/base.obj
-        color: [0.3, 0.1, 0.1]
+        color: [0.80, 0.16, 0.12]
 
     # Fore flap (body2) with initial 10 deg pitch
     - name: body2
@@ -38,7 +38,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/flap.obj
-        color: [0.3, 0.1, 0.6]
+        color: [0.95, 0.75, 0.10]
 
     # Aft flap (body3), no initial pitch
     - name: body3
@@ -54,7 +54,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/flap.obj
-        color: [0.3, 0.6, 0.1]
+        color: [0.95, 0.75, 0.10]
 
     # Ground body
     - name: ground

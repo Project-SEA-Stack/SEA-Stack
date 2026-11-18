@@ -65,6 +65,12 @@ if(TARGET seastack_hydro_io)
         "SEASTACK_TEST_WIGLEY_H5_FILE=\"${_seastack_test_wigley_h5}\"")
     set_tests_properties(test_h5_reader_simulation_params PROPERTIES LABELS "unit;chrono-free")
 
+    # IRF excitation frees component sets its kernel can no longer reach
+    build_unit_test(test_irf_layer_release)
+    target_link_libraries(test_irf_layer_release PRIVATE SEAStack::HydroIO)
+    target_compile_definitions(test_irf_layer_release PRIVATE "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+    set_tests_properties(test_irf_layer_release PROPERTIES LABELS "unit;chrono-free")
+
     build_unit_test(test_rm3_wave_yaml_depth_precedence)
     target_link_libraries(test_rm3_wave_yaml_depth_precedence PRIVATE SEAStack::HydroIO)
     target_compile_definitions(test_rm3_wave_yaml_depth_precedence PRIVATE
@@ -117,6 +123,58 @@ set_tests_properties(test_nonlinear_froude_krylov PROPERTIES LABELS "unit;chrono
 build_unit_test(test_excitation_ramp_visualization)
 target_link_libraries(test_excitation_ramp_visualization PRIVATE SEAStack::Hydro)
 set_tests_properties(test_excitation_ramp_visualization PROPERTIES LABELS "unit;chrono-free")
+
+# GUI simulation pacing and run clock (Chrono-free, VSG-free)
+build_unit_test(test_simulation_pacer)
+target_link_libraries(test_simulation_pacer PRIVATE SEAStack::VizCore)
+set_tests_properties(test_simulation_pacer PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_scene_framing)
+target_link_libraries(test_scene_framing PRIVATE SEAStack::VizCore)
+set_tests_properties(test_scene_framing PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_viewer_preferences)
+target_link_libraries(test_viewer_preferences PRIVATE SEAStack::VizCore)
+set_tests_properties(test_viewer_preferences PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_water_colormap)
+target_link_libraries(test_water_colormap PRIVATE SEAStack::VizCore)
+set_tests_properties(test_water_colormap PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_mesh_normals)
+target_link_libraries(test_mesh_normals PRIVATE SEAStack::VizCore)
+set_tests_properties(test_mesh_normals PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_color_range)
+target_link_libraries(test_color_range PRIVATE SEAStack::VizCore)
+set_tests_properties(test_color_range PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_slider_step)
+target_link_libraries(test_slider_step PRIVATE SEAStack::VizCore)
+set_tests_properties(test_slider_step PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_scene_model)
+target_link_libraries(test_scene_model PRIVATE SEAStack::VizCore)
+set_tests_properties(test_scene_model PROPERTIES LABELS "unit;chrono-free")
+
+# Plots / trajectories / force arrows: series from recorded frames (viz_core only)
+build_unit_test(test_frame_series)
+target_link_libraries(test_frame_series PRIVATE SEAStack::VizCore)
+set_tests_properties(test_frame_series PROPERTIES LABELS "unit;chrono-free")
+
+# Mouse picking: camera rays and ray / shape intersection (viz_core only)
+build_unit_test(test_scene_picking)
+target_link_libraries(test_scene_picking PRIVATE SEAStack::VizCore)
+set_tests_properties(test_scene_picking PROPERTIES LABELS "unit;chrono-free")
+
+build_unit_test(test_primitive_meshes)
+target_link_libraries(test_primitive_meshes PRIVATE SEAStack::VizCore)
+set_tests_properties(test_primitive_meshes PROPERTIES LABELS "unit;chrono-free")
+
+# Radiated-wave overlay: patterns from B(w) / excitation and time-domain synthesis (viz_core only)
+build_unit_test(test_radiated_waves)
+target_link_libraries(test_radiated_waves PRIVATE SEAStack::VizCore)
+set_tests_properties(test_radiated_waves PROPERTIES LABELS "unit;chrono-free")
 
 # PTO tests (Chrono-free, HDF5-free)
 build_unit_test(test_linear_pto)
@@ -320,6 +378,15 @@ if(Python3_FOUND)
     )
     set_tests_properties(test_demo_features_python PROPERTIES
         LABELS "unit" COST 5 SKIP_RETURN_CODE 77)
+    # Capytaine phase fix runs once per file (exit code 77 = no h5py).
+    add_test(
+        NAME test_fix_capytaine_excitation_phase
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/python/test_fix_capytaine_excitation_phase.py"
+    )
+    set_tests_properties(test_fix_capytaine_excitation_phase PROPERTIES
+        LABELS "unit;chrono-free" COST 1 SKIP_RETURN_CODE 77)
+    seastack_python_interpreter_dll_path(test_fix_capytaine_excitation_phase)
     if(TARGET run_seastack)
         set_property(TEST test_demo_features_python APPEND PROPERTY
             ENVIRONMENT "SEASTACK_RUN_SEASTACK=$<TARGET_FILE:run_seastack>")
@@ -356,6 +423,22 @@ endif()
 build_unit_test(test_excitation_ramp_accumulation)
 target_link_libraries(test_excitation_ramp_accumulation PRIVATE SEAStack::Hydro)
 set_tests_properties(test_excitation_ramp_accumulation PROPERTIES LABELS "unit;chrono-free")
+
+# Runtime wave amplitude envelope (live wave height) and FD excitation scaling (Chrono-free)
+build_unit_test(test_amplitude_envelope)
+target_link_libraries(test_amplitude_envelope PRIVATE SEAStack::Hydro)
+set_tests_properties(test_amplitude_envelope PROPERTIES LABELS "unit;chrono-free")
+
+# Live wave period / direction: guardrails, crossfade, FD excitation (Chrono-free)
+build_unit_test(test_sea_state_change)
+target_link_libraries(test_sea_state_change PRIVATE SEAStack::Hydro)
+set_tests_properties(test_sea_state_change PROPERTIES LABELS "unit;chrono-free")
+
+# GPU water: displayed wave components vs the visualization elevation (header in apps/seastack/gui)
+build_unit_test(test_water_display_components)
+target_link_libraries(test_water_display_components PRIVATE SEAStack::Hydro)
+target_include_directories(test_water_display_components PRIVATE "${CMAKE_SOURCE_DIR}/apps/seastack/gui")
+set_tests_properties(test_water_display_components PROPERTIES LABELS "unit;chrono-free")
 
 # Excitation TF interpolation on uniform vs non-uniform omega grids (Chrono-free, HDF5-free)
 build_unit_test(test_excitation_nonuniform_grid)
@@ -420,6 +503,14 @@ if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
         "SEASTACK_TEST_RM3_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3/assets/hydroData/rm3.h5\"")
     set_tests_properties(test_radiation_constant_coefficients PROPERTIES LABELS "unit;chrono")
 
+    # Radiated-wave overlay inputs: B(w) from the RIRF, Haskind power, heading-frame velocities.
+    build_unit_test(test_radiation_viz_inputs)
+    target_link_libraries(test_radiation_viz_inputs PRIVATE SEAStack::ChronoAdapter)
+    target_compile_definitions(test_radiation_viz_inputs PRIVATE
+        "SEASTACK_TEST_RM3_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/rm3/assets/hydroData/rm3.h5\""
+        "SEASTACK_TEST_WIGLEY_H5_FILE=\"${CMAKE_SOURCE_DIR}/data/demos/run_seastack/wigley/assets/hydroData/wigley_directional.h5\"")
+    set_tests_properties(test_radiation_viz_inputs PROPERTIES LABELS "unit;chrono")
+
     # Block-style hull damping in hydro YAML reaches the simulation (TALOS-style:
     # one body, regular waves, constant_coefficients).
     build_unit_test(test_yaml_damping_regression)
@@ -456,12 +547,50 @@ else()
     message(STATUS "Skipping test_adapter_layer (requires SEASTACK_ENABLE_CHRONO)")
 endif()
 
+# Runtime controls: registry, ownership, bit-identical functor swap, schedules
+if(TARGET seastack_chrono_adapter)
+    build_unit_test(test_runtime_controls)
+    target_link_libraries(test_runtime_controls PRIVATE SEAStack::ChronoAdapter)
+    set_tests_properties(test_runtime_controls PROPERTIES LABELS "unit;chrono")
+endif()
+
+# Chrono -> viz_core scene extractor (headless Chrono, no VSG)
+if(TARGET seastack_chrono_adapter)
+    build_unit_test(test_viz_extractor)
+    target_link_libraries(test_viz_extractor PRIVATE SEAStack::ChronoAdapter)
+    set_tests_properties(test_viz_extractor PROPERTIES LABELS "unit;chrono")
+endif()
+
 # Export redesign tests (H5Writer compression/F32, HydroForces per-component, ExportConfig)
 if(TARGET seastack_hydro_io AND TARGET seastack_chrono_adapter)
     build_unit_test(test_export_redesign)
     # ChronoAdapter already PUBLIC-links Hydro, HydroIO (when built), Infra, PTO, Core, Chrono.
     target_link_libraries(test_export_redesign PRIVATE SEAStack::ChronoAdapter)
     set_tests_properties(test_export_redesign PROPERTIES LABELS "unit")
+
+    # Replay data: exporter /visualization + series -> LoadReplayRecording round trip
+    build_unit_test(test_visualization_recording)
+    target_link_libraries(test_visualization_recording PRIVATE SEAStack::ChronoAdapter)
+    set_tests_properties(test_visualization_recording PROPERTIES LABELS "unit;chrono")
+
+    # RunSingleCase keeps results when the viewer or replay recording fails
+    if(TARGET seastack_app_lib)
+        build_unit_test(test_single_run_failures)
+        target_link_libraries(test_single_run_failures PRIVATE seastack_app_lib)
+        target_include_directories(test_single_run_failures PRIVATE
+            "${CMAKE_BINARY_DIR}" "${CMAKE_SOURCE_DIR}/apps/seastack/gui")
+        target_compile_definitions(test_single_run_failures PRIVATE
+            "SEASTACK_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\"")
+        set_tests_properties(test_single_run_failures PROPERTIES LABELS "unit;chrono" COST 20)
+
+        # Panel theme switches do not compound the display scale
+        if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
+            build_unit_test(test_vsg_theme)
+            target_link_libraries(test_vsg_theme PRIVATE seastack_app_lib)
+            target_include_directories(test_vsg_theme PRIVATE "${CMAKE_SOURCE_DIR}/apps/seastack/gui")
+            set_tests_properties(test_vsg_theme PROPERTIES LABELS "unit;chrono")
+        endif()
+    endif()
 else()
     message(STATUS "Skipping test_export_redesign (requires SEASTACK_ENABLE_HYDRO_IO + SEASTACK_ENABLE_CHRONO)")
 endif()

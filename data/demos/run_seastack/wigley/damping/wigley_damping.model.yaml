@@ -21,7 +21,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/wigley.obj
-        color: [0.3, 0.3, 0.5]
+        color: [0.80, 0.16, 0.12]
 
     # Ground reference body
     - name: ground

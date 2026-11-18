@@ -124,7 +124,8 @@ public:
                                double real_time_factor,
                                const std::string& hdf5_path,
                                const std::string& artifact_note,
-                               const std::string& log_path);
+                               const std::string& log_path,
+                               double compute_time);
     /**
      * @brief Show a concise path to the active log file (if enabled).
      */
@@ -399,11 +400,15 @@ void CLILogger::ShowSimulationResults(double final_time, int steps, double wall_
                                         double real_time_factor,
                                         const std::string& hdf5_path,
                                         const std::string& artifact_note,
-                                        const std::string& log_path) {
+                                        const std::string& log_path,
+                                        double compute_time) {
     std::vector<std::string> lines;
     lines.push_back(CreateAlignedLine("•", "Final time", FormatNumber(final_time, 2) + " s"));
     lines.push_back(CreateAlignedLine("•", "Steps", std::to_string(steps)));
     lines.push_back(CreateAlignedLine("•", "Wall time", FormatNumber(wall_time, 2) + " s"));
+    if (compute_time >= 0.0) {
+        lines.push_back(CreateAlignedLine("•", "Compute time", FormatNumber(compute_time, 2) + " s"));
+    }
     if (real_time_factor >= 0.0) {
         lines.push_back(CreateAlignedLine(
             "•", "Simulation speed", FormatNumber(real_time_factor, 2) + "x real time"));
@@ -927,11 +932,12 @@ void ShowSimulationResults(double final_time, int steps, double wall_time,
                            double real_time_factor,
                            const std::string& hdf5_path,
                            const std::string& artifact_note,
-                           const std::string& log_path) {
+                           const std::string& log_path,
+                           double compute_time) {
     auto logger = GetCLILogger();
     if (logger) {
         logger->ShowSimulationResults(final_time, steps, wall_time, real_time_factor, hdf5_path,
-                                      artifact_note, log_path);
+                                      artifact_note, log_path, compute_time);
     }
 }
 

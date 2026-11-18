@@ -446,6 +446,7 @@ add_subdirectory(libs/hydro)
 add_subdirectory(libs/infrastructure)
 add_subdirectory(libs/pto)
 add_subdirectory(libs/control)
+add_subdirectory(libs/viz_core)
 
 if(SEASTACK_ENABLE_EXTERNAL)
     add_subdirectory(libs/external)
@@ -572,7 +573,8 @@ endif()
 # ---------- Library install & export ----------
 
 # Always-built library targets
-set(_seastack_lib_targets seastack_core seastack_hydro seastack_infra seastack_pto seastack_control)
+set(_seastack_lib_targets seastack_core seastack_hydro seastack_infra seastack_pto seastack_control
+    seastack_viz_core)
 
 if(TARGET seastack_external)
     list(APPEND _seastack_lib_targets seastack_external)
@@ -595,6 +597,7 @@ set_target_properties(seastack_hydro PROPERTIES EXPORT_NAME Hydro)
 set_target_properties(seastack_infra PROPERTIES EXPORT_NAME Infra)
 set_target_properties(seastack_pto PROPERTIES EXPORT_NAME PTO)
 set_target_properties(seastack_control PROPERTIES EXPORT_NAME Control)
+set_target_properties(seastack_viz_core PROPERTIES EXPORT_NAME VizCore)
 if(TARGET seastack_external)
     set_target_properties(seastack_external PROPERTIES EXPORT_NAME External)
 endif()
@@ -622,6 +625,7 @@ install(DIRECTORY libs/hydro/include/         DESTINATION include)
 install(DIRECTORY libs/infrastructure/include/ DESTINATION include)
 install(DIRECTORY libs/pto/include/           DESTINATION include)
 install(DIRECTORY libs/control/include/       DESTINATION include)
+install(DIRECTORY libs/viz_core/include/      DESTINATION include)
 if(TARGET seastack_external)
     install(DIRECTORY libs/external/include/ DESTINATION include)
 endif()
@@ -1071,6 +1075,10 @@ endif()
 # Packaged compare_template.py imports plot_helpers from tests/utilities (flat install layout).
 install(FILES "${CMAKE_SOURCE_DIR}/tests/utilities/plot_helpers.py"
         DESTINATION tests/utilities COMPONENT runtime)
+
+# One-off fix for BEM files written by older Capytaine run_bem.py scripts (release notes).
+install(FILES "${CMAKE_SOURCE_DIR}/scripts/fix_capytaine_excitation_phase.py"
+        DESTINATION scripts COMPONENT runtime)
 
 # macOS: the Vulkan loader bundled via RUNTIME_DEPENDENCIES needs a driver. Ship MoltenVK and its
 # ICD manifest (library_path "../../../lib/libMoltenVK.dylib" matches share/vulkan/icd.d -> lib);

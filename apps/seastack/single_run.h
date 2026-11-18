@@ -15,9 +15,14 @@
 #include <seastack/adapters/chrono/simulation_export.h>
 #include <seastack/infra/config/yaml_discovery.h>
 
+#include <memory>
 #include <string>
 #include <variant>
 #include <vector>
+
+namespace seastack::viz {
+class UI;
+}
 
 namespace seastack::app {
 
@@ -58,6 +63,7 @@ struct SingleRunConfig {
     /// When true (e.g. power-matrix cells), hide repetitive startup banners unless debug_mode.
     bool concise_cli    = false;
     bool nogui          = true;
+    std::string viewer  = "seastack";  ///< GUI renderer: "seastack" or "chrono"
     bool debug_mode     = false;
     bool trace_mode     = false;
     bool profile_mode   = false;
@@ -76,6 +82,16 @@ struct SingleRunConfig {
     /// Optional tension-only ropes YAML (resolved path; empty = none).
     /// Requires a build with SEASTACK_ENABLE_EXTERNAL.
     std::string ropes_file;
+
+    /// Optional runtime schedule YAML (--schedule): parameter changes applied
+    /// at step boundaries, e.g. exported from a GUI run. Empty = none.
+    std::string schedule_file;
+
+    /// Tests only: run the interactive loop with this UI instead of creating
+    /// one (`nogui` and `viewer` are then ignored). Empty = normal behaviour.
+    std::shared_ptr<seastack::viz::UI> ui_override;
+    /// Tests only: fail the replay-data recording after /visualization is written.
+    bool test_fail_visual_recording = false;
 };
 
 /// Per-PTO viscous damper power metrics from a single run (see SimulationExporter::GetPtoSummary).

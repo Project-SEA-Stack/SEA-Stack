@@ -75,6 +75,14 @@ class H5Writer {
           */
         [[nodiscard]] Group CreateGroup(const std::string& name) const;
          /**
+          * @brief Remove a direct child (group or dataset) of this group. Requires: Valid().
+          * @param name Child name (single path segment).
+          * @return False if no such child exists.
+          * @throws std::logic_error if this Group handle is not valid.
+          * @throws H5::Exception on HDF5 failures
+          */
+        bool Unlink(const std::string& name) const;
+         /**
           * @brief Write a string attribute on this group. Requires: Valid().
           * @param name Attribute name
           * @param value UTF-8 string value
@@ -147,6 +155,12 @@ class H5Writer {
         /** @brief Write a 2D dataset stored as float32 (source data is double). */
         void WriteDatasetF32(const std::string& name, const std::vector<double>& data,
                              const std::array<hsize_t, 2>& dims, const WriteOptions& opts) const;
+        /** @brief Write a 3D double dataset (row-major) with optional gzip compression. */
+        void WriteDataset(const std::string& name, const std::vector<double>& data,
+                          const std::array<hsize_t, 3>& dims, const WriteOptions& opts) const;
+        /** @brief Write a 3D dataset (row-major) stored as float32 (source data is double). */
+        void WriteDatasetF32(const std::string& name, const std::vector<double>& data,
+                             const std::array<hsize_t, 3>& dims, const WriteOptions& opts) const;
 
       private:
         H5::Group group_;

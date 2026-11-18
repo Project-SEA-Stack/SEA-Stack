@@ -24,7 +24,7 @@ model:
           - type: SPHERE
             radius: 5.0
             location: [0, 0, 0]
-            color: [0.3, 0.1, 0.1]
+            color: [0.95, 0.75, 0.10]
             
     - name: ground
       location: [0, 0, 0]

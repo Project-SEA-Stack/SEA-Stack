@@ -1,6 +1,6 @@
 # SEA-Stack v1.1.0 release notes
 
-**Release date:** 13 November 2026. Changes since v1.0.0 (15 October 2026).
+**Release date:** 17 November 2026. Changes since v1.0.0 (15 October 2026).
 The v1.0.0 notes are unchanged:
 [RELEASE_NOTES_v1.0.0.md](RELEASE_NOTES_v1.0.0.md).
 
@@ -13,6 +13,10 @@ The v1.0.0 notes are unchanged:
   each control step. Demos: a sphere winch and a
   motion-compensated offshore crane.
 - IRF excitation and wave elevation records now respect `waves.direction`.
+- A new GUI: SEA-Stack's own 3D viewer, now the default, with a timeline,
+  replay of recorded runs (`--replay`), live changes to springs, dampers
+  and the sea state while the model runs, force arrows and live plots, and
+  waves radiated by the bodies drawn from the BEM data.
 
 ## New features
 
@@ -91,7 +95,94 @@ The v1.0.0 notes are unchanged:
   are in `demos/features/`; in the source tree they are in
   `data/demos/run_seastack/features/`.
 
+## GUI and visualization
+
+A run that is not changed from the GUI gives the same results (`/results`)
+as before, with or without the GUI. The results file is larger: replay data
+is always recorded (see Timeline and replay). User guide:
+[docs/usage/GUI.md](../usage/GUI.md).
+
+- **SEA-Stack viewer, now the default.** `run_seastack` opens SEA-Stack's
+  own viewer. The Chrono viewer stays for this release: use
+  `--viewer=chrono` to choose it. It also opens automatically, with a
+  warning, if a model contains something the new viewer cannot draw or if
+  the new viewer fails to start. It will be removed in a later release.
+- **Timeline and replay.** Scrub, step and play back the run so far, at
+  0.05x to 20x, then return to live; slow motion is interpolated.
+  `run_seastack --replay results.h5` plays a recorded run without Chrono,
+  with the same controls, force arrows and plots, and shows any live sea
+  changes. Recording costs about 1% of step time and is always on. The
+  replay data (`/visualization`) makes results files 25 to 33% larger: RM3
+  irregular waves over 180 s grows from 9.4 MB to 12.5 MB.
+- **Mooring lines in the results file (`/results/mooring`).** Peak tension
+  per line at every recorded step, and node positions and tensions for
+  replay, following `--output-level`: none at `compact`, 10 Hz float32 at
+  `standard` (default), every recorded step at `detailed`. For RM3 with
+  moorings over 400 s the file is 21.4 MB, 33.4 MB and 113 MB at the three
+  levels, against 20.8 MB without mooring recording.
+- **Live changes while the model runs.** The Inspector has sliders for TSDA
+  and RSDA stiffness, damping and rest length or angle, and for the sea
+  state: wave height, period and direction. Changes apply at a step
+  boundary and are logged in the results file (`/events`; wave changes
+  with their components under `/events/waves`).
+  - A height change ramps over two wave periods. After the ramp the forces
+    are those of the new sea; during it, IRF excitation differs slightly
+    from frequency-domain excitation, because the convolution scales each
+    past elevation sample by the ramp value at its own time.
+  - A period or direction change cross-fades to the new sea over two
+    periods. The weights sum to one, so the wave height dips mid-fade (to
+    about 0.7 of Hs for unrelated seas, possibly lower). It is refused,
+    with the reason shown, if more than 1% of the
+    wave energy would fall outside the BEM frequencies or headings. It is
+    also refused for a period change with constant-coefficient radiation,
+    for a direction change with one IRF excitation kernel for several
+    headings, and while a previous change is still fading in.
+  - Each run with changes writes a schedule file next to its HDF5 results;
+    `--schedule FILE` replays it in a batch run.
+- **Analysis overlays.** Force and moment arrows for each hydrodynamic
+  component at each centre of mass, centre-of-mass trails, and live plots of
+  body motion and loads. Click a body to select it; the model tree can show,
+  hide, isolate or frame each body.
+- **Radiated waves from the BEM data.** The water shows the waves each body
+  radiates, built from the radiation damping B(ω), or, where the BEM file
+  has enough headings, from the excitation force through the Haskind
+  relation. Auto picks the best method the data supports. This replaces the
+  v1.0 overlay, whose amplitudes were guessed. It is a visual approximation:
+  diffraction is not shown, and nothing feeds back into the simulation.
+- **Water.** A water shader with sky reflection and sun glint, a new
+  Elevation style that colours the sea by height with a legend, and grid
+  detail set from the wavelength so model and full scale look alike.
+- **Usability.** Dark and light themes, a docked transport bar and
+  inspector, soft shadows between bodies, body frames and labels, and model-scaled
+  camera framing. Viewer preferences are kept between runs. Playback
+  speed runs from 0.05x to 20x, plus Max (as fast as possible) for the live
+  run. The status bar reports active wall time; `/meta/run` records setup,
+  active and paused time. In a GUI run, active time includes drawing and
+  pacing, so use a `--nogui` run for compute speed.
+- **`enforce_realtime` is ignored.** The viewer always starts at real time
+  (1x) and the speed is set from the transport bar. In v1.0,
+  `enforce_realtime: false` (the default, and the setting in the shipped
+  demos) ran the GUI as fast as possible. Headless runs are unchanged.
+
 ## Fixes
+
+- **Capytaine-generated demo hydro files had conjugated excitation phases.**
+  Capytaine uses e^(−iωt) and SEA-Stack e^(+iωt), and the `run_bem.py`
+  writers did not convert. The 5SA, trimaran and Wigley BEM files therefore
+  had the wrong excitation phase and a time-reversed excitation IRF. The
+  writers are fixed; `trimaran.h5` and `wigley_directional.h5` are
+  converted, and `5sa.h5` and `5sa_directional.h5` are re-solved with 200 and
+  400 frequencies (the old files had 30, which aliased the radiation IRF).
+  `5sa_directional.h5` also moves from 13 headings at 30 deg to 36 at
+  10 deg. Results for these demos change: in `5sa/spreading` the heave
+  standard deviation changes by −9% to +76% per body and pitch by −1% to
+  +56%; the heading grid alone accounts for up to 5% in heave and 10% in
+  pitch. If you made your own files with these `run_bem.py` scripts,
+  convert them with `scripts/fix_capytaine_excitation_phase.py` (in the
+  source tree and the release package). Run it once per file: it marks the
+  file and refuses to convert it again (`--force` overrides). Files written
+  by the fixed `run_bem.py` scripts are already converted and carry no
+  mark: do not run the script on them.
 
 - **Linear hydrodynamic forces now turn with the body's heading.**
   Hydrostatic restoring, radiation (RIRF, state-space and
@@ -179,10 +270,20 @@ The v1.0.0 notes are unchanged:
   still come from the BEM solution at zero yaw, and excitation still uses
   the world wave direction rather than the direction relative to the hull.
   Wave phase is referenced to the BEM origin, so a body that drifts away
-  sees the waves at the origin, and there is no mean wave-drift force. A
-  free-floating hull can therefore drift in yaw (up to 26 deg in the Wigley
-  spreading demo) with only approximate forcing. Interpolation over relative
-  heading is planned for v1.2.
+  sees the waves at the origin, and there is no mean wave-drift force.
+  Interpolation over relative heading is planned for v1.2.
+- **A free-floating hull with no yaw restraint can spin.** Nothing in the
+  linear model resists slow yaw: there is no yaw restoring, and yaw
+  radiation damping is almost zero below the wave band. Second-order terms
+  from combined roll and pitch then build up a net yaw rate. They are not
+  treated consistently: Chrono applies the infinite-frequency added mass as
+  a constant matrix in its velocity coordinates, without the matching
+  gyroscopic term. Without yaw damping, the Wigley spreading hull turned
+  150-330 deg in 600 s for seven of eight wave seeds tried, in either
+  direction; the earlier "up to 26 deg" was one seed. Both Wigley demos now include a
+  linear yaw damping of 1e7 N m s/rad (time constant about 20 s), which
+  stands in for a mooring and keeps the yaw within about 22 deg. Moor
+  free-floating models or add yaw damping.
 - **The trimaran demo's BEM file has a single heading.** Its spread sea is
   forced as if every component came from 0 deg, so the hull sees only
   head-sea excitation.
@@ -203,6 +304,11 @@ The v1.0.0 notes are unchanged:
 - **The external controller interface is a preview.** Channel names, YAML
   keys and the Python API may change. Limits are listed in
   [CONTROLLERS.md](../extending/CONTROLLERS.md#limits-v11-preview).
+- **The SEA-Stack viewer has been tested on Windows only.** On another
+  platform, if it fails to start, the run falls back to the Chrono viewer
+  with a warning.
+- **Results files written before this release cannot be replayed.** They
+  have no `/visualization` group; the viewer says so.
 - **Not yet done** (recorded in the theory note, section 10): the Aalborg
   University sphere decay experiment, CCP-WSI Blind Test 3 (waiting on a
   licence check), and a WEC-Sim ellipsoid demonstration.

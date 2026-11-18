@@ -8,6 +8,7 @@ Checks:
   - demos/ contains exactly the expected case directories (allowlist below);
   - bin/ contains run_seastack (run_seastack.exe on Windows), and SDK-only
     executables are absent (on Windows, run_seastack.exe is the only .exe);
+  - user tools named in the release notes are present (REQUIRED_FILES);
   - nothing forbidden is packaged: Wigley demos, run outputs, logs, meshes,
     caches, release notes, the downstream-consumer test.
 
@@ -37,11 +38,14 @@ EXPECTED_DEMO_CASES = {
                    "regular_waves_nlfk"},
     "oswec": {"assets", "decay", "divergence_limits", "external_pto",
               "external_pto_adaptive", "external_pto_hydraulic", "irregular_waves",
-              "regular_waves", "translucent_hull"},
+              "native_pto", "regular_waves", "translucent_hull"},
     "rm3": {"assets", "bimodal_sea", "decay", "decay_nl", "external_pto",
             "external_pto_adaptive", "external_pto_hydraulic", "irregular_waves", "mooring"},
     "trimaran": {"assets", "rigid"},
 }
+
+# Tools the release notes point users to.
+REQUIRED_FILES = {"scripts/fix_capytaine_excitation_phase.py"}
 
 # Built by `cmake --install` into the SDK component only; never in the runtime ZIP.
 SDK_ONLY_EXECUTABLES = {"standalone_controller", "standalone_hydro", "demo_sphere_decay"}
@@ -143,6 +147,10 @@ def main() -> int:
 
     ok = check_demos(names)
     ok = check_executables(names, args.platform) and ok
+    missing = sorted(REQUIRED_FILES - set(names))
+    if missing:
+        ok = False
+        print(f"FAIL required files missing: {missing}")
 
     bad = [n for n in names if any(p.search("/" + n) for p in FORBIDDEN)]
     if bad:

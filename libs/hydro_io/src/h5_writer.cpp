@@ -92,6 +92,17 @@ H5Writer::Group H5Writer::Group::CreateGroup(const std::string& name) const {
     return Group(created_group);
 }
 
+bool H5Writer::Group::Unlink(const std::string& name) const {
+    if (!Valid()) {
+        throw std::logic_error("Unlink: group handle is not valid");
+    }
+    if (!group_.nameExists(name)) {
+        return false;
+    }
+    group_.unlink(name);
+    return true;
+}
+
 void H5Writer::Group::WriteAttribute(const std::string& name, const std::string& value) const {
     if (!Valid()) {
         throw std::logic_error("WriteAttribute(string): group handle is not valid");
@@ -258,6 +269,48 @@ void H5Writer::Group::WriteDatasetF32(const std::string& name,
     for (size_t i = 0; i < data.size(); ++i) f32[i] = static_cast<float>(data[i]);
     H5::DataSpace data_space(2, dims.data());
     auto plist = MakePropList(2, dims.data(), opts.compression_level);
+    H5::DataSet ds = group_.createDataSet(name, H5::PredType::NATIVE_FLOAT,
+                                          data_space, plist);
+    ds.write(f32.data(), H5::PredType::NATIVE_FLOAT);
+}
+
+void H5Writer::Group::WriteDataset(const std::string& name,
+                                   const std::vector<double>& data,
+                                   const std::array<hsize_t, 3>& dims,
+                                   const WriteOptions& opts) const {
+    if (!Valid()) {
+        throw std::logic_error("WriteDataset(3D,opts): group handle is not valid");
+    }
+    if (static_cast<hsize_t>(data.size()) != dims[0] * dims[1] * dims[2]) {
+        std::ostringstream oss;
+        oss << "WriteDataset(3D, '" << name << "'): size mismatch. data.size()="
+            << data.size() << " dims product=" << (dims[0] * dims[1] * dims[2]);
+        throw std::invalid_argument(oss.str());
+    }
+    H5::DataSpace data_space(3, dims.data());
+    auto plist = MakePropList(3, dims.data(), opts.compression_level);
+    H5::DataSet ds = group_.createDataSet(name, H5::PredType::NATIVE_DOUBLE,
+                                          data_space, plist);
+    ds.write(data.data(), H5::PredType::NATIVE_DOUBLE);
+}
+
+void H5Writer::Group::WriteDatasetF32(const std::string& name,
+                                      const std::vector<double>& data,
+                                      const std::array<hsize_t, 3>& dims,
+                                      const WriteOptions& opts) const {
+    if (!Valid()) {
+        throw std::logic_error("WriteDatasetF32(3D): group handle is not valid");
+    }
+    if (static_cast<hsize_t>(data.size()) != dims[0] * dims[1] * dims[2]) {
+        std::ostringstream oss;
+        oss << "WriteDatasetF32(3D, '" << name << "'): size mismatch. data.size()="
+            << data.size() << " dims product=" << (dims[0] * dims[1] * dims[2]);
+        throw std::invalid_argument(oss.str());
+    }
+    std::vector<float> f32(data.size());
+    for (size_t i = 0; i < data.size(); ++i) f32[i] = static_cast<float>(data[i]);
+    H5::DataSpace data_space(3, dims.data());
+    auto plist = MakePropList(3, dims.data(), opts.compression_level);
     H5::DataSet ds = group_.createDataSet(name, H5::PredType::NATIVE_FLOAT,
                                           data_space, plist);
     ds.write(f32.data(), H5::PredType::NATIVE_FLOAT);

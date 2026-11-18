@@ -11,9 +11,12 @@
 #define SEASTACK_HYDRO_WAVES_WAVE_BASE_H
 
 #include <seastack/core/types.h>
+#include <seastack/hydro/waves/amplitude_envelope.h>
 #include <seastack/hydro/waves/wave_component.h>
 
 #include <Eigen/Core>
+#include <cstddef>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -24,6 +27,17 @@ enum class WaveMode {
     kNoWave   = 0,
     kRegular  = 1,
     kIrregular = 2
+};
+
+/// One component set of a live period or direction change: components
+/// [begin, end) of GetWaveComponents(), weighted by w(t) [-]. A change fades
+/// the current set out (w: 1 -> 0) and the new set in (w: 0 -> 1) with the
+/// same half-cosine ramp, so the weights sum to 1:
+///   eta(x, t) = sum_l w_l(t) sum_{i in l} A_i cos(k_i.x - w_i t + phi_i)
+struct WaveLayer {
+    std::size_t begin = 0;
+    std::size_t end = 0;
+    AmplitudeEnvelope weight;
 };
 
 /**
@@ -128,8 +142,25 @@ class WaveBase {
     /// Time-dependent factor applied to incident free-surface elevation in
     /// visualization so the GUI matches the excitation envelope. Does not
     /// change kinematic GetElevation() (used by IRF and other physics).
-    /// Default 1.0 (no scaling).
+    /// Includes the amplitude envelope e(t); default e(t) alone (no ramp).
     virtual double GetExcitationRampForVisualization(double time) const;
+
+    /// Runtime amplitude envelope e(t) [-] (live wave-height changes). Like the
+    /// excitation ramp it is not applied by GetElevation() and the other
+    /// kinematics: every force component and the visualization multiply
+    /// their ramp by e(t). Shared, so components can hold it.
+    const std::shared_ptr<AmplitudeEnvelope>& GetAmplitudeEnvelope() const { return amplitude_envelope_; }
+
+    /// Component sets of live period / direction changes, oldest first,
+    /// covering all of GetWaveComponents(). Empty until the first change:
+    /// every component then has weight 1 and consumers keep their original
+    /// code path, so unchanged runs are bit-identical. Unlike e(t), the
+    /// weights are applied by the kinematics (GetElevation and friends).
+    const std::vector<WaveLayer>& GetWaveLayers() const { return layers_; }
+
+    /// Weight w(t) [-] of every component (size of GetWaveComponents());
+    /// all 1 when there are no layers.
+    void GetComponentWeights(double time, Eigen::VectorXd& weights) const;
 
     /// Set excitation IRF truncation time [s]. 0 = full IRF.
     virtual void SetExcitationTruncationTime(double /*seconds*/) {}
@@ -164,6 +195,8 @@ class WaveBase {
     double water_depth_   = 0.0;
     bool wave_stretching_ = true;
     unsigned int num_bodies_ = 0;
+    std::shared_ptr<AmplitudeEnvelope> amplitude_envelope_ = std::make_shared<AmplitudeEnvelope>();
+    std::vector<WaveLayer> layers_;
 };
 
 class NoWave : public WaveBase {

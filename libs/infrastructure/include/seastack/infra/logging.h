@@ -253,12 +253,14 @@ void ShowDirectionalWaveModel(const std::string& wave_type,
  * @param hdf5_path Primary HDF5 artifact path when persisted (empty if none)
  * @param artifact_note Shown when HDF5 was not kept (e.g. temp/metrics-only run)
  * @param log_path Active log file path when file logging is enabled
+ * @param compute_time Wall time spent stepping in seconds, or negative to omit
  */
 void ShowSimulationResults(double final_time, int steps, double wall_time,
                            double real_time_factor = -1.0,
                            const std::string& hdf5_path = std::string(),
                            const std::string& artifact_note = std::string(),
-                           const std::string& log_path = std::string());
+                           const std::string& log_path = std::string(),
+                           double compute_time = -1.0);
 
 /**
  * @brief Display log file location

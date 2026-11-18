@@ -22,7 +22,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/segment_1.obj
-        color: [0.15, 0.35, 0.65]
+        color: [0.80, 0.16, 0.12]
 
     # Segment 2
     - name: body2
@@ -37,7 +37,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/segment_2.obj
-        color: [0.20, 0.45, 0.70]
+        color: [0.62, 0.11, 0.09]
 
     # Segment 3 (Middle)
     - name: body3
@@ -52,7 +52,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/segment_3.obj
-        color: [0.25, 0.55, 0.75]
+        color: [0.80, 0.16, 0.12]
 
     # Segment 4
     - name: body4
@@ -67,7 +67,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/segment_4.obj
-        color: [0.20, 0.45, 0.70]
+        color: [0.62, 0.11, 0.09]
 
     # Segment 5 (Tail)
     - name: body5
@@ -82,7 +82,7 @@ model:
         orientation: [0, 0, 0]
       visualization:
         model_file: ../assets/geometry/segment_5.obj
-        color: [0.15, 0.35, 0.65]
+        color: [0.80, 0.16, 0.12]
 
     # Ground reference body
     - name: ground
@@ -146,7 +146,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_12_bottom
       type: TSDA
@@ -157,7 +157,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_12_port
       type: TSDA
@@ -168,7 +168,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_12_stbd
       type: TSDA
@@ -179,7 +179,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     # ---- Joint 2-3 (x = 72) ----
     - name: ram_23_top
@@ -191,7 +191,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_23_bottom
       type: TSDA
@@ -202,7 +202,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_23_port
       type: TSDA
@@ -213,7 +213,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_23_stbd
       type: TSDA
@@ -224,7 +224,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     # ---- Joint 3-4 (x = 108) ----
     - name: ram_34_top
@@ -236,7 +236,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_34_bottom
       type: TSDA
@@ -247,7 +247,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_34_port
       type: TSDA
@@ -258,7 +258,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_34_stbd
       type: TSDA
@@ -269,7 +269,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     # ---- Joint 4-5 (x = 144) ----
     - name: ram_45_top
@@ -281,7 +281,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_45_bottom
       type: TSDA
@@ -292,7 +292,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_45_port
       type: TSDA
@@ -303,7 +303,7 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }
 
     - name: ram_45_stbd
       type: TSDA
@@ -314,4 +314,4 @@ model:
       spring_coefficient: 100000
       damping_coefficient: 2000000
       free_length: 2.0
-      visualization: { type: SPRING, radius: 0.15, resolution: 65, turns: 10 }
+      visualization: { type: SPRING, radius: 0.25, resolution: 80, turns: 10 }

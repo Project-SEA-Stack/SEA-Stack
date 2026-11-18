@@ -106,11 +106,40 @@ double NonlinearFroudeKrylovComponent::RampFactor(double time) const {
     return 0.5 * (1.0 - std::cos(kPi * time / ramp_duration_));
 }
 
-void NonlinearFroudeKrylovComponent::ComputeLinearFroudeKrylovCoefficients(BodyData& body) const {
+void NonlinearFroudeKrylovComponent::AddNewWaveComponents() {
+    const auto* comps = wave_->GetWaveComponents();
+    const Eigen::Index n_old = amplitudes_.size();
+    const Eigen::Index n_new = static_cast<Eigen::Index>(comps->size());
+    if (n_new <= n_old) return;
+    amplitudes_.conservativeResize(n_new);
+    omegas_.conservativeResize(n_new);
+    phases_.conservativeResize(n_new);
+    kx_.conservativeResize(n_new);
+    ky_.conservativeResize(n_new);
+    for (Eigen::Index i = n_old; i < n_new; ++i) {
+        const auto& c = (*comps)[static_cast<std::size_t>(i)];
+        amplitudes_[i] = c.amplitude;
+        omegas_[i]     = c.omega;
+        phases_[i]     = c.phase;
+        kx_[i]         = c.k * std::cos(c.direction);
+        ky_[i]         = c.k * std::sin(c.direction);
+    }
+    for (auto& body : bodies_) {
+        ComputeLinearFroudeKrylovCoefficients(body, n_old);
+    }
+}
+
+void NonlinearFroudeKrylovComponent::ComputeLinearFroudeKrylovCoefficients(BodyData& body,
+                                                                           Eigen::Index first) const {
     const Eigen::Index n_comp = amplitudes_.size();
-    body.linear_fk_cos = Eigen::MatrixXd::Zero(6, n_comp);
-    body.linear_fk_sin = Eigen::MatrixXd::Zero(6, n_comp);
-    if (n_comp == 0) return;
+    if (first == 0) {
+        body.linear_fk_cos = Eigen::MatrixXd::Zero(6, n_comp);
+        body.linear_fk_sin = Eigen::MatrixXd::Zero(6, n_comp);
+    } else {
+        body.linear_fk_cos.conservativeResize(Eigen::NoChange, n_comp);
+        body.linear_fk_sin.conservativeResize(Eigen::NoChange, n_comp);
+    }
+    if (n_comp == first) return;
 
     // Mean wetted surface: mesh at its BEM pose (BEM frame = world frame), clipped at z = 0.
     Eigen::Affine3d bem_pose = Eigen::Affine3d::Identity();
@@ -121,7 +150,7 @@ void NonlinearFroudeKrylovComponent::ComputeLinearFroudeKrylovCoefficients(BodyD
     const double depth = wave_->GetWaterDepth();
 
     Eigen::VectorXd p_cos(nv), p_sin(nv), q_cos(nv), q_sin(nv);
-    for (Eigen::Index i = 0; i < n_comp; ++i) {
+    for (Eigen::Index i = first; i < n_comp; ++i) {
         const double k = std::hypot(kx_[i], ky_[i]);
         for (int j = 0; j < nv; ++j) {
             const double kx = kx_[i] * v(0, j) + ky_[i] * v(1, j);
@@ -167,8 +196,18 @@ void NonlinearFroudeKrylovComponent::Compute(const SystemState& state, double ti
         last_linear_fk_.assign(num_system_bodies, Eigen::Matrix<double, 6, 1>::Zero());
     }
 
-    const double ramp = wave_ ? RampFactor(time) : 0.0;
+    double ramp = wave_ ? RampFactor(time) : 0.0;
+    if (wave_ && wave_->GetAmplitudeEnvelope()->HasChanges()) {
+        ramp *= wave_->GetAmplitudeEnvelope()->Value(time);  // live wave-height changes
+    }
     const bool wavy = ramp > 0.0;
+    // Live period or direction change: the wave's kinematics apply the layer
+    // weights; the subtracted linear FK applies them here.
+    const bool layered = wave_ && !wave_->GetWaveLayers().empty();
+    if (layered) {
+        AddNewWaveComponents();
+        wave_->GetComponentWeights(time, weights_);
+    }
 
     for (auto& body : bodies_) {
         const int b = body.body_index;
@@ -217,8 +256,12 @@ void NonlinearFroudeKrylovComponent::Compute(const SystemState& state, double ti
         Eigen::Matrix<double, 6, 1> linear_fk = Eigen::Matrix<double, 6, 1>::Zero();
         if (wavy && amplitudes_.size() > 0) {
             const Eigen::ArrayXd theta = phases_.array() - omegas_.array() * time;
-            const Eigen::VectorXd a_cos = (amplitudes_.array() * theta.cos()).matrix();
-            const Eigen::VectorXd a_sin = (amplitudes_.array() * theta.sin()).matrix();
+            Eigen::VectorXd a_cos = (amplitudes_.array() * theta.cos()).matrix();
+            Eigen::VectorXd a_sin = (amplitudes_.array() * theta.sin()).matrix();
+            if (layered) {
+                a_cos.array() *= weights_.array();
+                a_sin.array() *= weights_.array();
+            }
             linear_fk = ramp * (body.linear_fk_cos * a_cos + body.linear_fk_sin * a_sin);
         }
 

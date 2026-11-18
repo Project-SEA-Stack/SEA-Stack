@@ -2,7 +2,8 @@ hydrodynamics:
   bodies:
     - name: body1
       h5_file: ../assets/hydroData/wigley_directional.h5
-      linear_damping:    [0, 50000, 0, 500000, 0, 0]
+      # Yaw entry [N m s/rad] stands in for a mooring; see the spreading case.
+      linear_damping:    [0, 50000, 0, 500000, 0, 1.0e7]
       quadratic_damping: [5000, 10000, 5000, 100000, 100000, 0]
 
   waves:

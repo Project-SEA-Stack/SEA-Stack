@@ -13,11 +13,13 @@
 #ifndef SEASTACK_ADAPTERS_CHRONO_SIMULATION_EXPORT_H
 #define SEASTACK_ADAPTERS_CHRONO_SIMULATION_EXPORT_H
 
+#include <functional>
 #include <memory>
 #include <vector>
 #include <string>
 
 namespace seastack::hydro { struct KernelFitDiagnostics; }
+namespace seastack::viz { struct MooringLineVizData; }
 
 namespace chrono { class ChSystem; class ChBody; class ChLink; }
 namespace seastack::hydro_io { class H5Writer; }
@@ -25,6 +27,8 @@ namespace seastack::hydro_io { class H5Writer; }
 namespace seastack::hydro { struct ComponentForceRecord; }
 
 namespace seastack::chrono {
+
+struct ForceSample;
 
 enum class H5Verbosity { Quiet = 0, Verbose = 1 };
 
@@ -41,6 +45,21 @@ struct ExportConfig {
     int decimation = 1;           ///< Write every Nth step (1 = every step)
     bool compression = true;      ///< gzip-1 chunked compression
     bool use_float32 = false;     ///< Store time-series as float32 (opt-in)
+};
+
+/// A live sea change as applied during the run (/events/waves/change_<i>).
+struct WaveChangeRecord {
+    double start_time_s = 0.0;  ///< Simulation time at which the transition starts [s]
+    double duration_s = 0.0;    ///< Transition length [s]
+    std::string kind;           ///< "height", "period" or "direction"
+    std::string parameter;      ///< Runtime parameter id, e.g. "waves.period"
+    double value = 0.0;         ///< New value in the parameter's units (m, -, s or deg)
+    /// height: target of the amplitude envelope e(t) [-] (1 = sea of the hydro YAML).
+    double envelope_target = 1.0;
+    /// period / direction: the new component set as stored by the wave field
+    /// (phases matched at start_time_s; same conventions as
+    /// /inputs/simulation/waves/components). Empty for height changes.
+    std::vector<double> omega_rad_s, k_rad_m, amplitude_m, phase_rad, direction_rad;
 };
 
 class SimulationExporter {
@@ -70,6 +89,11 @@ class SimulationExporter {
       std::string run_started_at_utc;  // set by runner
       std::string run_finished_at_utc; // set by runner
       double run_wall_time_s = 0.0;    // set by runner (seconds)
+      // Wall-time breakdown (seconds); negative = not recorded.
+      double run_setup_wall_time_s = -1.0;   // start of run to start of time loop
+      double run_active_wall_time_s = -1.0;  // time loop spent stepping
+      double run_paused_wall_time_s = -1.0;  // time loop paused/idle (GUI only)
+      std::string run_mode;                  // "interactive" | "headless"
 
       // Scenario info (filled from already-parsed config)
       std::string scenario_type;          // still | regular | irregular | no_wave
@@ -165,7 +189,57 @@ class SimulationExporter {
                               const std::vector<double>& free_surface_time,
                               const std::vector<double>& free_surface_eta);
 
-    
+    /**
+     * @brief Write linear wave components under /inputs/simulation/waves/components.
+     *
+     * Arrays are 1D, same length N. Elevation convention:
+     *   eta_i = A * cos(k (x cos θ + y sin θ) − ω t + φ)
+     */
+    void WriteWaveComponents(const std::vector<double>& omega_rad_s,
+                             const std::vector<double>& k_rad_m,
+                             const std::vector<double>& amplitude_m,
+                             const std::vector<double>& phase_rad,
+                             const std::vector<double>& direction_rad);
+
+    /**
+     * @brief Write the visual scene for offline replay under /visualization.
+     *
+     * Self-contained: every supported body visual shape (box, sphere,
+     * cylinder, triangle mesh with its vertices), colours, the visual-frame
+     * offset from each body's centre-of-mass frame, the input pose at the
+     * current (start) time, MoorDyn topology and TSDA cable glyphs. Cable
+     * endpoints are then recorded with each output sample. Visual only;
+     * results are unchanged. Call after WriteModel() and before stepping.
+     * @param wave_ramp_duration_s Excitation ramp of the wave field [s] (0 = none),
+     *        so a replay shows the same ramped water surface.
+     * @param water_depth_m Water depth [m]; <= 0 = deep water.
+     * @param gravity_m_s2 Gravitational acceleration used by the wave field [m/s^2].
+     * @param viewer_colors True if a GUI viewer already painted the bodies (its
+     *        palette, linear colours); false for model colours as authored (headless).
+     */
+    void WriteVisualization(::chrono::ChSystem* system, double wave_ramp_duration_s, double water_depth_m,
+                            double gravity_m_s2, bool viewer_colors);
+
+    /**
+     * @brief Also record per-component hydrodynamic loads for offline replay.
+     *
+     * Each output sample then stores the force and moment of each source on
+     * each body under /visualization/forces (world axes, applied at the
+     * centre of mass), so a replay can draw force arrows and load plots.
+     * Pass MakeHydroForceProvider(hydro) (viz_extractor.h) for the hydro
+     * components, as the live viewer does; results are unchanged. Call after
+     * WriteVisualization() and before stepping. An empty provider is ignored.
+     */
+    void RecordVisualizationForces(std::function<ForceSample()> forces);
+
+    /**
+     * @brief Drop the replay data after WriteVisualization() failed part-way.
+     *
+     * Removes /visualization and stops recording cable endpoints and replay
+     * loads; /results and every other group are unaffected. Does not throw;
+     * if the group cannot be removed, a warning is logged.
+     */
+    void DiscardVisualization();
 
     // Runtime metadata (written into /meta/run at Finalize)
     /**
@@ -185,6 +259,18 @@ class SimulationExporter {
                         double time_final_s);
 
     /**
+     * @brief Record the wall-time breakdown under /meta/run (SIM-161).
+     *
+     * `wall_time_s` from SetRunMetadata stays the total elapsed time; these
+     * split it so that pauses and setup do not distort compute-speed figures.
+     * @param setup_s Wall time before the time loop (seconds)
+     * @param active_s Wall time spent stepping (seconds)
+     * @param paused_s Wall time paused or idle inside the time loop (seconds)
+     * @param interactive True for GUI runs, false for headless runs
+     */
+    void SetRunTiming(double setup_s, double active_s, double paused_s, bool interactive);
+
+    /**
      * @brief Record per-component hydrodynamic force breakdown for one timestep.
      *
      * Only meaningful in detailed export mode. If level != kDetailed this is a
@@ -192,6 +278,67 @@ class SimulationExporter {
      */
     void RecordHydroForces(
         const std::vector<seastack::hydro::ComponentForceRecord>& records);
+
+    /**
+     * @brief Record MoorDyn line node positions / tensions for offline viz.
+     *
+     * Call once per simulation step after RecordStep. Per-line peak tension is
+     * updated every call so short snatch peaks are not missed between output
+     * frames; line_max_tension is kept at every recorded step. Node positions
+     * and tensions follow the output level, with their own sample_time:
+     * compact none, standard about 10 Hz in float32, detailed every recorded step.
+     */
+    void RecordMooringLines(
+        const std::vector<seastack::viz::MooringLineVizData>& lines);
+
+    /// True if the most recent RecordStep() wrote a time sample (not skipped
+    /// by decimation). Used by callers that sample auxiliary channels in sync
+    /// with the animation geometry rate.
+    bool LastStepWasRecorded() const;
+
+    /**
+     * @brief Follow a runtime change of a TSDA/RSDA parameter (RuntimeControls).
+     *
+     * Updates the coefficients the exporter uses for PTO power (c v^2) and the
+     * extension / relative angle reference from the next RecordStep on.
+     * spring_coefficient is followed only for links without a force functor,
+     * where it was read from the link. Unknown links or fields are ignored.
+     *
+     * @param link_name Chrono link name; field: spring_coefficient,
+     *        damping_coefficient, rest_length or rest_angle; value in SI units.
+     */
+    void UpdateLinkParameter(const std::string& link_name, const std::string& field, double value);
+
+    /**
+     * @brief Record the applied runtime commands under /events (written by Finalize).
+     *
+     * Columns: step (steps taken before the change), time [s], parameter id,
+     * value, previous_value, origin ("gui" or "schedule"). Nothing is written
+     * when the list is empty.
+     */
+    void SetRuntimeEvents(const std::vector<long long>& steps, const std::vector<double>& times,
+                          const std::vector<std::string>& parameters, const std::vector<double>& values,
+                          const std::vector<double>& previous_values,
+                          const std::vector<std::string>& origins);
+
+    /**
+     * @brief Record a live sea change as applied (written under /events/waves by Finalize).
+     *
+     * With at least one change, /events/waves also holds the incident
+     * elevation at the origin recorded by RecordIncidentElevation, and
+     * /inputs/simulation/waves is flagged as the initial sea only.
+     */
+    void AddWaveChange(WaveChangeRecord change);
+
+    /**
+     * @brief Record the incident elevation at the origin (x = y = 0) [m] for this step.
+     *
+     * Call once per simulation step after RecordStep, with every factor the
+     * physics applies (excitation ramp, amplitude envelope, crossfade
+     * weights). Kept only when the step was recorded, so it is sampled at
+     * /results/time/time; written only if the sea changed (AddWaveChange).
+     */
+    void RecordIncidentElevation(double eta_m);
 
     /**
      * @brief Write radiation kernel fit diagnostics to HDF5.

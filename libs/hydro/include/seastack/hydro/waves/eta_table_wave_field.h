@@ -66,7 +66,8 @@ class EtaTableWaveField : public WaveBase {
     void SetDirection(double direction_rad) { direction_rad_ = direction_rad; }
     std::optional<double> GetEtaRecordDirection() const override { return direction_rad_; }
 
-    /// Linear ramp matching ExcitationIrfComponent::RampFactor (eta-table + IRF workflows).
+    /// Linear ramp matching ExcitationIrfComponent::RampFactor (eta-table + IRF workflows),
+    /// times the amplitude envelope e(t).
     double GetExcitationRampForVisualization(double time) const override;
 
   private:

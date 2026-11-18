@@ -5,13 +5,50 @@
 
 #include "guihelper_impl.h"
 
+#include <seastack/adapters/chrono/visualization_recording.h>
+
+#if defined(SEASTACK_HAVE_VSG)
+#include <vsg/core/Exception.h>
+#endif
+
+#include <algorithm>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
 using namespace seastack::viz;
 
-std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn) {
+std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn, ViewerBackend backend) {
     if (visualizationOn) {
-        return std::make_shared<seastack::viz::GUI>();
+        return std::make_shared<seastack::viz::GUI>(backend);
     } else {
         return std::make_shared<seastack::viz::UI>();
+    }
+}
+
+bool seastack::viz::ParseViewerBackend(const std::string& name, ViewerBackend* backend) {
+    if (name == "chrono") {
+        *backend = ViewerBackend::kChrono;
+        return true;
+    }
+    if (name == "seastack") {
+        *backend = ViewerBackend::kSeastack;
+        return true;
+    }
+    return false;
+}
+
+std::string seastack::viz::CurrentExceptionMessage() {
+    try {
+        throw;
+    } catch (const std::exception& e) {
+        return e.what();
+#if defined(SEASTACK_HAVE_VSG)
+    } catch (const vsg::Exception& e) {
+        return e.message + " (Vulkan result " + std::to_string(e.result) + ")";
+#endif
+    } catch (...) {
+        return "unknown exception";
     }
 }
 
@@ -19,8 +56,16 @@ std::shared_ptr<seastack::viz::UI> seastack::viz::CreateUI(bool visualizationOn)
 
 UI::UI() : pSystem(nullptr) {}
 
+void UI::SetViewerOptions(const ViewerOptions& /*options*/) {
+    // Default (headless) UI has no viewer.
+}
+
 void UI::Init(::chrono::ChSystem* system, const char* title) {
     pSystem = system;
+}
+
+void UI::InitReplay(std::unique_ptr<seastack::chrono::ReplayRecording> /*recording*/, const char* /*title*/) {
+    throw std::runtime_error("Replay needs the GUI (it cannot run with --nogui).");
 }
 
 void UI::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {}
@@ -48,20 +93,93 @@ void UI::SetMooringVisualizationRadii(double /*line_radius_m*/,
     // Default (headless) UI does not render mooring lines.
 }
 
+void UI::SetRuntimeControls(seastack::chrono::RuntimeControls* /*controls*/,
+                            const std::string& /*schedule_path*/, double /*time_step*/) {
+    // Default (headless) UI has no parameter panel.
+}
+
+void UI::SetHydroForces(seastack::chrono::HydroSystem* /*hydro*/) {
+    // Default (headless) UI does not draw forces.
+}
+
+void UI::AfterStep(double /*sim_time*/) {
+    // Default (headless) UI records nothing.
+}
+
 // -----------------------------------------------------------------------------
 
-GUI::GUI() {
+GUI::GUI(ViewerBackend backend) : backend_(backend) {
 #if defined(SEASTACK_HAVE_VSG)
-    pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+    if (backend == ViewerBackend::kSeastack) {
+        pImpl = std::make_shared<seastack::viz::GUIImplSeastack>();
+    } else {
+        pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+    }
     simulationStarted = false;  // VSG viewer provides Start button
 #else
+    (void)backend;
     pImpl = std::make_shared<seastack::viz::GUIImpl>();
 #endif
 }
 
+void GUI::SetViewerOptions(const ViewerOptions& options) {
+    viewer_options_ = options;
+    pImpl->SetViewerOptions(options);
+}
+
 void GUI::Init(::chrono::ChSystem* system, const char* title) {
     UI::Init(system, title);
+#if defined(SEASTACK_HAVE_VSG)
+    // The SEA-Stack viewer draws only what VizExtractor exports; anything else
+    // would silently vanish, so use the Chrono viewer for such models.
+    if (backend_ == ViewerBackend::kSeastack && system) {
+        const std::vector<std::string> missing = seastack::chrono::FindUndrawableItems(*system);
+        if (!missing.empty()) {
+            std::string message = "SEA-Stack viewer cannot draw this model; using the Chrono viewer. Not supported:";
+            constexpr size_t kMaxListed = 5;
+            for (size_t i = 0; i < std::min(missing.size(), kMaxListed); ++i) {
+                message += "\n  - " + missing[i];
+            }
+            if (missing.size() > kMaxListed) {
+                message += "\n  - ... and " + std::to_string(missing.size() - kMaxListed) + " more";
+            }
+            seastack::infra::cli::LogWarning(message);
+            backend_ = ViewerBackend::kChrono;
+            pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+            pImpl->SetViewerOptions(viewer_options_);
+        }
+    }
+    // Until the SEA-Stack viewer has run on every platform, a start-up failure
+    // (e.g. a shader the driver rejects) falls back to the Chrono viewer.
+    if (backend_ == ViewerBackend::kSeastack && system) {
+        try {
+            pImpl->Init(*this, system, title);
+            return;
+        } catch (...) {
+            seastack::infra::cli::LogWarning("SEA-Stack viewer failed to start (" + CurrentExceptionMessage() +
+                                             "); using the Chrono viewer.");
+        }
+        backend_ = ViewerBackend::kChrono;
+        pImpl = std::make_shared<seastack::viz::GUIImplVSG>();
+        pImpl->SetViewerOptions(viewer_options_);
+    }
+#endif
     pImpl->Init(*this, system, title);
+}
+
+void GUI::InitReplay(std::unique_ptr<seastack::chrono::ReplayRecording> recording, const char* title) {
+    UI::Init(nullptr, title);
+#if defined(SEASTACK_HAVE_VSG)
+    if (backend_ != ViewerBackend::kSeastack) {
+        backend_ = ViewerBackend::kSeastack;  // the Chrono viewer needs a ChSystem
+        pImpl = std::make_shared<seastack::viz::GUIImplSeastack>();
+        pImpl->SetViewerOptions(viewer_options_);
+    }
+    pImpl->InitReplay(*this, std::move(recording), title);
+#else
+    (void)recording;
+    throw std::runtime_error("Replay needs a build with the VSG viewer (SEASTACK_HAVE_VSG).");
+#endif
 }
 
 void GUI::SetCamera(double x, double y, double z, double dirx, double diry, double dirz) {
@@ -88,4 +206,17 @@ void GUI::SetMooringVisualizationRadii(double line_radius_m,
                                       double endpoint_radius_m,
                                       double node_marker_radius_m) {
     pImpl->SetMooringVisualizationRadii(line_radius_m, endpoint_radius_m, node_marker_radius_m);
+}
+
+void GUI::SetRuntimeControls(seastack::chrono::RuntimeControls* controls,
+                             const std::string& schedule_path, double time_step) {
+    pImpl->SetRuntimeControls(controls, schedule_path, time_step);
+}
+
+void GUI::SetHydroForces(seastack::chrono::HydroSystem* hydro) {
+    pImpl->SetHydroForces(hydro);
+}
+
+void GUI::AfterStep(double sim_time) {
+    pImpl->AfterStep(sim_time);
 }

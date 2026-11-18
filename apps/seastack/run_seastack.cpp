@@ -5,6 +5,7 @@
 
 #include "run_from_yaml.h"
 #include "campaign_runner.h"
+#include "replay_run.h"
 #include "single_run.h"
 #include "cell_io.h"
 #include "app_init.h"
@@ -47,6 +48,9 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::LogInfo("      --doctor         Run environment/package diagnostics and exit");
     seastack::infra::cli::LogInfo("      --campaign FILE  Generate a power matrix from a campaign YAML");
     seastack::infra::cli::LogInfo("      --nogui          Disable GUI visualization");
+    seastack::infra::cli::LogInfo("      --viewer=NAME    GUI renderer: seastack (default) or chrono (fallback, to be removed)");
+    seastack::infra::cli::LogInfo("      --replay FILE    Replay a results .h5 in the SEA-Stack viewer (no simulation)");
+    seastack::infra::cli::LogInfo("      --schedule FILE  Apply TSDA/RSDA and wave changes from a schedule YAML");
     seastack::infra::cli::LogInfo("      --log            Enable detailed logging to file");
     seastack::infra::cli::LogInfo("      --model_file     Override model YAML file (default: auto-detected)");
     seastack::infra::cli::LogInfo("      --sim_file       Override simulation YAML file (default: auto-detected)");
@@ -65,6 +69,12 @@ void PrintHelp(const char* program_name) {
     seastack::infra::cli::ShowEmptyLine();
     seastack::infra::cli::LogInfo(std::string("  # Run simulation without GUI (headless mode)"));
     seastack::infra::cli::LogInfo(std::string("  ") + program_name + " ./my_case/ --nogui");
+    seastack::infra::cli::ShowEmptyLine();
+    seastack::infra::cli::LogInfo(std::string("  # Replay a finished run (scrub, any speed; nothing is simulated)"));
+    seastack::infra::cli::LogInfo(std::string("  ") + program_name + " --replay ./my_case/outputs/results.irregular.h5");
+    seastack::infra::cli::ShowEmptyLine();
+    seastack::infra::cli::LogInfo(std::string("  # Rerun a GUI session's parameter changes headless"));
+    seastack::infra::cli::LogInfo(std::string("  ") + program_name + " ./my_case/ --nogui --schedule ./my_case/outputs/results.regular.schedule.yaml");
     seastack::infra::cli::ShowEmptyLine();
     seastack::infra::cli::LogInfo(std::string("  # Override YAML files"));
     seastack::infra::cli::LogInfo(std::string("  ") + program_name + " ./ --model_file alt.model.yaml --sim_file alt.sim.yaml");
@@ -92,6 +102,9 @@ struct CLIArgs {
     std::string sim_file;
     std::string campaign_file;          // --campaign <file>
     std::string run_cell_file;          // --run-cell <file> (subprocess IPC)
+    std::string replay_file;            // --replay <results.h5>
+    std::string schedule_file;          // --schedule <file.schedule.yaml>
+
     bool nogui = false;
     bool log = false;
     bool nobanner = false;
@@ -100,6 +113,7 @@ struct CLIArgs {
     bool trace = false;
     std::string output_level;
     bool profile = false;
+    std::string viewer;  // --viewer=seastack|chrono; empty = default (seastack)
 };
 
 static CLIArgs ParseArguments(int argc, char* argv[]) {
@@ -149,6 +163,20 @@ static CLIArgs ParseArguments(int argc, char* argv[]) {
                 seastack::infra::cli::LogError("ERROR: --run-cell requires a cell config YAML path");
                 std::exit(1);
             }
+        } else if (arg == "--replay") {
+            if (i + 1 < argc) {
+                args.replay_file = argv[++i];
+            } else {
+                seastack::infra::cli::LogError("ERROR: --replay requires a results .h5 file path");
+                std::exit(1);
+            }
+        } else if (arg == "--schedule") {
+            if (i + 1 < argc) {
+                args.schedule_file = argv[++i];
+            } else {
+                seastack::infra::cli::LogError("ERROR: --schedule requires a schedule .yaml file path");
+                std::exit(1);
+            }
         } else if (arg == "--output-level") {
             if (i + 1 < argc) {
                 args.output_level = argv[++i];
@@ -160,6 +188,12 @@ static CLIArgs ParseArguments(int argc, char* argv[]) {
             // Already handled in early flag scan; ignore here.
         } else if (arg == "--profile") {
             args.profile = true;
+        } else if (arg.rfind("--viewer=", 0) == 0) {
+            args.viewer = arg.substr(9);
+            if (args.viewer != "chrono" && args.viewer != "seastack") {
+                seastack::infra::cli::LogError("ERROR: --viewer must be chrono or seastack, got: " + args.viewer);
+                std::exit(1);
+            }
         } else if (arg.substr(0, 1) != "-") {
             // This is a positional argument (input directory)
             if (args.input_directory.empty()) {
@@ -317,6 +351,16 @@ int main(int argc, char* argv[]) {
         return ret;
     }
 
+    // ---- Replay mode: --replay <results.h5> ----
+    if (!args.replay_file.empty()) {
+        if (!args.quiet && !args.nobanner) {
+            seastack::infra::cli::ShowBannerCompact();
+        }
+        const int ret = seastack::app::RunReplay(args.replay_file);
+        seastack::infra::Shutdown();
+        return ret;
+    }
+
     // Validate required input directory or setup file
     if (args.input_directory.empty()) {
         seastack::infra::cli::LogError("ERROR: Input directory or setup file is required");
@@ -369,6 +413,7 @@ int main(int argc, char* argv[]) {
     runner_args.push_back(args.input_directory);
     
     if (args.nogui) runner_args.push_back("--nogui");
+    if (!args.viewer.empty()) runner_args.push_back("--viewer=" + args.viewer);
     if (args.log) runner_args.push_back("--log");
     if (args.nobanner) runner_args.push_back("--nobanner");
     if (args.quiet) runner_args.push_back("--quiet");
@@ -386,6 +431,10 @@ int main(int argc, char* argv[]) {
     if (!args.output_level.empty()) {
         runner_args.push_back("--output-level");
         runner_args.push_back(args.output_level);
+    }
+    if (!args.schedule_file.empty()) {
+        runner_args.push_back("--schedule");
+        runner_args.push_back(std::filesystem::absolute(args.schedule_file).generic_string());
     }
     
     // Convert to argc/argv format for the runner

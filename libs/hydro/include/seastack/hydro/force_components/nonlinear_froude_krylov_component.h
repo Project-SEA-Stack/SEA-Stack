@@ -104,7 +104,11 @@ class NonlinearFroudeKrylovComponent : public IHydroForceComponent {
         bool checked_position = false;
     };
 
-    void ComputeLinearFroudeKrylovCoefficients(BodyData& body) const;
+    /// Linear FK coefficients of components [first, n) (columns appended).
+    void ComputeLinearFroudeKrylovCoefficients(BodyData& body, Eigen::Index first = 0) const;
+    /// Copy and integrate components the wave gained in a live period or
+    /// direction change (WaveBase::GetWaveLayers).
+    void AddNewWaveComponents();
     void CheckInitialPosition(BodyData& body, const Eigen::Vector3d& position);
 
     std::vector<BodyData> bodies_;
@@ -113,8 +117,9 @@ class NonlinearFroudeKrylovComponent : public IHydroForceComponent {
     double ramp_duration_;
     RampShape ramp_shape_;
 
-    // Wave components (copied once; empty in still water).
+    // Wave components (copied once, extended by live changes; empty in still water).
     Eigen::VectorXd amplitudes_, omegas_, phases_, kx_, ky_;
+    Eigen::VectorXd weights_;  ///< Layer weight of each component [-] (work buffer)
     double shortest_wavelength_ = 0.0; ///< [m]; 0 in still water
 
     // Per-vertex work buffers (reused between calls).

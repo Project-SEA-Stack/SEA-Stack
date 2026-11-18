@@ -344,7 +344,9 @@ int RunFromYAML(int argc, char* argv[]) {
         std::string sim_file_arg;
         std::string input_directory;
         std::string cli_output_level;
+        std::string schedule_file;
         bool nogui = false;
+        std::string viewer = "seastack";
         bool quiet_mode = false;
         bool enable_logging = false;
         bool debug_mode = false;
@@ -360,8 +362,12 @@ int RunFromYAML(int argc, char* argv[]) {
                 sim_file_arg = argv[++i];
             } else if (arg == "--output-level" && i + 1 < argc) {
                 cli_output_level = argv[++i];
+            } else if (arg == "--schedule" && i + 1 < argc) {
+                schedule_file = argv[++i];
             } else if (arg == "--nogui") {
                 nogui = true;
+            } else if (arg.rfind("--viewer=", 0) == 0) {
+                viewer = arg.substr(9);
             } else if (arg == "--log") {
                 enable_logging = true;
             } else if (arg == "--no-log") {
@@ -496,6 +502,7 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.cli_output_level = cli_output_level;
         run_config.cli_log_file_path = log_file_path;
         run_config.nogui        = nogui;
+        run_config.viewer       = viewer;
         run_config.debug_mode   = debug_mode;
         run_config.trace_mode   = trace_mode;
         run_config.profile_mode = profile_mode;
@@ -504,6 +511,7 @@ int RunFromYAML(int argc, char* argv[]) {
         run_config.external_ptos = setup_config.external_ptos;
         run_config.controller_file = setup_config.controller_file;
         run_config.ropes_file = setup_config.ropes_file;
+        run_config.schedule_file = schedule_file;
 
         SingleRunResult result = RunSingleCase(run_config);
 

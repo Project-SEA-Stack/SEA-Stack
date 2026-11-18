@@ -68,6 +68,10 @@ class ExcitationIrfComponent : public IHydroForceComponent {
                  double time,
                  BodyForces& inout_forces) override;
 
+    /// Wave components whose cos/sin(omega * tau) tables are held (diagnostic):
+    /// after live period or direction changes, only sets the kernel can reach.
+    Eigen::Index CachedComponentCount() const { return comp_amplitudes_.size(); }
+
   private:
     const HydroData& data_;
     std::shared_ptr<WaveBase> waves_;
@@ -99,6 +103,27 @@ class ExcitationIrfComponent : public IHydroForceComponent {
     void TryBuildFastPath();
     void ComputeFastPath(double time, Eigen::VectorXd& eta_at_tau) const;
     void ComputeSlowPath(double time, Eigen::VectorXd& eta_at_tau) const;
+
+    // Live period or direction changes (WaveBase::GetWaveLayers). Each layer
+    // is long-crested and convolved with the kernel for its own direction:
+    //   F(t) = sum_l int K_l(tau) w_l(t - tau) eta_l(t - tau) dtau
+    // (times the ramp and e(t - tau)). Kernels per body for layers 1, 2, ...;
+    // layer 0 uses body_irfs_[b].kernel.
+    std::vector<std::vector<Eigen::MatrixXd>> layer_kernels_;
+    Eigen::VectorXd layer_eta_buffer_, layer_weight_buffer_;
+    // Layers [0, released_layers_) faded out longer ago than the kernel
+    // reaches back (see ReleaseFinishedLayers); their kernels and their
+    // columns of the fast-path arrays are freed. The fast-path arrays then
+    // hold wave components [released_components_, end).
+    std::size_t released_layers_ = 0;
+    Eigen::Index released_components_ = 0;
+
+    /// Extend the fast-path arrays and kernels for components the wave gained.
+    void AddNewWaveComponents();
+    /// Free the data of leading layers that have weight 0 over the whole
+    /// kernel window at `time` and at every later time.
+    void ReleaseFinishedLayers(double time);
+    void ComputeLayered(const SystemState& state, double time, BodyForces& inout_forces);
 };
 
 }  // namespace seastack::hydro
