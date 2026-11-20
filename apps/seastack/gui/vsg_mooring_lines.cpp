@@ -120,18 +120,19 @@ static Rgba PointTypeColor(int point_type) {
 vsg::vec4 MooringLinesViz::TurboColormap(float t) {
     t = std::clamp(t, 0.0f, 1.0f);
 
-    // Polynomial coefficients fitted to the 256-entry Turbo LUT.
+    // Google's degree-5 polynomial fit to the 256-entry Turbo LUT
+    // (blue 0 -> cyan -> green 0.5 -> yellow -> red 1).
     const float r = std::clamp(
         0.13572138f + t * (4.61539260f + t * (-42.66032258f +
-        t * (132.13108234f + t * (-152.54895899f + t * 59.28637943f)))),
+        t * (132.13108234f + t * (-152.94239396f + t * 59.28637943f)))),
         0.0f, 1.0f);
     const float g = std::clamp(
-        0.09140261f + t * (2.26418794f + t * (4.11868525f +
-        t * (-44.58319668f + t * (70.41698018f - t * 33.26974748f)))),
+        0.09140261f + t * (2.19418839f + t * (4.84296658f +
+        t * (-14.18503333f + t * (4.27729857f + t * 2.82956604f)))),
         0.0f, 1.0f);
     const float b = std::clamp(
-        0.10667330f + t * (12.75191895f + t * (-60.25290628f +
-        t * (109.04872043f + t * (-89.38040853f + t * 27.13073700f)))),
+        0.10667330f + t * (12.64194608f + t * (-60.58204836f +
+        t * (110.36276771f + t * (-89.90310912f + t * 27.34824973f)))),
         0.0f, 1.0f);
 
     return {r, g, b, 1.0f};
