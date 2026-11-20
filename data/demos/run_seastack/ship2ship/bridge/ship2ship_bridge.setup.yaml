@@ -1,0 +1,10 @@
+# Two coupled Wigley hulls in a regular beam sea with a flexible aluminium
+# linkspan bridge (Chrono::FEA) on four pinned bearings across the 8 m gap.
+model_file: ship2ship_bridge.model.yaml
+simulation_file: ship2ship_bridge.simulation.yaml
+hydro_file: ship2ship_bridge.hydro.yaml
+structure_file: ship2ship_bridge.structure.yaml
+output_directory: outputs
+
+output:
+  decimation: 10    # 20 Hz at dt = 5 ms

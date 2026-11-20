@@ -520,6 +520,29 @@ if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
             ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
     endif()
 
+    # Ship-to-ship bridge: FEA linkspan on four bearings between two coupled
+    # hulls; hulls-only smoke run, calm-water statics vs hand calculation, and
+    # a beam-sea run (hull motion unchanged, bearings in compression).
+    add_test(
+        NAME test_ship2ship_bridge
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_ship2ship_bridge.py"
+            --exe $<TARGET_FILE:run_seastack>
+    )
+    set_tests_properties(test_ship2ship_bridge PROPERTIES
+        LABELS "chrono;execute"
+        COST 15
+        SKIP_RETURN_CODE ${SEASTACK_SKIP_MISSING_PYTHON_DEPS}
+    )
+    if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.22")
+        set_tests_properties(test_ship2ship_bridge PROPERTIES
+            ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:${Python3_ROOT_DIR};PATH=path_list_prepend:${Python3_ROOT_DIR}/Library/bin;PATH=path_list_prepend:${Python3_ROOT_DIR}/DLLs")
+    endif()
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        set_tests_properties(test_ship2ship_bridge PROPERTIES
+            ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+    endif()
+
     if(TARGET seastack_external)
         add_test(
             NAME test_controller_robustness

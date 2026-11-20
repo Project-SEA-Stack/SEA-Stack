@@ -1,0 +1,101 @@
+# Flexible aluminium linkspan between the two hulls: an Euler-beam ladder frame
+# with rigid deck planks, resting on four pinned bearings.
+#
+# Topology (all members in one plane at z = 3.34 m, the girder centreline):
+#   - 2 girders at x = +/-2 m spanning y = -6 .. +6 m (12 m), 8 elements each.
+#     y_direction = +z puts the section depth vertical, so vertical bending is
+#     resisted by Izz (depth cubed) and shows as Mz.
+#   - 9 cross-beams, one per girder node station, 2 elements each, so each has
+#     a mid node at x = 0. The mid nodes form the "cross_centres" set.
+#   - 9 rigid deck planks clamped to the cross-beam centres, 0.18 m above the
+#     girder node (frame top plus half the plank thickness).
+#   - 4 pinned bearings (rotations free), constrain in world axes:
+#       stbd hull (body1): girder A pins x, y, z; girder B pins y, z
+#       port hull (body2): girders A and B pin z only (free to slide in x, y)
+#     That is 7 restraints for 6 rigid-body DOF; the extra one is the fourth
+#     vertical support, so differential hull PITCH twists the frame (about
+#     5 kN*m girder torsion in a 45 deg sea). Hull roll moves both bearings
+#     on a hull together and does not. The constrained axes are world-aligned
+#     at the start and then turn with the hull. Bearings are bilateral: they
+#     also hold the bridge down, where real pads would lift off.
+#
+# Mass: 2 girders + 9 cross-beams (Euler beams, self-weight on) + 9 x 270 kg
+# planks = about 3.16 t; see ../bridge/README.md for the hand calculation.
+structure:
+  automatic_gravity: true
+
+  materials:
+    # Marine aluminium 5083 (G = E / 2(1 + nu), nu = 0.33).
+    - { name: al5083, density: 2700.0, youngs_modulus: 7.0e+10, shear_modulus: 2.63e+10 }
+
+  sections:
+    # 150 wide x 300 deep x 8 mm RHS girder; 100 x 150 x 6 mm RHS cross-beam.
+    # width = local-z extent, depth = local-y (vertical) extent.
+    # rayleigh_beta [s]: stiffness-proportional damping. Chrono's Euler beam
+    # gives zeta_1 ~ beta * omega_1 (docs/usage/STRUCTURE_YAML.md, Damping).
+    # First vertical mode measured at 2.23-2.25 Hz (omega_1 = 14.0 rad/s), so
+    # beta = 0.003 s gives 4.2 %. Measured total zeta_1 (adding implicit
+    # Euler's omega*dt/2 and energy lost through the hulls): 5.4 % at
+    # dt = 1 ms, 8.3 % at the case's 5 ms. The ported case had Chrono's hidden
+    # 0.01 s (zeta_1 = 18 % at 1 ms).
+    # torsion_constant [m^4]: Bredt thin-wall J = 4 A_m^2 t / P. The default
+    # Iyy + Izz would be 72 % (girder) and 46 % (cross-beam) too stiff, and
+    # twist matters here: differential hull pitch twists the frame.
+    - { name: girder, type: BOX, material: al5083, width: 0.150, depth: 0.300, wall: 0.008,
+        rayleigh_beta: 0.003, torsion_constant: 6.338e-5 }
+    - { name: cross,  type: BOX, material: al5083, width: 0.100, depth: 0.150, wall: 0.006,
+        rayleigh_beta: 0.003, torsion_constant: 9.238e-6 }
+
+  beams:
+    - name: girder_a
+      section: girder
+      start: [-2.0, -6.0, 3.34]
+      end:   [-2.0,  6.0, 3.34]
+      elements: 8
+      y_direction: [0, 0, 1]
+    - name: girder_b
+      section: girder
+      start: [ 2.0, -6.0, 3.34]
+      end:   [ 2.0,  6.0, 3.34]
+      elements: 8
+      y_direction: [0, 0, 1]
+
+  cross_beams:
+    name_prefix: cross
+    section: cross
+    between: [girder_a, girder_b]
+    elements: 2
+    y_direction: [0, 0, 1]
+    node_set: cross_centres
+
+  mates:
+    # constrain = [x, y, z, rot_x, rot_y, rot_z] in world axes
+    - { name: bearing_stbd_a, node: girder_a.first, body: body1,
+        constrain: [true,  true,  true,  false, false, false] }
+    - { name: bearing_stbd_b, node: girder_b.first, body: body1,
+        constrain: [false, true,  true,  false, false, false] }
+    - { name: bearing_port_a, node: girder_a.last,  body: body2,
+        constrain: [false, false, true,  false, false, false] }
+    - { name: bearing_port_b, node: girder_b.last,  body: body2,
+        constrain: [false, false, true,  false, false, false] }
+
+  rigid_attachments:
+    - name_prefix: bridge_plank
+      node_set: cross_centres
+      mass: 270.0                 # kg (40 kg/m^2 aluminium plate + stiffeners)
+      box: [4.5, 1.5, 0.06]       # m: deck width, plank pitch, thickness
+      offset: [0.0, 0.0, 0.18]    # m, plank centre above the girder node
+      collide: false              # nothing drives on the bridge in this case
+      opacity: 0.35
+      color: [0.75, 0.78, 0.82]
+
+  visualization:
+    data_type: ELEM_BEAM_MZ
+    colormap: JET
+    range: [-7.0e+4, 7.0e+4]
+    beam_resolution: 12
+    beam_resolution_section: 8
+
+  diagnostics:
+    file: structure_diagnostics.csv   # relative to output_directory
+    every_n_steps: 10

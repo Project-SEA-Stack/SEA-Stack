@@ -1,0 +1,6 @@
+# Ship-to-ship hulls only (no bridge, no vehicle).
+# Proves the two-body coupled BEM + beam-sea hydro half of the transfer demo.
+model_file: ship2ship_transfer_hulls.model.yaml
+simulation_file: ship2ship_transfer_hulls.simulation.yaml
+hydro_file: ship2ship_transfer_hulls.hydro.yaml
+output_directory: outputs

@@ -1,0 +1,22 @@
+# Same hulls and BEM data as ../bridge, in still water.
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/ship2ship.h5
+      linear_damping: [0.0, 0.0, 1.0e5, 1.0e6, 1.0e6, 0.0]
+      quadratic_damping: [1.2e4, 1.8e4, 1.0e4, 2.0e5, 2.0e5, 6.0e4]
+    - name: body2
+      h5_file: ../assets/hydroData/ship2ship.h5
+      linear_damping: [0.0, 0.0, 1.0e5, 1.0e6, 1.0e6, 0.0]
+      quadratic_damping: [1.2e4, 1.8e4, 1.0e4, 2.0e5, 2.0e5, 6.0e4]
+
+  waves:
+    type: still
+    depth: 50.0
+
+  radiation:
+    method: state_space
+    state_space:
+      max_order: 8
+      r2_threshold: 0.90
+      max_hankel_size: 100

@@ -21,7 +21,12 @@ from the model YAML.
   resists vertical load with Izz, and the matching bending moment is **Mz**
   (`ELEM_BEAM_MZ`), not My.
 - Mate frames are world-aligned and sit at the node, so `constrain` reads as
-  `[x, y, z, rot_x, rot_y, rot_z]` in **world** axes.
+  `[x, y, z, rot_x, rot_y, rot_z]` in **world** axes at the start. The frames
+  then move with the body, so on a rolling hull a `z`-only bearing restrains
+  the hull's tilted vertical (and its reaction has a horizontal world
+  component).
+- Mates are two-way constraints: a bearing can pull as well as push. Check
+  that reactions keep the sign a real support would allow.
 - Mate reactions (diagnostics CSV, load-path check) are the force and torque
   the mate applies to the support body, in world axes.
 - Element section forces (HDF5, colour plot) are in the **element local**
@@ -272,6 +277,11 @@ the HDF5 datasets, the check pass and fail paths, and the solver guard.
 
 ## Worked demos
 
+- [`data/demos/run_seastack/ship2ship/bridge/`](../../data/demos/run_seastack/ship2ship/bridge/):
+  linkspan between two floating hulls. It is the example for `cross_beams`,
+  `rigid_attachments`, explicit `torsion_constant`, and partial-`constrain`
+  bearings (pins with sliding releases). `bridge_static` checks it against a
+  hand calculation.
 - [`data/demos/run_seastack/trimaran/fea_arms/`](../../data/demos/run_seastack/trimaran/):
   steel cross-arms clamped between three floating hulls in irregular waves.
 - [`data/demos/run_seastack/fea/cantilever/`](../../data/demos/run_seastack/fea/cantilever/):

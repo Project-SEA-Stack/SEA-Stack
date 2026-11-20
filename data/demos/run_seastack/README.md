@@ -74,6 +74,9 @@ parameters**, and an **available cases** table (paths below are relative to
 | f3of | decay_dt3 | F3OF platform, DT3 flap pitch decay (base locked) | `f3of/decay_dt3/f3of_decay_dt3.setup.yaml` |
 | f3of | decay_dt1, decay_dt2 | *(source repo only; omitted from release ZIP)* | `f3of/decay_dt1/…`, `f3of/decay_dt2/…` |
 | trimaran | rigid | Three-hull trimaran with rigid cross-arms, irregular waves | `trimaran/model.setup.yaml` or `trimaran/rigid/trimaran_rigid.setup.yaml` |
+| ship2ship | transfer_hulls | Two coupled Wigley hulls side by side (two-body BEM), regular beam sea | `ship2ship/transfer_hulls/ship2ship_transfer_hulls.setup.yaml` |
+| ship2ship | bridge | The same hulls with a flexible aluminium linkspan (Chrono::FEA, preview) on four bearings across the gap | `ship2ship/bridge/ship2ship_bridge.setup.yaml` |
+| ship2ship | bridge_static | The bridge in still water; load-path check, sag vs hand calculation | `ship2ship/bridge_static/ship2ship_bridge_static.setup.yaml` |
 | trimaran | fea_arms | Same sea as `rigid`, with flexible steel cross-arms clamped between the three floating hulls (`structure_file`, preview) | `trimaran/fea_arms/trimaran_fea_arms.setup.yaml` |
 | fea | cantilever | Chrono::FEA Euler-beam cantilever with a tip mass; analytic sag and load-path check (`structure_file`, preview) | `fea/cantilever/cantilever.setup.yaml` |
 | crane | beam_check | Parked crane in calm water with a flexible FEA jib and the payload on the hoist rope (`structure_file`, preview) | `crane/beam_check/crane.setup.yaml` |

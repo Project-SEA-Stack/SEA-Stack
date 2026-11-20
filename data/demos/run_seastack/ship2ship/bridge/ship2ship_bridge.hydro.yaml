@@ -1,0 +1,33 @@
+# Two-body coupled BEM (ship2ship.h5). Regular BEAM sea heading 90 deg so the
+# hulls heave out of phase across the 8 m gap. Explicit frequency-domain
+# excitation (auto IRF would squeeze to heading 0). State-space radiation
+# (RIRF history dominates at dt = 1e-3).
+hydrodynamics:
+  bodies:
+    - name: body1
+      h5_file: ../assets/hydroData/ship2ship.h5
+      linear_damping: [0.0, 0.0, 1.0e5, 1.0e6, 1.0e6, 0.0]
+      quadratic_damping: [1.2e4, 1.8e4, 1.0e4, 2.0e5, 2.0e5, 6.0e4]
+    - name: body2
+      h5_file: ../assets/hydroData/ship2ship.h5
+      linear_damping: [0.0, 0.0, 1.0e5, 1.0e6, 1.0e6, 0.0]
+      quadratic_damping: [1.2e4, 1.8e4, 1.0e4, 2.0e5, 2.0e5, 6.0e4]
+
+  waves:
+    type: regular
+    depth: 50.0
+    height: 2.0
+    period: 8.0
+    direction: 90.0
+    ramp_duration: 20.0
+    ramp_type: cosine
+
+  excitation:
+    method: frequency_domain
+
+  radiation:
+    method: state_space
+    state_space:
+      max_order: 8
+      r2_threshold: 0.90
+      max_hankel_size: 100

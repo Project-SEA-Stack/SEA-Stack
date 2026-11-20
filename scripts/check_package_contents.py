@@ -42,6 +42,7 @@ EXPECTED_DEMO_CASES = {
               "native_pto", "regular_waves", "translucent_hull"},
     "rm3": {"assets", "bimodal_sea", "decay", "decay_nl", "external_pto",
             "external_pto_adaptive", "external_pto_hydraulic", "irregular_waves", "mooring"},
+    "ship2ship": {"assets", "bridge", "bridge_static", "transfer_hulls"},
     "trimaran": {"assets", "fea_arms", "rigid"},
 }
 

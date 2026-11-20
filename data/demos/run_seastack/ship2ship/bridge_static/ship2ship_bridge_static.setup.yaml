@@ -1,0 +1,17 @@
+# Calm-water static check of the ship2ship bridge: the same model and bridge
+# as ../bridge, in still water. Fails the run (exit code 1) if, at t = 10 s,
+# the bearing reactions along gravity differ from the bridge weight by more
+# than 2 %.
+model_file: ../bridge/ship2ship_bridge.model.yaml
+simulation_file: ship2ship_bridge_static.simulation.yaml
+hydro_file: ship2ship_bridge_static.hydro.yaml
+structure_file: ../bridge/ship2ship_bridge.structure.yaml
+output_directory: outputs
+
+output:
+  decimation: 10    # 20 Hz at dt = 5 ms
+
+checks:
+  - type: structure_static_load_path
+    time_s: 10.0
+    tolerance_percent: 2.0
