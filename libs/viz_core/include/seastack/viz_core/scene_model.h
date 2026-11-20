@@ -165,12 +165,40 @@ struct CableLineDescription {
     double spring_turns = 5.0;    ///< Helix turns for SPRING
 };
 
+/// Section load used to colour FEA beams. Components are in the beam
+/// section frame (x along the beam), as Chrono's ChElementBeamEuler reports them.
+enum class BeamField {
+    kNone,     ///< Plain colour
+    kAxial,    ///< Fx [N]
+    kTorsion,  ///< Mx [N m]
+    kMy,       ///< Bending about local y [N m]
+    kMz,       ///< Bending about local z [N m]
+};
+
+/// A chain of connected Chrono::FEA Euler beam elements sharing one section,
+/// drawn as the section outline swept through the section samples.
+struct BeamLineDescription {
+    std::string name;     ///< FEA mesh name and chain index, e.g. "structure_beam_0"
+    int num_samples = 0;  ///< Section samples along the chain (BeamLineState::sections)
+    bool circular = false;
+    /// Drawn outline in the section frame [m]: local y from y_min to y_max,
+    /// local z from z_min to z_max. Circular: radius = y_max.
+    double y_min = -0.05;
+    double y_max = 0.05;
+    double z_min = -0.05;
+    double z_max = 0.05;
+};
+
 struct SceneDescription {
     std::vector<BodyDescription> bodies;
     std::vector<MooringLineDescription> mooring_lines;
     /// Hoist ropes / PTO springs (Chrono TSDA visuals), then distance
     /// constraints; separate from MoorDyn.
     std::vector<CableLineDescription> cable_lines;
+    /// Chrono::FEA beams, in mesh and element order.
+    std::vector<BeamLineDescription> beam_lines;
+    /// Field the model asks the beams to be coloured by (its FEA visual).
+    BeamField beam_field = BeamField::kNone;
     /// Names of the force sources in VizFrame::body_wrenches, e.g. "Excitation";
     /// empty until the first forces are known.
     std::vector<std::string> force_sources;
@@ -197,6 +225,32 @@ struct CableLineState {
     double tension = 0.0;        ///< |force| [N]; optional colouring
 };
 
+/// One section sample of an FEA beam.
+struct BeamSectionState {
+    Vec3 position{0.0, 0.0, 0.0};  ///< Section centre, world [m]
+    Vec3 y_axis{0.0, 1.0, 0.0};    ///< Section local y, world (unit)
+    Vec3 z_axis{0.0, 0.0, 1.0};    ///< Section local z, world (unit)
+    /// {Fx, Fy, Fz [N], Mx, My, Mz [N m]} in the section frame: Fx axial,
+    /// Fy / Fz shear, Mx torsion, My / Mz bending (ChElementBeamEuler).
+    std::array<double, 6> loads{};
+};
+
+struct BeamLineState {
+    std::vector<BeamSectionState> sections;
+};
+
+/// Section load `field` of `section`; 0 for BeamField::kNone.
+inline double BeamFieldValue(const BeamSectionState& section, BeamField field) {
+    switch (field) {
+        case BeamField::kAxial: return section.loads[0];
+        case BeamField::kTorsion: return section.loads[3];
+        case BeamField::kMy: return section.loads[4];
+        case BeamField::kMz: return section.loads[5];
+        case BeamField::kNone: break;
+    }
+    return 0.0;
+}
+
 /// Load on one body from one source: force [N] and moment about the body's
 /// centre of mass [N m], both in the world frame (as applied to Chrono).
 struct Wrench {
@@ -205,13 +259,14 @@ struct Wrench {
 };
 
 /// State at one simulated instant. Index i in bodies / mooring_lines /
-/// cable_lines matches the same index in the SceneDescription.
+/// cable_lines / beam_lines matches the same index in the SceneDescription.
 struct VizFrame {
     double time = 0.0;      ///< Simulated time [s]
     int64_t step = 0;       ///< Physics step count at this frame
     std::vector<BodyState> bodies;
     std::vector<MooringLineState> mooring_lines;
     std::vector<CableLineState> cable_lines;
+    std::vector<BeamLineState> beam_lines;
     /// Solver output: body_wrenches[s * bodies.size() + b] is force source s
     /// (SceneDescription::force_sources) on body b. Empty = no force data.
     std::vector<Wrench> body_wrenches;
@@ -233,6 +288,17 @@ inline bool IsConsistent(const SceneDescription& scene, const VizFrame& frame) {
         if (line.node_positions.size() != static_cast<size_t>(scene.mooring_lines[i].num_nodes) ||
             (!line.node_tensions.empty() && line.node_tensions.size() != line.node_positions.size())) {
             return false;
+        }
+    }
+    // Recordings without beam data leave beam_lines empty.
+    if (!frame.beam_lines.empty()) {
+        if (frame.beam_lines.size() != scene.beam_lines.size()) {
+            return false;
+        }
+        for (size_t i = 0; i < frame.beam_lines.size(); ++i) {
+            if (frame.beam_lines[i].sections.size() != static_cast<size_t>(scene.beam_lines[i].num_samples)) {
+                return false;
+            }
         }
     }
     return true;

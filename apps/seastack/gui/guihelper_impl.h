@@ -134,6 +134,7 @@ class GUIImplVSG : public GUIImpl {
 class SeastackViewer;
 class SeastackGuiComponent;
 class AnalysisOverlays;
+class BeamLinesViz;
 
 /// GUI backed by SEA-Stack's own viewer (--viewer=seastack). Reads Chrono
 /// only through the VizExtractor.
@@ -177,6 +178,8 @@ class GUIImplSeastack : public GUIImpl {
     void UpdateWater(const VizFrame& frame);
     /// Create the mooring lines on the first frame with line data, then update them.
     void UpdateMooring(const VizFrame& frame);
+    /// Create the FEA beams on the first frame with beam data, then pose and colour them.
+    void UpdateBeams(const VizFrame& frame);
     /// Body names at their centres of mass (ImGui, inside the GUI frame).
     void DrawBodyLabels();
     /// Select the body under a click in the 3D view (double-click also frames
@@ -225,6 +228,9 @@ class GUIImplSeastack : public GUIImpl {
     /// Drawn before the water so opaque lines show through the translucent surface.
     vsg::ref_ptr<vsg::Group> mooring_group_;
     vsg::ref_ptr<vsg::Switch> lines_switch_;  ///< Parent of mooring_group_ (show / hide)
+    std::unique_ptr<BeamLinesViz> beam_viz_;  ///< Chrono::FEA beams
+    vsg::ref_ptr<vsg::Group> beam_group_;
+    vsg::ref_ptr<vsg::Switch> beams_switch_;  ///< Parent of beam_group_ (show / hide)
     double mooring_line_radius_m_ = -1.0;         ///< YAML override [m]; < 0 = model-scaled default
     double mooring_endpoint_radius_m_ = -1.0;     ///< YAML override [m]; < 0 = model-scaled default
     double mooring_node_marker_radius_m_ = -1.0;  ///< YAML override [m]; < 0 = model-scaled default

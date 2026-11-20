@@ -7,6 +7,9 @@
 #include <chrono/assets/ChVisualShapePointPoint.h>
 #include <chrono/assets/ChVisualShapeSphere.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
+#include <chrono/fea/ChBuilderBeam.h>
+#include <chrono/fea/ChElementSpring.h>
+#include <chrono/fea/ChMesh.h>
 #include <chrono/geometry/ChTriangleMeshConnected.h>
 #include <chrono/physics/ChBody.h>
 #include <chrono/physics/ChBodyAuxRef.h>
@@ -229,6 +232,71 @@ int main() {
         TEST_NEAR(dist_frame.cable_lines[1].point2[0], 3.0, 1e-12, "distance endpoint 2 x");
         TEST_NEAR(dist_frame.cable_lines[1].point2[2], 1.0, 1e-12, "distance endpoint 2 z");
         TEST_ASSERT(seastack::chrono::FindUndrawableItems(dist_sys).empty(), "distance SEGMENT is drawable");
+    }
+
+    // Chrono::FEA Euler beams: connected elements with one section form a chain,
+    // sampled at the element ends and between them.
+    {
+        ::chrono::ChSystemNSC fea_sys;
+        fea_sys.SetGravitationalAcceleration({0.0, 0.0, -9.81});
+        fea_sys.SetSolverType(::chrono::ChSolver::Type::MINRES);  // PSOR cannot take FEA stiffness
+        auto mesh = chrono_types::make_shared<::chrono::fea::ChMesh>();
+        mesh->SetName("frame");
+        auto section = chrono_types::make_shared<::chrono::fea::ChBeamSectionEulerAdvanced>();
+        section->SetYoungModulus(70e9);
+        section->SetShearModulus(26e9);
+        section->SetDensity(2700.0);
+        section->SetAsRectangularSection(0.3, 0.1);  // extent along local y, local z [m]; also the drawn outline
+        ::chrono::fea::ChBuilderBeamEuler builder;
+        // Cantilever along x, local y vertical, root clamped.
+        builder.BuildBeam(mesh, section, 2, {0.0, 0.0, 0.0}, {2.0, 0.0, 0.0}, {0.0, 0.0, 1.0});
+        builder.GetLastBeamNodes().front()->SetFixed(true);
+        // A separate one-element beam: its own chain.
+        builder.BuildBeam(mesh, section, 1, {0.0, 1.0, 0.0}, {0.0, 2.0, 0.0}, {0.0, 0.0, 1.0});
+        builder.GetLastBeamNodes().front()->SetFixed(true);
+        mesh->SetAutomaticGravity(true);
+        fea_sys.Add(mesh);
+
+        TEST_ASSERT(seastack::chrono::FindUndrawableItems(fea_sys).empty(), "Euler beam mesh is drawable");
+        VizExtractor fea_ex(&fea_sys);
+        const SceneDescription& fea_scene = fea_ex.Scene();
+        constexpr int kSamples = VizExtractor::kBeamSamplesPerElement;
+        TEST_ASSERT(fea_scene.beam_lines.size() == 2, "two chains");
+        TEST_ASSERT(fea_scene.beam_lines.size() == 2 && fea_scene.beam_lines[0].num_samples == 2 * kSamples &&
+                        fea_scene.beam_lines[1].num_samples == kSamples,
+                    "samples per chain");
+        TEST_ASSERT(!fea_scene.beam_lines.empty() && fea_scene.beam_lines[0].name == "frame_beam_0", "chain name");
+        TEST_NEAR(fea_scene.beam_lines[0].y_max, 0.15, 1e-12, "drawn section y extent");
+        TEST_NEAR(fea_scene.beam_lines[0].z_min, -0.05, 1e-12, "drawn section z extent");
+        TEST_NEAR(fea_scene.model_bounds.max[0], 2.0, 1e-9, "model bounds include the beams");
+
+        // Before the first step the elements are not set up: straight samples, zero loads.
+        VizFrame f0 = fea_ex.Capture(0);
+        TEST_ASSERT(IsConsistent(fea_scene, f0), "beam frame matches scene");
+        TEST_NEAR(f0.beam_lines[0].sections[kSamples - 1].position[0], 1.0, 1e-12, "element 1 end at x = 1 m");
+        TEST_NEAR(f0.beam_lines[0].sections[2].position[0], 0.5, 1e-12, "mid-element sample");
+        TEST_NEAR(f0.beam_lines[0].sections[0].y_axis[2], 1.0, 1e-12, "section y follows Ydir");
+        TEST_NEAR(f0.beam_lines[0].sections[0].loads[5], 0.0, 0.0, "no loads before the first step");
+
+        // After a step under gravity the root bends about local z (local y is up).
+        fea_sys.DoStepDynamics(1e-3);
+        VizFrame f1 = fea_ex.Capture(1);
+        TEST_ASSERT(IsConsistent(fea_scene, f1), "beam frame matches scene after a step");
+        const double root_mz = f1.beam_lines[0].sections[0].loads[5];
+        TEST_ASSERT(std::isfinite(root_mz) && std::abs(root_mz) > 0.0, "root bending moment after a step");
+        TEST_NEAR(BeamFieldValue(f1.beam_lines[0].sections[0], BeamField::kMz), root_mz, 0.0, "Mz field");
+
+        // A mesh with other elements cannot be drawn by the SEA-Stack viewer.
+        auto other = chrono_types::make_shared<::chrono::fea::ChMesh>();
+        auto na = chrono_types::make_shared<::chrono::fea::ChNodeFEAxyz>(::chrono::ChVector3d(0.0, 0.0, 0.0));
+        auto nb = chrono_types::make_shared<::chrono::fea::ChNodeFEAxyz>(::chrono::ChVector3d(1.0, 0.0, 0.0));
+        other->AddNode(na);
+        other->AddNode(nb);
+        auto spring = chrono_types::make_shared<::chrono::fea::ChElementSpring>();
+        spring->SetNodes(na, nb);
+        other->AddElement(spring);
+        fea_sys.Add(other);
+        TEST_ASSERT(seastack::chrono::FindUndrawableItems(fea_sys).size() == 1, "non-beam FEA element reported");
     }
 
     // Undrawable content is reported so the GUI can fall back to the Chrono viewer.

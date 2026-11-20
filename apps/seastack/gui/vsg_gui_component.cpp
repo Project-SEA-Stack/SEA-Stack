@@ -11,6 +11,7 @@
 
 #include "vsg_gui_component.h"
 #include "vsg_analysis_overlays.h"
+#include "vsg_beam_lines.h"
 #include "vsg_mooring_lines.h"
 #include "vsg_theme.h"
 #include "vsg_water_surface.h"
@@ -567,7 +568,7 @@ void SeastackGuiComponent::Draw() {
     ImGui::PopStyleVar();
 
     RenderViewToolbar();
-    RenderWaterLegend(RenderColorBar());
+    RenderWaterLegend(RenderBeamColorBar(RenderColorBar()));
     if (settings_ && settings_->timeline.available) {
         RenderTimelineBanner();
     }
@@ -1348,6 +1349,71 @@ void SeastackGuiComponent::RenderChangesPanel() {
 
 // ---------------------------------------------------------------------------
 
+void SeastackGuiComponent::RenderBeamRows() {
+    BeamDisplayState& beams = settings_->beams;
+    ImGui::Checkbox("FEA beams", &beams.visible);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Chrono::FEA beams, drawn with their section outline.");
+    }
+    if (!beams.visible) {
+        return;
+    }
+    ImGui::Indent();
+    constexpr BeamField kFields[] = {BeamField::kMz, BeamField::kMy, BeamField::kTorsion, BeamField::kAxial,
+                                     BeamField::kNone};
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.75f);
+    if (ImGui::BeginCombo("Colour##beam_field", BeamFieldName(beams.field))) {
+        for (BeamField f : kFields) {
+            if (ImGui::Selectable(BeamFieldName(f), f == beams.field) && f != beams.field) {
+                beams.field = f;
+                beams.range.ResetAuto();
+                if (beams.range.Mode() == ColorRangeMode::kLocked) {
+                    beams.range.SetMode(ColorRangeMode::kAuto);  // a locked range of another field means nothing
+                }
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Colour by the magnitude of a section load, in the beam\n"
+                          "section frame (x along the beam). Mz is bending about\n"
+                          "local z; the start-up choice is the structure YAML\n"
+                          "visualization data_type.");
+    }
+    if (beams.field != BeamField::kNone) {
+        ColorRange& range = beams.range;
+        int mode = static_cast<int>(range.Mode());
+        bool mode_changed = false;
+        mode_changed |= ImGui::RadioButton("Auto##beam", &mode, static_cast<int>(ColorRangeMode::kAuto));
+        ImGui::SameLine();
+        mode_changed |= ImGui::RadioButton("Locked##beam", &mode, static_cast<int>(ColorRangeMode::kLocked));
+        ImGui::SameLine();
+        mode_changed |= ImGui::RadioButton("Fixed##beam", &mode, static_cast<int>(ColorRangeMode::kFixed));
+        if (mode_changed) {
+            const auto new_mode = static_cast<ColorRangeMode>(mode);
+            if (new_mode == ColorRangeMode::kFixed && !range.HasFixedRange()) {
+                range.SetFixedRange(range.Min(), range.Max());  // start from what is shown
+            }
+            range.SetMode(new_mode);
+        }
+        const char* units = BeamFieldUnits(beams.field);
+        ImGui::TextDisabled("Peak now: %.4g %s", range.LastPeak(), units);
+        if (range.Mode() == ColorRangeMode::kFixed) {
+            float limits[2] = {range.FixedMin(), range.FixedMax()};
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.75f);
+            if (ImGui::InputFloat2(units, limits, "%.4g", ImGuiInputTextFlags_EnterReturnsTrue)) {
+                beam_range_error_ = !range.SetFixedRange(limits[0], limits[1]);
+            }
+            if (beam_range_error_) {
+                ImGui::TextDisabled("Needs min < max; kept previous range.");
+            }
+        } else {
+            ImGui::TextDisabled("Range: %.3g .. %.3g %s", range.Min(), range.Max(), units);
+        }
+    }
+    ImGui::Unindent();
+}
+
 void SeastackGuiComponent::RenderMooringColours() {
     if (!settings_ || !mooring_viz_ || !mooring_viz_->IsInitialized()) return;
 
@@ -1578,6 +1644,9 @@ void SeastackGuiComponent::RenderScenePanel() {
         RenderMooringColours();
         ImGui::Unindent();
     }
+    if (!vsys_ && settings_->beams.available) {
+        RenderBeamRows();
+    }
     if (!vsys_) {
         ImGui::Checkbox("Shadows", &settings_->show_shadows);
         if (ImGui::IsItemHovered()) {
@@ -1769,20 +1838,6 @@ float SeastackGuiComponent::RenderColorBar() {
     if (!settings_ || !settings_->show_mooring_colors) return 0.0f;
     if (!mooring_viz_ || !mooring_viz_->IsInitialized()) return 0.0f;
 
-    const float bar_w = 14.0f * ui_scale_;
-    const float bar_h = 180.0f * ui_scale_;
-    const float margin = kOverlayMargin * ui_scale_;
-    const float label_gap = 6.0f * ui_scale_;
-    const float pad = 8.0f * ui_scale_;  // legend panel padding
-    const float line_h = ImGui::GetTextLineHeight();
-
-    // Top-right corner of the scene area, clear of the inspector.
-    const float x0 = scene_rect_.x + scene_rect_.w - margin - pad - bar_w;
-    const float y0 = scene_rect_.y + margin + pad + line_h + 2.0f * label_gap;
-
-    ImDrawList* dl = ImGui::GetBackgroundDrawList();
-
-    // Labels first, so the legend panel can be sized around them.
     char max_label[64];
     char min_label[64];
     std::snprintf(max_label, sizeof(max_label), "%.3g N", mooring_viz_->TensionMax());
@@ -1791,6 +1846,44 @@ float SeastackGuiComponent::RenderColorBar() {
     const char* title = (mode == ColorRangeMode::kFixed)    ? "Tension (fixed)"
                         : (mode == ColorRangeMode::kLocked) ? "Tension (locked)"
                                                             : "Tension";
+    return DrawColorLegend(title, min_label, max_label, 0.0f);
+}
+
+float SeastackGuiComponent::RenderBeamColorBar(float top_y) {
+    if (!settings_) return top_y;
+    const BeamDisplayState& beams = settings_->beams;
+    if (!beams.available || !beams.visible || beams.field == BeamField::kNone) return top_y;
+
+    const char* units = BeamFieldUnits(beams.field);
+    char max_label[64];
+    char min_label[64];
+    std::snprintf(max_label, sizeof(max_label), "%.3g %s", beams.range.Max(), units);
+    std::snprintf(min_label, sizeof(min_label), "%.3g %s", beams.range.Min(), units);
+    const char* mode = beams.range.Mode() == ColorRangeMode::kFixed    ? " (fixed)"
+                       : beams.range.Mode() == ColorRangeMode::kLocked ? " (locked)"
+                                                                       : "";
+    char title[96];
+    std::snprintf(title, sizeof(title), "|%s|%s", BeamFieldName(beams.field), mode);
+    return DrawColorLegend(title, min_label, max_label, top_y);
+}
+
+float SeastackGuiComponent::DrawColorLegend(const char* title, const char* min_label, const char* max_label,
+                                            float top_y) {
+    const float bar_w = 14.0f * ui_scale_;
+    const float bar_h = 180.0f * ui_scale_;
+    const float margin = kOverlayMargin * ui_scale_;
+    const float label_gap = 6.0f * ui_scale_;
+    const float pad = 8.0f * ui_scale_;  // legend panel padding
+    const float line_h = ImGui::GetTextLineHeight();
+
+    // Top-right corner of the scene area, clear of the inspector; under the
+    // previous legend if there is one.
+    const float panel_top = (top_y > 0.0f) ? top_y + margin : scene_rect_.y + margin;
+    const float x0 = scene_rect_.x + scene_rect_.w - margin - pad - bar_w;
+    const float y0 = panel_top + pad + line_h + 2.0f * label_gap;
+
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+
     const float label_w = std::max(ImGui::CalcTextSize(max_label).x, ImGui::CalcTextSize(min_label).x);
     const float title_w = ImGui::CalcTextSize(title).x;
 

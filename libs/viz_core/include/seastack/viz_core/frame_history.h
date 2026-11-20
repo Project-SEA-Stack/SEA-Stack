@@ -19,6 +19,9 @@ inline size_t EstimateFrameBytes(const VizFrame& frame) {
         bytes += sizeof(MooringLineState) + line.node_positions.size() * sizeof(Vec3) +
                  line.node_tensions.size() * sizeof(double);
     }
+    for (const BeamLineState& beam : frame.beam_lines) {
+        bytes += sizeof(BeamLineState) + beam.sections.size() * sizeof(BeamSectionState);
+    }
     return bytes;
 }
 

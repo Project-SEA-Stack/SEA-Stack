@@ -18,6 +18,10 @@
 #include <chrono/assets/ChVisualShapeSphere.h>
 #include <chrono/assets/ChVisualShapeSurface.h>
 #include <chrono/assets/ChVisualShapeTriangleMesh.h>
+#include <chrono/assets/ChVisualShapeFEA.h>
+#include <chrono/fea/ChBeamSectionShape.h>
+#include <chrono/fea/ChElementBeamEuler.h>
+#include <chrono/fea/ChMesh.h>
 #include <chrono/physics/ChBody.h>
 #include <chrono/physics/ChLinkDistance.h>
 #include <chrono/physics/ChLinkTSDA.h>
@@ -172,6 +176,62 @@ bool DescribeCableVisual(const ::chrono::ChLinkTSDA& tsda, viz::CableLineDescrip
     return false;
 }
 
+using BeamChain = std::vector<std::shared_ptr<::chrono::fea::ChElementBeamEuler>>;
+
+/// Chains of consecutive Euler beam elements of `mesh` that share a node
+/// (end of one = start of the next) and a section. Other elements are skipped.
+std::vector<BeamChain> FindBeamChains(const ::chrono::fea::ChMesh& mesh) {
+    std::vector<BeamChain> chains;
+    for (const auto& element : mesh.GetElements()) {
+        auto beam = std::dynamic_pointer_cast<::chrono::fea::ChElementBeamEuler>(element);
+        if (!beam) {
+            continue;
+        }
+        if (!chains.empty()) {
+            const auto& last = chains.back().back();
+            if (last->GetNodeB() == beam->GetNodeA() && last->GetSection() == beam->GetSection()) {
+                chains.back().push_back(std::move(beam));
+                continue;
+            }
+        }
+        chains.push_back({std::move(beam)});
+    }
+    return chains;
+}
+
+/// Drawn outline of the chain's section (Chrono's draw shape; a thin square if none).
+viz::BeamLineDescription DescribeBeamChain(const BeamChain& chain, const std::string& name) {
+    viz::BeamLineDescription desc;
+    desc.name = name;
+    desc.num_samples = static_cast<int>(chain.size()) * VizExtractor::kBeamSamplesPerElement;
+    const auto section = chain.front()->GetSection();
+    const auto shape = section ? section->GetDrawShape() : nullptr;
+    if (shape) {
+        shape->GetAABB(desc.y_min, desc.y_max, desc.z_min, desc.z_max);
+        desc.circular = std::dynamic_pointer_cast<::chrono::fea::ChBeamSectionShapeCircular>(shape) != nullptr;
+    }
+    return desc;
+}
+
+/// Beam colouring requested by the mesh's FEA visuals (first beam field found).
+viz::BeamField BeamFieldOf(const ::chrono::fea::ChMesh& mesh) {
+    using DT = ::chrono::ChVisualShapeFEA::DataType;
+    const auto model = mesh.GetVisualModel();
+    if (!model) {
+        return viz::BeamField::kNone;
+    }
+    for (const auto& fea : model->GetShapesFEA()) {
+        switch (fea ? fea->GetFEMdataType() : DT::NONE) {
+            case DT::ELEM_BEAM_MX: return viz::BeamField::kTorsion;
+            case DT::ELEM_BEAM_MY: return viz::BeamField::kMy;
+            case DT::ELEM_BEAM_MZ: return viz::BeamField::kMz;
+            case DT::ELEM_BEAM_TX: return viz::BeamField::kAxial;
+            default: break;
+        }
+    }
+    return viz::BeamField::kNone;
+}
+
 /// True if `link` has visual shapes and all of them are straight segments.
 bool HasOnlySegmentVisuals(const ::chrono::ChPhysicsItem& link) {
     auto model = link.GetVisualModel();
@@ -260,8 +320,20 @@ std::vector<std::string> FindUndrawableItems(const ::chrono::ChSystem& system) {
         }
         items.push_back(ItemName(*link, "link") + " visual");
     }
-    if (!system.GetMeshes().empty()) {
-        items.push_back(std::to_string(system.GetMeshes().size()) + " FEA mesh(es)");
+    for (const auto& mesh : system.GetMeshes()) {
+        if (!mesh) {
+            continue;
+        }
+        size_t other_elements = 0;
+        for (const auto& element : mesh->GetElements()) {
+            if (!std::dynamic_pointer_cast<::chrono::fea::ChElementBeamEuler>(element)) {
+                ++other_elements;
+            }
+        }
+        if (other_elements > 0) {
+            items.push_back(ItemName(*mesh, "FEA mesh") + ": " + std::to_string(other_elements) +
+                            " element(s) other than Euler beams");
+        }
     }
     for (const auto& item : system.GetOtherPhysicsItems()) {
         if (item && HasVisualShapes(*item)) {
@@ -309,6 +381,20 @@ VizExtractor::VizExtractor(::chrono::ChSystem* system, viz::MooringVizProvider m
                 scene_.cable_lines.push_back(viz::CableLineDescription{});
             }
         }
+        for (const auto& mesh : system_->GetMeshes()) {
+            if (!mesh) {
+                continue;
+            }
+            const std::string prefix = mesh->GetName().empty() ? std::string("fea_mesh") : mesh->GetName();
+            for (auto& chain : FindBeamChains(*mesh)) {
+                scene_.beam_lines.push_back(
+                    DescribeBeamChain(chain, prefix + "_beam_" + std::to_string(beam_chains_.size())));
+                beam_chains_.push_back(std::move(chain));
+            }
+            if (scene_.beam_field == viz::BeamField::kNone) {
+                scene_.beam_field = BeamFieldOf(*mesh);
+            }
+        }
     }
     // Model bounds from the first frame, so they match what is drawn.
     const viz::VizFrame first = Capture(0);
@@ -323,6 +409,11 @@ VizExtractor::VizExtractor(::chrono::ChSystem* system, viz::MooringVizProvider m
                     state.pose, {(c & 1) ? b.max[0] : b.min[0], (c & 2) ? b.max[1] : b.min[1],
                                  (c & 4) ? b.max[2] : b.min[2]}));
             }
+        }
+    }
+    for (const auto& beam : first.beam_lines) {
+        for (const auto& section : beam.sections) {
+            scene_.model_bounds.Extend(section.position);
         }
     }
 }
@@ -428,6 +519,41 @@ viz::VizFrame VizExtractor::Capture(int64_t step) {
         out.point1 = ToVec3(distance->GetEndPoint1Abs());
         out.point2 = ToVec3(distance->GetEndPoint2Abs());
         out.tension = distance->GetReaction2().force.Length();
+    }
+    frame.beam_lines.resize(beam_chains_.size());
+    constexpr int kSamples = kBeamSamplesPerElement;
+    // Chrono sets the elements up (reference rotation, stiffness) in the first
+    // step; before that their section frames and loads are not valid, so the
+    // samples follow the straight line between the node frames with zero loads.
+    const bool elements_set_up = system_ && system_->GetNumSteps() > 0;
+    for (size_t i = 0; i < beam_chains_.size(); ++i) {
+        auto& sections = frame.beam_lines[i].sections;
+        sections.reserve(beam_chains_[i].size() * kSamples);
+        for (const auto& element : beam_chains_[i]) {
+            for (int k = 0; k < kSamples; ++k) {
+                const double eta = -1.0 + 2.0 * k / (kSamples - 1);  // element coordinate [-1, 1]
+                viz::BeamSectionState s;
+                if (elements_set_up) {
+                    ::chrono::ChVector3d point;
+                    ::chrono::ChQuaterniond rot;
+                    ::chrono::ChVector3d force;
+                    ::chrono::ChVector3d torque;
+                    element->EvaluateSectionFrame(eta, point, rot);
+                    element->EvaluateSectionForceTorque(eta, force, torque);
+                    s.position = ToVec3(point);
+                    s.y_axis = ToVec3(rot.GetAxisY());
+                    s.z_axis = ToVec3(rot.GetAxisZ());
+                    s.loads = {force.x(), force.y(), force.z(), torque.x(), torque.y(), torque.z()};
+                } else {
+                    const auto& node = eta < 0.0 ? element->GetNodeA() : element->GetNodeB();
+                    const double t = 0.5 * (eta + 1.0);
+                    s.position = ToVec3(element->GetNodeA()->GetPos() * (1.0 - t) + element->GetNodeB()->GetPos() * t);
+                    s.y_axis = ToVec3(node->GetRotMat().GetAxisY());
+                    s.z_axis = ToVec3(node->GetRotMat().GetAxisZ());
+                }
+                sections.push_back(s);
+            }
+        }
     }
     if (forces_) {
         const ForceSample sample = forces_();

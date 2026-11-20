@@ -60,10 +60,14 @@ inline VizFrame InterpolateFrames(const VizFrame& a, const VizFrame& b, double t
     const VizFrame& nearer = s <= 0.5 ? a : b;
     bool same_layout = a.bodies.size() == b.bodies.size() && a.mooring_lines.size() == b.mooring_lines.size() &&
                        a.cable_lines.size() == b.cable_lines.size() &&
+                       a.beam_lines.size() == b.beam_lines.size() &&
                        a.body_wrenches.size() == b.body_wrenches.size();
     for (size_t i = 0; same_layout && i < a.mooring_lines.size(); ++i) {
         same_layout = a.mooring_lines[i].node_positions.size() == b.mooring_lines[i].node_positions.size() &&
                       a.mooring_lines[i].node_tensions.size() == b.mooring_lines[i].node_tensions.size();
+    }
+    for (size_t i = 0; same_layout && i < a.beam_lines.size(); ++i) {
+        same_layout = a.beam_lines[i].sections.size() == b.beam_lines[i].sections.size();
     }
     if (!same_layout) {
         return nearer;
@@ -98,6 +102,20 @@ inline VizFrame InterpolateFrames(const VizFrame& a, const VizFrame& b, double t
         co.point1 = Lerp(co.point1, cb.point1, s);
         co.point2 = Lerp(co.point2, cb.point2, s);
         co.tension += s * (cb.tension - co.tension);
+    }
+    // Section axes are blended linearly (not re-normalised); the renderer
+    // normalises them. Fine for the small rotations between frames.
+    for (size_t i = 0; i < out.beam_lines.size(); ++i) {
+        std::vector<BeamSectionState>& so = out.beam_lines[i].sections;
+        const std::vector<BeamSectionState>& sb = b.beam_lines[i].sections;
+        for (size_t k = 0; k < so.size(); ++k) {
+            so[k].position = Lerp(so[k].position, sb[k].position, s);
+            so[k].y_axis = Lerp(so[k].y_axis, sb[k].y_axis, s);
+            so[k].z_axis = Lerp(so[k].z_axis, sb[k].z_axis, s);
+            for (size_t c = 0; c < so[k].loads.size(); ++c) {
+                so[k].loads[c] += s * (sb[k].loads[c] - so[k].loads[c]);
+            }
+        }
     }
     for (size_t i = 0; i < out.body_wrenches.size(); ++i) {
         out.body_wrenches[i].force = Lerp(a.body_wrenches[i].force, b.body_wrenches[i].force, s);

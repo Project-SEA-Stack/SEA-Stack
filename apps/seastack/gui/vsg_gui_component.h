@@ -9,6 +9,7 @@
 #include <chrono_vsg/ChGuiComponentVSG.h>
 #include <chrono_vsg/ChVisualSystemVSG.h>
 
+#include <seastack/viz_core/color_range.h>
 #include <seastack/viz_core/radiated_waves.h>
 #include <seastack/viz_core/scene_framing.h>
 #include <seastack/viz_core/scene_model.h>
@@ -124,6 +125,15 @@ struct ModelState {
     bool lines_visible = true;       ///< Mooring lines and cables
     int selected = -1;               ///< Scene body index; -1 = none
     bool frame_selected_requested = false;  ///< Move the camera to frame the selected body
+};
+
+/// Chrono::FEA beams (SEA-Stack viewer). Visual only.
+struct BeamDisplayState {
+    bool available = false;  ///< Written by the viewer: the scene has beams
+    bool field_from_model = false;  ///< `field` has been set from the model's FEA visual
+    bool visible = true;
+    BeamField field = BeamField::kMz;  ///< Colour by |field|; kNone = plain steel
+    ColorRange range;  ///< Of |field| [N or N m]
 };
 
 /// Force vectors, trajectories and live plots (SEA-Stack viewer). Visual
@@ -256,6 +266,9 @@ struct ViewerSettings {
     // --- Model tree and selection (SEA-Stack viewer) ---
     ModelState model;
 
+    // --- FEA beams (SEA-Stack viewer) ---
+    BeamDisplayState beams;
+
     // --- Force vectors, trajectories, plots (SEA-Stack viewer) ---
     AnalysisState analysis;
 };
@@ -344,8 +357,15 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     /// One slider that sets `field` on every editable member (one row per member).
     /// The value is requested when the slider is released (or a typed value entered).
     void RenderParameterSlider(const std::string& key, const std::vector<const ParameterRow*>& members);
+    /// FEA beam rows of the Scene section: show, colour field and range.
+    void RenderBeamRows();
     /// Mooring tension legend; returns the bottom of its panel [px] (0 if not drawn).
     float RenderColorBar();
+    /// FEA beam legend below `top_y` [px] if > 0; returns the bottom of its panel (top_y if not drawn).
+    float RenderBeamColorBar(float top_y);
+    /// Turbo colour bar with a title and min / max labels in the top-right of
+    /// the scene, below `top_y` [px] if > 0; returns the bottom of its panel.
+    float DrawColorLegend(const char* title, const char* min_label, const char* max_label, float top_y);
     /// Water elevation legend (elevation style), below `top_y` [px] if > 0.
     void RenderWaterLegend(float top_y);
     /// Preferences to save now: the theme loaded from file is kept unless
@@ -377,6 +397,7 @@ class SeastackGuiComponent : public ::chrono::vsg3d::ChGuiComponentVSG {
     bool imgui_theme_applied_ = false;
     float ui_scale_ = 1.0f;  ///< Display scale applied to panel sizes [-]
     bool fixed_range_error_ = false;  ///< Last fixed mooring range entry was rejected
+    bool beam_range_error_ = false;   ///< Last fixed beam range entry was rejected
     /// Parameter slider being dragged (or typed into) and its value; applied on release.
     std::string param_edit_key_;
     double param_edit_value_ = 0.0;
