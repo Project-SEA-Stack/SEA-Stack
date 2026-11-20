@@ -199,6 +199,13 @@ Inertia is that of a uniform box of the given mass and extents.
 | `beam_resolution` | 12 | Colour bands along each element; ≥ 1 |
 | `beam_resolution_section` | 8 | Facets around the section; ≥ 1 |
 
+The SEA-Stack viewer (the default) draws the beams with their section outline.
+It uses `data_type` only, to pick the field shown at start-up. It colours by
+the field's magnitude (for example \|Mz\|) on the Turbo colour map, with an
+auto, locked or fixed range set under Scene → FEA beams in the Inspector.
+`NODE_SPEED_NORM` shows plain beams. `colormap`, `range` and the resolutions
+apply to the Chrono viewer (`--viewer=chrono`).
+
 ### `diagnostics`
 
 | Key | Default | Notes |

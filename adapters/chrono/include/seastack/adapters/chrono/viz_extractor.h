@@ -14,6 +14,9 @@ class ChBody;
 class ChLinkDistance;
 class ChLinkTSDA;
 class ChSystem;
+namespace fea {
+class ChElementBeamEuler;
+}  // namespace fea
 }  // namespace chrono
 
 namespace seastack::chrono {
@@ -49,8 +52,15 @@ ForceProvider MakeHydroForceProvider(HydroSystem* hydro);
 /// mooring_lines, so the SEA-Stack viewer can draw Chrono-style glyphs.
 /// Distance constraints with SEGMENT visuals follow them in cable_lines
 /// (tension = magnitude of the constraint reaction force).
+///
+/// Chrono::FEA Euler beams are exported as beam_lines: consecutive elements
+/// of a mesh that share a node and a section form one chain, sampled at
+/// kBeamSamplesPerElement points per element (element ends included, so a
+/// shared node appears twice and load jumps between elements stay sharp).
 class VizExtractor {
   public:
+    static constexpr int kBeamSamplesPerElement = 5;
+
     /// @param system  Chrono system (must outlive the extractor).
     /// @param mooring Optional mooring provider (see SetMooringProvider).
     explicit VizExtractor(::chrono::ChSystem* system, seastack::viz::MooringVizProvider mooring = {});
@@ -82,6 +92,8 @@ class VizExtractor {
     /// Distance constraints with SEGMENT visuals; cable_lines index
     /// tsda_cables_.size() + i.
     std::vector<std::shared_ptr<::chrono::ChLinkDistance>> distance_cables_;
+    /// Element chains; indices match scene_.beam_lines.
+    std::vector<std::vector<std::shared_ptr<::chrono::fea::ChElementBeamEuler>>> beam_chains_;
     seastack::viz::SceneDescription scene_;
 };
 
@@ -90,7 +102,8 @@ bool IsWaterSurfaceBody(const ::chrono::ChBody& body);
 
 /// Visual content of `system` that VizExtractor cannot export, so the
 /// SEA-Stack viewer would not show it: body shapes other than box, sphere,
-/// cylinder and triangle mesh; FEA meshes; visual shapes on links other than
+/// cylinder and triangle mesh; FEA elements other than Euler beams; visual
+/// shapes on links other than
 /// TSDA SEGMENT/SPRING glyphs and distance-constraint SEGMENTs; other physics
 /// items with visual shapes. Each
 /// entry is a short description for the user; empty = everything is drawable.

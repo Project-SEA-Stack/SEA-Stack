@@ -12,6 +12,7 @@
 #include "radiated_wave_overlay.h"
 #include "seastack_viewer.h"
 #include "vsg_analysis_overlays.h"
+#include "vsg_beam_lines.h"
 #include "vsg_config.h"
 #include "vsg_gui_component.h"
 #include "vsg_materials.h"
@@ -150,6 +151,11 @@ void GUIImplSeastack::InitViewer(UI& ui, const char* title) {
     lines_switch_ = vsg::Switch::create();
     lines_switch_->addChild(true, mooring_group_);
     viewer_->OverlayScene()->addChild(lines_switch_);  // before the water is added
+    beam_viz_ = std::make_unique<BeamLinesViz>();
+    beam_group_ = vsg::Group::create();
+    beams_switch_ = vsg::Switch::create();
+    beams_switch_->addChild(true, beam_group_);
+    viewer_->OverlayScene()->addChild(beams_switch_);
 
     ModelState& model = viewer_settings_->model;
     for (const BodyDescription& body : Scene().bodies) {
@@ -242,6 +248,18 @@ void GUIImplSeastack::UpdateMooring(const VizFrame& frame) {
     glyphs.rods = tsda_rod_viz_.get();
     glyphs.springs = tsda_spring_viz_.get();
     DrawTsdaCables(glyphs, viewer_.get(), mooring_group_, Scene(), frame);
+}
+
+void GUIImplSeastack::UpdateBeams(const VizFrame& frame) {
+    BeamDisplayState& beams = viewer_settings_->beams;
+    if (!beams.available) {
+        return;
+    }
+    if (!beam_viz_->IsInitializedFor(viewer_.get())) {
+        beam_viz_->Initialize(viewer_.get(), beam_group_, Scene(), frame);
+    }
+    beams_switch_->setAllChildren(beams.visible);
+    beam_viz_->Update(Scene(), frame, beams.field, &beams.range);
 }
 
 void GUIImplSeastack::SetMooringLineProvider(MooringVizProvider provider) {
@@ -446,6 +464,12 @@ void GUIImplSeastack::SyncModel(const VizFrame& frame) {
     ModelState& model = viewer_settings_->model;
     const SceneDescription& scene = Scene();
     model.has_lines = !scene.mooring_lines.empty() || !scene.cable_lines.empty();
+    BeamDisplayState& beams = viewer_settings_->beams;
+    beams.available = !scene.beam_lines.empty();
+    if (beams.available && !beams.field_from_model) {
+        beams.field_from_model = true;
+        beams.field = scene.beam_field;
+    }
     for (size_t i = 0; i < model.body_visible.size(); ++i) {
         viewer_->SetBodyVisible(i, model.body_visible[i] != 0);
     }
@@ -706,6 +730,7 @@ bool GUIImplSeastack::IsRunning(double /*timestep*/) {
     SyncModel(frame);
     SyncParameters();
     UpdateMooring(frame);
+    UpdateBeams(frame);
     UpdateWater(frame);
     UpdateSceneViewport();
     HandleCameraRequests();

@@ -13,6 +13,7 @@ if(SEASTACK_ENABLE_VSG AND TARGET Chrono::Chrono_vsg)
         gui/seastack_viewer.cpp
         gui/vsg_water_surface.cpp
         gui/vsg_mooring_lines.cpp
+        gui/vsg_beam_lines.cpp
         gui/vsg_materials.cpp
         gui/vsg_lighting.cpp
         gui/vsg_gui_component.cpp
