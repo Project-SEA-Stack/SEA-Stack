@@ -503,6 +503,23 @@ if(TARGET run_seastack AND SEASTACK_ENABLE_CHRONO)
     # External controller (preview) through run_seastack: YAML mistakes, bad
     # step() returns, process failures, print forwarding and cost per tick.
     # Standard-library Python only.
+    # Trimaran fea_arms: FEA cross-arms clamped between three floating hulls in
+    # irregular waves; load path and wave bending sanity from the diagnostics CSV.
+    add_test(
+        NAME test_trimaran_fea_arms
+        COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/tests/regression/run_seastack/test_trimaran_fea_arms.py"
+            --exe $<TARGET_FILE:run_seastack>
+    )
+    set_tests_properties(test_trimaran_fea_arms PROPERTIES
+        LABELS "chrono;execute"
+        COST 15
+    )
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        set_tests_properties(test_trimaran_fea_arms PROPERTIES
+            ENVIRONMENT "SEASTACK_RUN_DLL_DIRS=${_cc_funnel_run_path}")
+    endif()
+
     if(TARGET seastack_external)
         add_test(
             NAME test_controller_robustness

@@ -1,0 +1,46 @@
+# Steel box cross-arms (800 x 1000 x 25 mm, depth vertical), clamped to the
+# center-hull deck edge (y = +/-6 m, z = 3.5 m) and to each outrigger's inboard
+# gunwale (y = +/-13 m, z = 1.5 m). Each arm is about 7.3 m long. Unlike
+# ../rigid (deck revolute), both ends are clamped, so the arms carry the
+# relative wave loads between the hulls in bending.
+structure:
+  automatic_gravity: true
+  materials:
+    - { name: steel, density: 7850.0, youngs_modulus: 2.1e+11, shear_modulus: 8.1e+10 }
+  sections:
+    # depth is measured along y_direction (vertical), so vertical bending is Mz.
+    # rayleigh_beta damps the arm's own high-frequency modes (zeta ~ beta * omega).
+    - { name: arm_box, type: BOX, material: steel, width: 0.8, depth: 1.0, wall: 0.025,
+        rayleigh_beta: 1.0e-3 }
+  beams:
+    - name: arm_stbd
+      section: arm_box
+      start: [0.0, -6.0, 3.5]
+      end:   [0.0, -13.0, 1.5]
+      elements: 8
+      y_direction: [0.0, 0.0, 1.0]
+    - name: arm_port
+      section: arm_box
+      start: [0.0, 6.0, 3.5]
+      end:   [0.0, 13.0, 1.5]
+      elements: 8
+      y_direction: [0.0, 0.0, 1.0]
+  mates:
+    # constrain = [x, y, z, rot_x, rot_y, rot_z] in world axes
+    - { name: stbd_root, node: arm_stbd.first, body: body1,
+        constrain: [true, true, true, true, true, true] }
+    - { name: stbd_tip, node: arm_stbd.last, body: body2,
+        constrain: [true, true, true, true, true, true] }
+    - { name: port_root, node: arm_port.first, body: body1,
+        constrain: [true, true, true, true, true, true] }
+    - { name: port_tip, node: arm_port.last, body: body3,
+        constrain: [true, true, true, true, true, true] }
+  visualization:
+    data_type: ELEM_BEAM_MZ
+    colormap: JET
+    range: [-1.0e+6, 1.0e+6]   # N*m; peak |Mz| is about 0.9 MN*m in this sea
+    beam_resolution: 12
+    beam_resolution_section: 8
+  diagnostics:
+    file: structure_diagnostics.csv
+    every_n_steps: 1

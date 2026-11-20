@@ -42,7 +42,7 @@ EXPECTED_DEMO_CASES = {
               "native_pto", "regular_waves", "translucent_hull"},
     "rm3": {"assets", "bimodal_sea", "decay", "decay_nl", "external_pto",
             "external_pto_adaptive", "external_pto_hydraulic", "irregular_waves", "mooring"},
-    "trimaran": {"assets", "rigid"},
+    "trimaran": {"assets", "fea_arms", "rigid"},
 }
 
 # Tools the release notes point users to.

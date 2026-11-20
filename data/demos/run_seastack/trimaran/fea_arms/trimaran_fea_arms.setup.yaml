@@ -1,0 +1,6 @@
+model_file: trimaran_fea_arms.model.yaml
+simulation_file: trimaran_fea_arms.simulation.yaml
+hydro_file: trimaran_fea_arms.hydro.yaml
+structure_file: trimaran_fea_arms.structure.yaml
+
+output_directory: outputs

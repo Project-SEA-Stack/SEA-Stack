@@ -24,9 +24,39 @@ geometry aligned with the C++ `demo_trimaran_rigid` example.
 | Case | Description | Setup YAML |
 |------|-------------|------------|
 | rigid | Irregular JONSWAP, rigid cross-arm mechanism | `rigid/trimaran_rigid.setup.yaml` |
+| fea_arms | Same sea, flexible steel cross-arms (Chrono::FEA, preview) clamped between the hulls | `fea_arms/trimaran_fea_arms.setup.yaml` |
 
 The directory `model.setup.yaml` at the trimaran folder root also resolves to
 this rigid case (convenient package entry: `run_seastack demos\trimaran\`).
+
+### `fea_arms` (FEA cross-arms)
+
+Each cross-arm is a 7.3 m Euler beam (8 elements, steel box 800 × 1000 ×
+25 mm, depth vertical, about 5.0 t) from `trimaran_fea_arms.structure.yaml`.
+Both ends are clamped: to the center-hull deck edge (y = ±6 m, z = 3.5 m) and
+to the outrigger's inboard gunwale (y = ±13 m, z = 1.5 m). This differs from
+`rigid`, which has a revolute at the deck. The arms therefore carry the
+relative wave loads between the hulls. The colour plot shows the vertical
+bending moment Mz (±1 MN·m).
+
+```powershell
+.\build\bin\Release\run_seastack.exe data\demos\run_seastack\trimaran\fea_arms
+```
+
+100 s run at dt = 0.02 s (HHT): about 15 s of wall time headless.
+`outputs/structure_diagnostics.csv` has the four mate reactions and per-arm
+moment extremes at every step.
+
+| Quantity (one arm) | Value |
+|--------------------|-------|
+| Arm weight | 49.0 kN |
+| Mean hull reactions, first 10 s (root + tip) | 34.7 + 14.4 = 49.1 kN |
+| Peak \|Mz\| after the 60 s ramp | ≈ 0.89 MN·m (≈ 34 MPa bending stress) |
+| Peak torsion \|Mx\| | ≈ 0.49 MN·m |
+| Peak arm bending (end-to-end change) | ≈ 6 mm |
+
+Not checked here: the arms have no hydrodynamic load of their own, and the
+hull BEM data are unchanged from `rigid`.
 
 C++ developer demos (`demo_trimaran_hydro`, `demo_trimaran_rigid`,
 `demo_trimaran_fea`) live under `demos/trimaran/` in the source repository.

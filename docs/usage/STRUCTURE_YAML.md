@@ -272,6 +272,8 @@ the HDF5 datasets, the check pass and fail paths, and the solver guard.
 
 ## Worked demos
 
+- [`data/demos/run_seastack/trimaran/fea_arms/`](../../data/demos/run_seastack/trimaran/):
+  steel cross-arms clamped between three floating hulls in irregular waves.
 - [`data/demos/run_seastack/fea/cantilever/`](../../data/demos/run_seastack/fea/cantilever/):
   clamped cantilever with a tip mass, compared with beam theory.
 - [`data/demos/run_seastack/crane/beam_check/`](../../data/demos/run_seastack/crane/):
